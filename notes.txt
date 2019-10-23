@@ -1,0 +1,33 @@
+- magic numbers all over the place
+
+propair_panneton:
+    - B2 is defined twice
+
+
+Useful commands:
+    - matlab -nosplash -nodesktop -r "cd /home/gm/Dev/ra-py/scripts; try, run ('/home/hm/Dev/ra-py/scripts/mat2json'); end; quit"
+
+
+
+Geometrical Acoutics based on the Ray Tracing Method
+----------------------------------------------------
+
+1-
+    * determine the inital direction and energy for each ray (start with a
+    sphere tessellation)
+
+2-
+    * determine the next plane the ray will hit (point-in-polygon test)
+    * determine with how much energy it hits the target considering attenuation
+    due to the absorption of the air and the length of the travelled path
+    * determine how much energy is absorbed by the wall considering the angle of
+    incidence
+    * determine the new direction of the ray upon reflection considering the
+    scattering coefficient (becoming specular or diffuse)
+    * check if the energy of the ray is below a certain threshold considering
+    the reverberation time (a decay of 60dB)
+
+3-
+    * determine if any of the receivers were crossed and for how long (and
+    length)
+

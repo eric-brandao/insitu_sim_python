@@ -1,0 +1,8 @@
+.venv/
+.vscode/
+*.pyc
+build
+eigen
+pybind11
+*.so
+

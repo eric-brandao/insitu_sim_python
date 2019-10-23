@@ -1,0 +1,52 @@
+title = 'Simple configuration'
+
+##################### algorithm controls ######################################
+[controls]
+freq_ini = 100.0
+freq_end = 10000.0
+freq_step = 100
+
+
+################### Air properties ############################
+[air]
+Temperature = 20.0          # Temperature in C
+hr = 50.0                   # Relative humidity %
+p_atm = 101325.0            # Atmosferic air pressure Pa
+
+
+################################################################
+[[sources]]  # element 0 of an array of sources
+position = [3.0, 2.333, 1.2]
+
+
+#[[sources]]  # element 1 of an array of sources
+#position = [10.0, -1.0, 1.0]
+
+
+# [[sources]]  # element 2 of an array of sources
+# ...
+
+##################################################################
+[[receivers]]  # element 0 of an array of receivers
+position = [11.0, 1.0, 1.2]
+
+
+[[receivers]]  # element 1 of an array of receivers
+position = [1.0, 2.0, 3.0]
+
+###################### Absorber #################################
+[porous]
+resistivity = 25000.0
+porosity = 0.98
+tortuosity = 1.01
+lam = 150e-6
+lam_l = 300e-6
+thickness = 0.025
+
+###################### Geometry #################################
+[geometry]
+
+
+################### Material database ##########################
+[material]
+mat_database = 'data/material/DataBase_Odeon.mat'

@@ -1,0 +1,46 @@
+title = 'Material configuration'
+
+##################### material list #############################
+[[material]]  # element 0 of an array of materials
+id = 3062
+s = 0.05
+
+[[material]]  # element 1 of an array of materials
+id = 11003
+s = 0.7
+
+[[material]]  # element 2 of an array of materials
+id = 4036
+s = 0.05
+
+[[material]]  # element 3 of an array of materials
+id = 4036
+s = 0.05
+
+[[material]]  # element 4 of an array of materials
+id = 4036
+s = 0.05
+
+[[material]]  # element 5 of an array of materials
+id = 4036
+s = 0.3
+
+[[material]]  # element 6 of an array of materials
+id = 4036
+s = 0.3
+
+[[material]]  # element 7 of an array of materials
+id = 4036
+s = 0.05
+
+[[material]]  # element 8 of an array of materials
+id = 4036
+s = 0.05
+
+[[material]]  # element 9 of an array of materials
+id = 4035
+s = 0.2
+
+
+
+
