@@ -8,8 +8,8 @@ os.chdir(os.path.dirname(os.path.realpath(__file__)))
 #pprint(sys.path)
 
 
-from insitu.insitu_simu import main
+from insitu.locreac_inf_sphe_pu import locre_infsample_sph_pu
 
 
-main()
+locre_infsample_sph_pu()
 
