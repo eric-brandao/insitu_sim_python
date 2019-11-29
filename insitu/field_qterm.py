@@ -1,18 +1,21 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 # from insitu.controlsair import load_cfg
 import scipy.integrate as integrate
 import scipy as spy
 import time
 import sys
 from progress.bar import Bar, IncrementalBar, FillingCirclesBar, ChargingBar
+import pickle
 
 class LocallyReactiveInfSph(object):
     '''
     A class to calculate the sound pressure and particle velocity
     using the q-term formulation (exact for spherical waves on locally reactive and
     infinite samples)
-    The inputs are the objects: air, controls, material, sources, receivers 
+    The inputs are the objects: air, controls, material, sources, receivers
     '''
     def __init__(self, air, controls, material, sources, receivers):
         self.air = air
@@ -21,6 +24,8 @@ class LocallyReactiveInfSph(object):
         self.sources = sources
         self.receivers = receivers
         self.beta = (self.air.rho0 * self.air.c0) / self.material.Zs  # normalized surface admitance
+        self.pres_s = []
+        self.uz_s = []
         # print(self.beta)
         # self.beta = (self.air.rho0 * self.air.c0) / self.material.Zs  # normalized surface admitance
 
@@ -48,12 +53,12 @@ class LocallyReactiveInfSph(object):
             pressure for a receiver. Each column is a set of sound pressures measured
             by the receivers for a given frequency
         '''
-        self.pres_s = []
+        # self.pres_s = []
         for js, s_coord in enumerate(self.sources.coord):
             hs = s_coord[2] # source height
             pres_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
             for jrec, r_coord in enumerate(self.receivers.coord):
-                r = (r_coord[0]**2 + r_coord[1]**2)**0.5 # horizontal distance source-receiver
+                r = ((s_coord[0] - r_coord[0])**2 + (s_coord[1] - r_coord[1]**2))**0.5 # horizontal distance source-receiver
                 zr = r_coord[2]  # receiver height
                 r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5
                 r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
@@ -79,34 +84,84 @@ class LocallyReactiveInfSph(object):
                 bar.finish()
             self.pres_s.append(pres_rec)
 
-    # def uz_loc(self):
-    #     # setup progressbar
-    #     bar = ChargingBar('Processing particle velocity z-dir (q-term)', max=len(self.k0), suffix='%(percent)d%%')
-    #     uz = []
-    #     for jf, k0 in enumerate(self.k0):
-    #         f_qr = lambda q: np.real(((np.exp(-q * k0 * self.beta[jf])) *
-    #             ((np.exp(-1j * k0 * (self.r_r**2 + (self.h_s + self.z_r - 1j*q)**2)**0.5)) /
-    #             ((self.r_r**2 + (self.h_s + self.z_r - 1j*q)**2) ** 0.5))) *
-    #             ((self.h_s + self.z_r - 1j*q) / (self.r_r**2 + (self.h_s + self.z_r - 1j*q)**2)**0.5) *
-    #             (1 + (1 / (1j * k0 * (self.r_r**2 + (self.h_s + self.z_r - 1j*q)**2)**0.5))))
-    #         f_qi = lambda q: np.imag(((np.exp(-q * k0 * self.beta[jf])) *
-    #             ((np.exp(-1j * k0 * (self.r_r**2 + (self.h_s + self.z_r - 1j*q)**2)**0.5)) /
-    #             ((self.r_r**2 + (self.h_s + self.z_r - 1j*q)**2) ** 0.5))) *
-    #             ((self.h_s + self.z_r - 1j*q) / (self.r_r**2 + (self.h_s + self.z_r - 1j*q)**2)**0.5) *
-    #             (1 + (1 / (1j * k0 * (self.r_r**2 + (self.h_s + self.z_r - 1j*q)**2)**0.5))))
-    #         Iq_real = integrate.quad(f_qr, 0.0, 20.0)
-    #         Iq_imag = integrate.quad(f_qi, 0.0, 20.0)
-    #         Iq = Iq_real[0] + 1j * Iq_imag[0]
-    #         uz.append((np.exp(-1j * k0 * self.r_1) / self.r_1) *
-    #             (1 + (1 / (1j * k0 * self.r_1))) * ((self.h_s - self.r_r)/self.r_1) -
-    #             (np.exp(-1j * k0 * self.r_2) / self.r_2) *
-    #             (1 + (1 / (1j * k0 * self.r_2))) * ((self.h_s + self.r_r)/self.r_2) +
-    #             2 * k0 * self.beta[jf] * Iq)
-    #         # Progress bar stuff
-    #         bar.next()
-    #     bar.finish()
-    #     self.uz = np.array(uz, dtype = np.csingle)
-    #     return self.uz
+    def uz_loc(self, upper_int_limit = 20):
+        '''
+        This method calculates the sound particle velocity spectrum (z-dir) for all sources and receivers
+        Inputs:
+            upper_int_limit (default 20) - upper integral limit for truncation
+        Outputs:
+            uz_s - this is an array of objects. Inside each object there is a
+            (N_rec x N_freq) matrix. Each line of the matrix is a spectrum of a particle
+            velocity (z-dir) for a receiver. Each column is a set of particle velocity (z-dir)
+            measured by the receivers for a given frequency
+        '''
+        # setup progressbar
+        for js, s_coord in enumerate(self.sources.coord):
+            hs = s_coord[2] # source height
+            uz_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
+            for jrec, r_coord in enumerate(self.receivers.coord):
+                r = ((s_coord[0] - r_coord[0])**2 + (s_coord[1] - r_coord[1]**2))**0.5 # horizontal distance source-receiver
+                zr = r_coord[2]  # receiver height
+                r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5
+                r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
+                print('Calculate particle vel. (z-dir) for source {} and receiver {}'.format(js+1, jrec+1))
+                bar = ChargingBar('Processing particle velocity z-dir (q-term)',
+                    max=len(self.controls.k0), suffix='%(percent)d%%')
+                for jf, k0 in enumerate(self.controls.k0):
+                    # f_qr = lambda q: np.real((np.exp(-q * k0 * self.beta[jf])) *
+                    #     ((np.exp(-1j * k0 * (r**2 + (hs + zr - 1j*q)**2)**0.5)) /
+                    #     ((r**2 + (hs + zr - 1j*q)**2) ** 0.5)))
+                    f_qr = lambda q: np.real(((np.exp(-q * k0 * self.beta[jf])) *
+                        ((np.exp(-1j * k0 * (r**2 + (hs + zr - 1j*q)**2)**0.5)) /
+                        ((r**2 + (hs + zr - 1j*q)**2) ** 0.5))) *
+                        ((hs + zr - 1j*q) / (r**2 + (hs + zr - 1j*q)**2)**0.5) *
+                        (1 + (1 / (1j * k0 * (r**2 + (hs + zr - 1j*q)**2)**0.5))))
+
+                    f_qi = lambda q: np.imag(((np.exp(-q * k0 * self.beta[jf])) *
+                        ((np.exp(-1j * k0 * (r**2 + (hs + zr - 1j*q)**2)**0.5)) /
+                        ((r**2 + (hs + zr - 1j*q)**2) ** 0.5))) *
+                        ((hs + zr - 1j*q) / (r**2 + (hs + zr - 1j*q)**2)**0.5) *
+                        (1 + (1 / (1j * k0 * (r**2 + (hs + zr - 1j*q)**2)**0.5))))
+                    Iq_real = integrate.quad(f_qr, 0.0, upper_int_limit)
+                    Iq_imag = integrate.quad(f_qi, 0.0, upper_int_limit)
+                    Iq = Iq_real[0] + 1j * Iq_imag[0]
+                    uz_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1) *\
+                        (1 + (1 / (1j * k0 * r1))) * ((hs - r)/r1) -\
+                        (np.exp(-1j * k0 * r2) / r2) *\
+                        (1 + (1 / (1j * k0 * r2))) * ((hs + r)/r2) +\
+                        2 * k0 * self.beta[jf] * Iq
+                    # pres.append((np.exp(-1j * k0 * r1) / r1) +
+                    #     (np.exp(-1j * k0 * r2) / r2) - 2 * k0 * self.beta[jf] * Iq)
+                    # Progress bar stuff
+                    bar.next()
+                bar.finish()
+            self.uz_s.append(uz_rec)
+
+        # uz = []
+        # for jf, k0 in enumerate(self.k0):
+        #     f_qr = lambda q: np.real(((np.exp(-q * k0 * self.beta[jf])) *
+        #         ((np.exp(-1j * k0 * (self.r_r**2 + (self.h_s + self.z_r - 1j*q)**2)**0.5)) /
+        #         ((self.r_r**2 + (self.h_s + self.z_r - 1j*q)**2) ** 0.5))) *
+        #         ((self.h_s + self.z_r - 1j*q) / (self.r_r**2 + (self.h_s + self.z_r - 1j*q)**2)**0.5) *
+        #         (1 + (1 / (1j * k0 * (self.r_r**2 + (self.h_s + self.z_r - 1j*q)**2)**0.5))))
+        #     f_qi = lambda q: np.imag(((np.exp(-q * k0 * self.beta[jf])) *
+        #         ((np.exp(-1j * k0 * (self.r_r**2 + (self.h_s + self.z_r - 1j*q)**2)**0.5)) /
+        #         ((self.r_r**2 + (self.h_s + self.z_r - 1j*q)**2) ** 0.5))) *
+        #         ((self.h_s + self.z_r - 1j*q) / (self.r_r**2 + (self.h_s + self.z_r - 1j*q)**2)**0.5) *
+        #         (1 + (1 / (1j * k0 * (self.r_r**2 + (self.h_s + self.z_r - 1j*q)**2)**0.5))))
+        #     Iq_real = integrate.quad(f_qr, 0.0, 20.0)
+        #     Iq_imag = integrate.quad(f_qi, 0.0, 20.0)
+        #     Iq = Iq_real[0] + 1j * Iq_imag[0]
+        #     uz.append((np.exp(-1j * k0 * self.r_1) / self.r_1) *
+        #         (1 + (1 / (1j * k0 * self.r_1))) * ((self.h_s - self.r_r)/self.r_1) -
+        #         (np.exp(-1j * k0 * self.r_2) / self.r_2) *
+        #         (1 + (1 / (1j * k0 * self.r_2))) * ((self.h_s + self.r_r)/self.r_2) +
+        #         2 * k0 * self.beta[jf] * Iq)
+        #     # Progress bar stuff
+        #     bar.next()
+        # bar.finish()
+        # self.uz = np.array(uz, dtype = np.csingle)
+        # return self.uz
 
     # def ur_loc(self):
     #     # setup progressbar
@@ -160,22 +215,28 @@ class LocallyReactiveInfSph(object):
         plt.setp(axs, xlim=(0.8 * self.controls.freq[0], 1.2*self.controls.freq[-1]))
         plt.show()
 
-    # def plot_uz(self):
-    #     # plt.figure(2)
-    #     figuz, axs = plt.subplots(2,1)
-    #     axs[0].semilogx(self.freq, 20 * np.log10(np.abs(self.uz) / 50e-9), 'k-', label='uz q-term')
-    #     axs[0].grid(linestyle = '--', which='both')
-    #     axs[0].legend(loc = 'upper right')
-    #     # axs[0].set(xlabel = 'Frequency [Hz]')
-    #     axs[0].set(ylabel = '|u_z(f)| [dB]')
-    #     axs[1].semilogx(self.freq, np.angle(self.pres), 'k-', label='pres q-term')
-    #     axs[1].grid(linestyle = '--', which='both')
-    #     axs[1].set(xlabel = 'Frequency [Hz]')
-    #     axs[1].set(ylabel = 'phase [-]')
-    #     plt.setp(axs, xticks=[50, 100, 500, 1000, 5000, 10000],
-    #     xticklabels=['50', '100', '500', '1000', '5000', '10000'])
-    #     plt.setp(axs, xlim=(0.8 * self.freq[0], 1.2*self.freq[-1]))
-    #     # plt.show()
+    def plot_uz(self):
+        # plt.figure(2)
+        figuz, axs = plt.subplots(2,1)
+        for js, uz_s_mtx in enumerate(self.uz_s):
+            for jrec, uz_spk in enumerate(uz_s_mtx):
+                leg = 'source ' + str(js+1) + ' receiver ' + str(jrec+1)
+                axs[0].semilogx(self.controls.freq, 20 * np.log10(np.abs(uz_spk) / 5e-8), label = leg)
+                # axs[0].semilogx(self.controls.freq, np.abs(p_spk), label = leg)
+        axs[0].grid(linestyle = '--', which='both')
+        axs[0].legend(loc = 'best')
+        # axs[0].set(xlabel = 'Frequency [Hz]')
+        axs[0].set(ylabel = '|uz(f)| [dB]')
+        for uz_s_mtx in self.uz_s:
+            for uz_ph in uz_s_mtx:
+                axs[1].semilogx(self.controls.freq, np.angle(uz_ph), label=leg)
+        axs[1].grid(linestyle = '--', which='both')
+        axs[1].set(xlabel = 'Frequency [Hz]')
+        axs[1].set(ylabel = 'phase [-]')
+        plt.setp(axs, xticks=[50, 100, 500, 1000, 5000, 10000],
+        xticklabels=['50', '100', '500', '1000', '5000', '10000'])
+        plt.setp(axs, xlim=(0.8 * self.controls.freq[0], 1.2*self.controls.freq[-1]))
+        plt.show()
 
     # def plot_ur(self):
     #     # plt.figure(2)
@@ -194,7 +255,80 @@ class LocallyReactiveInfSph(object):
     #     plt.setp(axs, xlim=(0.8 * self.freq[0], 1.2*self.freq[-1]))
     #     # plt.show()
 
+    def plot_scene(self, vsam_size = 50):
+        '''
+        a simple plot of the scene using matplotlib - not redered
+        '''
+        fig = plt.figure()
+        fig.canvas.set_window_title("Measurement scene")
+        ax = fig.gca(projection='3d')
+        # vertexes plot
+        vertices = np.array([[-vsam_size/2, -vsam_size/2, 0.0],
+            [vsam_size/2, -vsam_size/2, 0.0],
+            [vsam_size/2, vsam_size/2, 0.0],
+            [-vsam_size/2, vsam_size/2, 0.0]])
+        # ax.scatter(vertices[:,0], vertices[:,1],
+        #     vertices[:,2], color='blue')
+        verts = [list(zip(vertices[:,0],
+                vertices[:,1], vertices[:,2]))]
+        # patch plot
+        collection = Poly3DCollection(verts,
+            linewidths=1, alpha=0.9, edgecolor = 'gray')
+        collection.set_facecolor('silver')
+        ax.add_collection3d(collection)
+        for s_coord in self.sources.coord:
+            ax.scatter(s_coord[0], s_coord[1], s_coord[2],
+                color='black',  marker = "*", s=500)
+        for r_coord in self.receivers.coord:
+            ax.scatter(r_coord[0], r_coord[1], r_coord[2],
+                color='blue',  marker = "o")
+        ax.set_xlabel('X axis')
+        plt.xticks([], [])
+        ax.set_ylabel('Y axis')
+        plt.yticks([], [])
+        ax.set_zlabel('Z axis')
+        # ax.grid(linestyle = ' ', which='none')
+        ax.set_xlim((-vsam_size/2, vsam_size/2))
+        ax.set_ylim((-vsam_size/2, vsam_size/2))
+        ax.set_zlim((0, 1.2*np.amax(np.linalg.norm(self.sources.coord))))
+        ax.set_zticks((0, 1.2*np.amax(np.linalg.norm(self.sources.coord))))
+        ax.view_init(elev=5, azim=-55)
+        # ax.invert_zaxis()
+        plt.show() # show plot
 
+    def save(self, filename = 'my_qterm', path = '/home/eric/dev/insitu/data/'):
+        '''
+        This method is used to save the simulation object
+        '''
+        self.path_filename = path + filename + '.pkl'
+        f = open(self.path_filename, 'wb')
+        pickle.dump(self.__dict__, f, 2)
+        f.close()
+
+    def load(self, filename = 'my_qterm', path = '/home/eric/dev/insitu/data/'):
+        '''
+        This method is used to load a simulation object. You build a empty object
+        of the class and load a saved one. It will overwrite the empty one.
+        '''
+        lpath_filename = path + filename + '.pkl'
+        f = open(lpath_filename, 'rb')
+        tmp_dict = pickle.load(f)
+        f.close()
+        self.__dict__.update(tmp_dict)
+
+def load_simu(filename = 'my_qterm', path = '/home/eric/dev/insitu/data/'):
+    '''
+    This function is used to load a simulation object. You build a empty object
+    of the class and load a saved one. It will overwrite the empty one.
+    '''
+    # with open(path + filename+'.pkl', 'rb') as input:
+    #     simu_data = pickle.load(input)
+    # return simu_data
+    lpath_filename = path + filename + '.pkl'
+    f = open(lpath_filename, 'rb')
+    tmp_dict = pickle.load(f)
+    f.close()
+    return tmp_dict.update(tmp_dict)
 
 # class LocallyReactiveInfSph(object):
 #     '''
