@@ -96,7 +96,7 @@ class AlgControls():
         self.freq_init = np.array(freq_init, dtype = np.float32)
         self.freq_end = np.array(freq_end, dtype = np.float32)
         self.freq_step = np.array(freq_step, dtype = np.float32)
-        self.freq = np.arange(self.freq_init, self.freq_end, self.freq_step, dtype = np.float32)
+        self.freq = np.arange(self.freq_init, self.freq_end + self.freq_step, self.freq_step, dtype = np.float32)
         self.w = 2.0 * np.pi * self.freq
         self.k0 = self.w / c0
 

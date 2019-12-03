@@ -13,7 +13,7 @@ from insitu.field_qterm import LocallyReactiveInfSph, load_simu
 from insitu.qterm_estimation import ImpedanceDeductionQterm
 
 # import impedance-py/C++ module
-import insitu_cpp
+# import insitu_cpp
 
 # step 1 - set air properties (2 opts: (i) - set manually; (ii) - by toml file)
 # (i) - set manually;
@@ -36,12 +36,12 @@ sources = Source(coord = [0.0, 0.0, 0.3])
 receivers = Receiver(coord = [0.0, 0.0, 0.01])
 
 # step 6 - setup scene and run field calculations
-# field = LocallyReactiveInfSph(air, controls, material, sources, receivers)
+field = LocallyReactiveInfSph(air, controls, material, sources, receivers)
 # field.p_loc()
 # field.uz_loc()
-# field.plot_pres()
-# field.plot_uz()
-# # field.plot_scene()
+# # field.plot_pres()
+# # field.plot_uz()
+# # # field.plot_scene()
 # field.save(filename='pu_sim1')
 
 # step 7 - load field

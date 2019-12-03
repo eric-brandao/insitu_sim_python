@@ -13,7 +13,7 @@ from insitu.field_qterm import LocallyReactiveInfSph, load_simu
 from insitu.qterm_estimation import ImpedanceDeductionQterm
 
 # import impedance-py/C++ module
-import insitu_cpp
+# import insitu_cpp
 
 # step 1 - set air properties (2 opts: (i) - set manually; (ii) - by toml file)
 # (i) - set manually;
