@@ -5,7 +5,10 @@
 #include "bind_mod_doc.h"
 // #include "bind_cls_source.h"
 // #include "bind_cls_receiver.h"
+#include "bind_fun_bemflush_rmtx.h"
+#include "bind_fun_bemflush_mtx2.h"
 #include "bind_fun_bemflush_mtx.h"
+#include "bind_fun_bemflush_pscat.h"
 
 namespace py = pybind11;
 

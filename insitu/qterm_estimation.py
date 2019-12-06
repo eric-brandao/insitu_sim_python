@@ -23,7 +23,7 @@ class ImpedanceDeductionQterm(object):
         self.sources = sim_field.sources
         self.receivers = sim_field.receivers
         self.pres_s = sim_field.pres_s[source_num] #FixMe
-        self.uz_s = sim_field.uz_s[source_num] #FixMe
+        # self.uz_s = sim_field.uz_s[source_num] #FixMe
         # self.r1 = self.receivers.coord[0]
 
     def pw_pp(self):

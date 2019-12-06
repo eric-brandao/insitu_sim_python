@@ -20,29 +20,34 @@ Eigen::MatrixXcf bemflush_mtx(Eigen::MatrixX2f &el_center,
         // std::cout << "xy_center: " << xy_center << std::endl;
         // std::cout << x_center << std::endl;
         for (int j = 0; j < Nel; j++){
-            // Transform the coordinate system for integration between -1,1 and +1,+1
-            Eigen::RowVector4f xnode = node_x.row(j);
-            Eigen::RowVector4f ynode = node_y.row(j);
-            Eigen::RowVectorXf xzeta = xnode * Nzeta;
-            // std::cout << "size of xzeta: " << xzeta.size() << std::endl;
-            // std::cout << "size of xzeta: " << x_center.size() << std::endl;
-            // std::cout << "x_node: " << xnode << std::endl;
-            // std::cout << "    " <<  std::endl;
-            // std::cout << xzeta << std::endl;
-            Eigen::RowVectorXf yzeta = ynode * Nzeta;
-            // Calculate the distance from el center to transformed integration points
-            // Eigen::RowVectorXf r = (x_center - xzeta);
-            Eigen::RowVectorXf r = ((x_center - xzeta).array().pow(2.0)+
-                (y_center - yzeta).array().pow(2.0)).array().pow(0.5);
-            // Eigen::RowVectorXcf g = j1 * k0 * beta * Eigen::RowVectorXcf::Ones(r.cols());
-            Eigen::RowVectorXcf g = j1 * k0 * beta *(
-                (((-j1 * k0 * r.array()).exp()).array())/(4.0 * M_PI * r.array())) * jacobian;
-            // std::cout << "beta: " << beta << std::endl;
-            // std::cout << g << std::endl;
-            bem_mtx(i,j) = g * Nweights;
-            // g = j1 * k0 * beta
-            // Eigen::RowVectorXcf g(r.size());
-            // g = k0 * r;
+            if(i <= j){
+                // Transform the coordinate system for integration between -1,1 and +1,+1
+                Eigen::RowVector4f xnode = node_x.row(j);
+                Eigen::RowVector4f ynode = node_y.row(j);
+                Eigen::RowVectorXf xzeta = xnode * Nzeta;
+                // std::cout << "size of xzeta: " << xzeta.size() << std::endl;
+                // std::cout << "size of xzeta: " << x_center.size() << std::endl;
+                // std::cout << "x_node: " << xnode << std::endl;
+                // std::cout << "    " <<  std::endl;
+                // std::cout << xzeta << std::endl;
+                Eigen::RowVectorXf yzeta = ynode * Nzeta;
+                // Calculate the distance from el center to transformed integration points
+                // Eigen::RowVectorXf r = (x_center - xzeta);
+                Eigen::RowVectorXf r = ((x_center - xzeta).array().pow(2.0)+
+                    (y_center - yzeta).array().pow(2.0)).array().pow(0.5);
+                // Eigen::RowVectorXcf g = j1 * k0 * beta * Eigen::RowVectorXcf::Ones(r.cols());
+                Eigen::RowVectorXcf g = j1 * k0 * beta *(
+                    (((-j1 * k0 * r.array()).exp()).array())/(4.0 * M_PI * r.array())) * jacobian;
+                // std::cout << "beta: " << beta << std::endl;
+                // std::cout << g << std::endl;
+                bem_mtx(i,j) = g * Nweights;
+                // g = j1 * k0 * beta
+                // Eigen::RowVectorXcf g(r.size());
+                // g = k0 * r;
+            }
+            else{
+                bem_mtx(i,j) = bem_mtx(j,i);
+            }
         }// end of first loop
     }//end of second loop
     return bem_mtx;
