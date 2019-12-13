@@ -31,7 +31,7 @@ class Receiver():
         This method initializes a double receiver separated by z_dist. It will overwrite
         self.coord to be a matrix where each line gives a 3D coordinate for each receiver
         '''
-        self.coord = np.append(self.coord, [0.0, 0.0, self.coord[0,2]+z_dist])
+        self.coord = np.append(self.coord, [self.coord[0,0], self.coord[0,1], self.coord[0,2]+z_dist])
         self.coord = np.reshape(self.coord, (2,3))
 
     def line_array(self, line_len = 1.0, n_rec = 10):

@@ -11,8 +11,9 @@ from progress.bar import Bar, IncrementalBar, FillingCirclesBar, ChargingBar
 import pickle
 import time
 
-# import impedance-py/C++ module
+# import impedance-py/C++ module and other stuff
 import insitu_cpp
+from controlsair import plot_spk
 
 class BEMFlush(object):
     '''
@@ -56,7 +57,6 @@ class BEMFlush(object):
         # A Nel_x * Nel_y by 2 matrix containing the x and y coords of element centers
         self.el_center = np.zeros((Nel_x*Nel_y, 2), dtype = np.float32)
         self.jacobian = np.float32((el_size**2)/4.0)
-        print(self.jacobian)
         # x and y coordinates of elements edges
         xje = np.linspace(-Lx/2, Lx/2, Nel_x+1)
         yje = np.linspace(-Ly/2, Ly/2, Nel_y+1)
@@ -96,9 +96,9 @@ class BEMFlush(object):
             el_3Dcoord
         r_unpt = np.linalg.norm(rsel, axis = 1)
         # Assemble the r-matrix (this runs once and stays in memory for freq loop)
-        print("I am assembling a matrix of gauss distances once...")
-        r_mtx = insitu_cpp._bemflush_rmtx(self.el_center,
-            self.node_x, self.node_y, self.Nzeta)
+        # print("I am assembling a matrix of gauss distances once...")
+        # r_mtx = insitu_cpp._bemflush_rmtx(self.el_center,
+        #     self.node_x, self.node_y, self.Nzeta)
         # Set a time count for performance check
         tinit = time.time()
         bar = ChargingBar('Calculating the surface pressure for each frequency step',
@@ -107,13 +107,13 @@ class BEMFlush(object):
             fakebeta = np.array(0.02+1j*0.2)
             # Assemble the bem matrix (c++)
             # print("Assembling matrix for freq: {} Hz.".format(self.controls.freq[jf]))
-            # Version 1 (distances in loop)
-            # gij = insitu_cpp._bemflush_mtx(self.el_center, self.node_x, self.node_y,
-            # self.Nzeta, self.Nweights.T, k0, self.beta[jf])
+            #Version 1 (distances in loop)
+            gij = insitu_cpp._bemflush_mtx(self.el_center, self.node_x, self.node_y,
+            self.Nzeta, self.Nweights.T, k0, self.beta[jf])
 
             # Version 2 (distances in memory)
-            gij = insitu_cpp._bemflush_mtx2(self.Nweights.T,
-                r_mtx, self.jacobian, k0, self.beta[jf])
+            # gij = insitu_cpp._bemflush_mtx2(self.Nweights.T,
+            #     r_mtx, self.jacobian, k0, self.beta[jf])
             # Calculate the unperturbed pressure
             p_unpt = 2.0 * np.exp(-1j * k0 * r_unpt) / r_unpt
             # Solve system of equations
@@ -161,6 +161,41 @@ class BEMFlush(object):
                 bar.finish()
                     # print('p_fp for freq {} Hz is: {}'.format(self.controls.freq[jf], pres_rec[jrec, jf]))
             self.pres_s.append(pres_rec)
+
+    def uz_fps(self,):
+        '''
+        This method calculates the sound particle velocity spectrum (z-dir) for all sources and receivers
+        Inputs:
+        Outputs:
+            uz_s - this is an array of objects. Inside each object there is a
+            (N_rec x N_freq) matrix. Each line of the matrix is a spectrum of a particle
+            velocity (z-dir) for a receiver. Each column is a set of particle velocity (z-dir)
+            measured by the receivers for a given frequency
+        '''
+        # Loop the receivers
+        for js, s_coord in enumerate(self.sources.coord):
+            hs = s_coord[2] # source height
+            uz_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
+            for jrec, r_coord in enumerate(self.receivers.coord):
+                r = ((s_coord[0] - r_coord[0])**2.0 + (s_coord[1] - r_coord[1])**2.0)**0.5 # horizontal distance source-receiver
+                zr = r_coord[2]  # receiver height
+                r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5
+                r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
+                print('Calculate particle vel. (z-dir) for source {} and receiver {}'.format(js+1, jrec+1))
+                bar = ChargingBar('Processing particle velocity z-dir (q-term)',
+                    max=len(self.controls.k0), suffix='%(percent)d%%')
+                for jf, k0 in enumerate(self.controls.k0):
+                    uz_scat = insitu_cpp._bemflush_uzscat(r_coord, self.node_x, self.node_y,
+                        self.Nzeta, self.Nweights.T, k0, self.beta[jf], self.p_surface[:,jf])
+                    # print('p_scat for freq {} Hz is: {}'.format(self.controls.freq[jf], p_scat))
+                    uz_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1)*\
+                        (1 + (1 / (1j * k0 * r1)))* ((hs - zr)/r1)-\
+                        (np.exp(-1j * k0 * r2) / r2) *\
+                        (1 + (1 / (1j * k0 * r2))) * ((hs + zr)/r2) - uz_scat
+                    # Progress bar stuff
+                    bar.next()
+                bar.finish()
+            self.uz_s.append(uz_rec)
 
     def plot_scene(self, vsam_size = 2):
         '''
@@ -223,27 +258,16 @@ class BEMFlush(object):
         plt.show() # show plot
 
     def plot_pres(self):
-        # plt.figure(1)
-        figp, axs = plt.subplots(2,1)
-        for js, p_s_mtx in enumerate(self.pres_s):
-            for jrec, p_spk in enumerate(p_s_mtx):
-                leg = 'source ' + str(js+1) + ' receiver ' + str(jrec+1)
-                axs[0].semilogx(self.controls.freq, 20 * np.log10(np.abs(p_spk) / 20e-6), label = leg)
-                # axs[0].semilogx(self.controls.freq, np.abs(p_spk), label = leg)
-        axs[0].grid(linestyle = '--', which='both')
-        axs[0].legend(loc = 'best')
-        # axs[0].set(xlabel = 'Frequency [Hz]')
-        axs[0].set(ylabel = '|p(f)| [dB]')
-        for p_s_mtx in self.pres_s:
-            for p_ph in p_s_mtx:
-                axs[1].semilogx(self.controls.freq, np.angle(p_ph), label=leg)
-        axs[1].grid(linestyle = '--', which='both')
-        axs[1].set(xlabel = 'Frequency [Hz]')
-        axs[1].set(ylabel = 'phase [-]')
-        plt.setp(axs, xticks=[50, 100, 500, 1000, 5000, 10000],
-        xticklabels=['50', '100', '500', '1000', '5000', '10000'])
-        plt.setp(axs, xlim=(0.8 * self.controls.freq[0], 1.2*self.controls.freq[-1]))
-        plt.show()
+        '''
+        Method to plot the spectrum of the sound pressure
+        '''
+        plot_spk(self.controls.freq, self.pres_s, ref = 20e-6)
+
+    def plot_uz(self):
+        '''
+        Method to plot the spectrum of the particle velocity in zdir
+        '''
+        plot_spk(self.controls.freq, self.uz_s, ref = 5e-8)
 
     def plot_colormap(self, n_pts = 10):
         pass
@@ -259,6 +283,26 @@ class BEMFlush(object):
         #     r_fpts[jrec, :] = np.array([xv[jrec,jrec],
         #         0.0, zv[jrec,jrec]])
         # print(r_fpts)
-        
+
+    def save(self, filename = 'my_bemflush', path = '/home/eric/dev/insitu/data/'):
+        '''
+        This method is used to save the simulation object
+        '''
+        filename = filename + '_Lx_' + str(self.Lx) + 'm_Ly_' + str(self.Ly) + 'm'
+        self.path_filename = path + filename + '.pkl'
+        f = open(self.path_filename, 'wb')
+        pickle.dump(self.__dict__, f, 2)
+        f.close()
+
+    def load(self, filename = 'my_qterm', path = '/home/eric/dev/insitu/data/'):
+        '''
+        This method is used to load a simulation object. You build a empty object
+        of the class and load a saved one. It will overwrite the empty one.
+        '''
+        lpath_filename = path + filename + '.pkl'
+        f = open(lpath_filename, 'rb')
+        tmp_dict = pickle.load(f)
+        f.close()
+        self.__dict__.update(tmp_dict)
 
 

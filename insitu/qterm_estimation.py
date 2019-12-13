@@ -23,7 +23,14 @@ class ImpedanceDeductionQterm(object):
         self.sources = sim_field.sources
         self.receivers = sim_field.receivers
         self.pres_s = sim_field.pres_s[source_num] #FixMe
-        # self.uz_s = sim_field.uz_s[source_num] #FixMe
+        try:
+            self.pres_s = sim_field.pres_s[source_num] #FixMe
+        except:
+            self.pres_s = []
+        try:
+            self.uz_s = sim_field.uz_s[source_num] #FixMe
+        except:
+            self.uz_s = []
         # self.r1 = self.receivers.coord[0]
 
     def pw_pp(self):
@@ -106,13 +113,15 @@ class ImpedanceDeductionQterm(object):
         Zm = (self.pres_s[0] / self.uz_s[0]) #/ (self.air.rho0 * self.air.c0)
         r = ((self.sources.coord[0][0] - self.receivers.coord[0,0])**2 +
             (self.sources.coord[0][1] - self.receivers.coord[0,1])**2)**0.5
+        # print(self.pres_s[0:10])
+        # print(self.uz_s[0:10])
         # ((s_coord[0] - r_coord[0])**2 + (s_coord[1] - r_coord[1]**2)) self.rec1.r_r
         h_s = self.sources.coord[0][2]
+        
         # determine the farthest microphone
         zr = self.receivers.coord[0,2]
         r1 = (r ** 2 + (h_s - zr) ** 2) ** 0.5
         r2 = (r ** 2 + (h_s + zr) ** 2) ** 0.5
-
         self.Vp_pwa_pu = (r2/r1) * ((Zm * ((h_s - zr)/r1) * (1/(1j * k0 * r1) + 1) - 1)/\
             (Zm * ((h_s + zr)/r2) * (1/(1j * k0 * r2) + 1) + 1)) * np.exp(-1j*k0*(r1-r2))
         self.Zs_pwa_pu = ((1 + self.Vp_pwa_pu) / (1 - self.Vp_pwa_pu)) * \
@@ -276,6 +285,8 @@ def p_integral(k0, Zg, hs, r, zr):
         ((r**2 + (hs + zr - 1j*q)**2) ** 0.5)))
     Iq_real = integrate.quad(f_qr, 0.0, 20.0)
     Iq_imag = integrate.quad(f_qi, 0.0, 20.0)
+    # Iq_real = integrate.quadrature(f_qr, 0.0, 20.0, maxiter = 500)
+    # Iq_imag = integrate.quadrature(f_qi, 0.0, 20.0, maxiter = 500)
     Iq = Iq_real[0] + 1j * Iq_imag[0]
     pres = (np.exp(-1j * k0 * r1) / r1) + \
         (np.exp(-1j * k0 * r2) / r2) - 2 * k0 * beta * Iq
@@ -300,11 +311,13 @@ def uz_integral(k0, Zg, hs, r, zr):
         (1 + (1 / (1j * k0 * (r**2 + (hs + zr - 1j*q)**2)**0.5))))
     Iq_real = integrate.quad(f_qr, 0.0, 20.0)
     Iq_imag = integrate.quad(f_qi, 0.0, 20.0)
+    # Iq_real = integrate.quadrature(f_qr, 0.0, 20.0, maxiter = 500)
+    # Iq_imag = integrate.quadrature(f_qi, 0.0, 20.0, maxiter = 500)
     Iq = Iq_real[0] + 1j * Iq_imag[0]
     uz = (np.exp(-1j * k0 * r1) / r1) *\
-        (1 + (1 / (1j * k0 * r1))) * ((hs - r)/r1) -\
+        (1 + (1 / (1j * k0 * r1))) * ((hs - zr)/r1) -\
         (np.exp(-1j * k0 * r2) / r2) *\
-        (1 + (1 / (1j * k0 * r2))) * ((hs + r)/r2) +\
+        (1 + (1 / (1j * k0 * r2))) * ((hs + zr)/r2) +\
         2 * k0 * beta * Iq
     return uz
 

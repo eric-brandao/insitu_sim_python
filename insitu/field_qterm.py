@@ -9,6 +9,7 @@ import time
 import sys
 from progress.bar import Bar, IncrementalBar, FillingCirclesBar, ChargingBar
 import pickle
+from controlsair import plot_spk
 
 class LocallyReactiveInfSph(object):
     '''
@@ -58,7 +59,7 @@ class LocallyReactiveInfSph(object):
             hs = s_coord[2] # source height
             pres_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
             for jrec, r_coord in enumerate(self.receivers.coord):
-                r = ((s_coord[0] - r_coord[0])**2 + (s_coord[1] - r_coord[1]**2))**0.5 # horizontal distance source-receiver
+                r = ((s_coord[0] - r_coord[0])**2 + (s_coord[1] - r_coord[1])**2)**0.5 # horizontal distance source-receiver
                 zr = r_coord[2]  # receiver height
                 r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5
                 r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
@@ -75,6 +76,8 @@ class LocallyReactiveInfSph(object):
                         ((r**2 + (hs + zr - 1j*q)**2) ** 0.5)))
                     Iq_real = integrate.quad(f_qr, 0.0, upper_int_limit)
                     Iq_imag = integrate.quad(f_qi, 0.0, upper_int_limit)
+                    # Iq_real = integrate.quadrature(f_qr, 0.0, upper_int_limit, maxiter = 500)
+                    # Iq_imag = integrate.quadrature(f_qi, 0.0, upper_int_limit, maxiter = 500)
                     Iq = Iq_real[0] + 1j * Iq_imag[0]
                     pres_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1) + (np.exp(-1j * k0 * r2) / r2) - 2 * k0 * self.beta[jf] * Iq
                     # pres.append((np.exp(-1j * k0 * r1) / r1) +
@@ -100,7 +103,7 @@ class LocallyReactiveInfSph(object):
             hs = s_coord[2] # source height
             uz_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
             for jrec, r_coord in enumerate(self.receivers.coord):
-                r = ((s_coord[0] - r_coord[0])**2 + (s_coord[1] - r_coord[1]**2))**0.5 # horizontal distance source-receiver
+                r = ((s_coord[0] - r_coord[0])**2.0 + (s_coord[1] - r_coord[1])**2.0)**0.5 # horizontal distance source-receiver
                 zr = r_coord[2]  # receiver height
                 r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5
                 r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
@@ -124,11 +127,13 @@ class LocallyReactiveInfSph(object):
                         (1 + (1 / (1j * k0 * (r**2 + (hs + zr - 1j*q)**2)**0.5))))
                     Iq_real = integrate.quad(f_qr, 0.0, upper_int_limit)
                     Iq_imag = integrate.quad(f_qi, 0.0, upper_int_limit)
+                    # Iq_real = integrate.quadrature(f_qr, 0.0, upper_int_limit, maxiter = 500)
+                    # Iq_imag = integrate.quadrature(f_qi, 0.0, upper_int_limit, maxiter = 500)
                     Iq = Iq_real[0] + 1j * Iq_imag[0]
-                    uz_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1) *\
-                        (1 + (1 / (1j * k0 * r1))) * ((hs - r)/r1) -\
+                    uz_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1)*\
+                        (1 + (1 / (1j * k0 * r1)))* ((hs - zr)/r1)-\
                         (np.exp(-1j * k0 * r2) / r2) *\
-                        (1 + (1 / (1j * k0 * r2))) * ((hs + r)/r2) +\
+                        (1 + (1 / (1j * k0 * r2))) * ((hs + zr)/r2)+\
                         2 * k0 * self.beta[jf] * Iq
                     # pres.append((np.exp(-1j * k0 * r1) / r1) +
                     #     (np.exp(-1j * k0 * r2) / r2) - 2 * k0 * self.beta[jf] * Iq)
@@ -193,50 +198,17 @@ class LocallyReactiveInfSph(object):
     #     return self.ur
 
     def plot_pres(self):
-        # plt.figure(1)
-        figp, axs = plt.subplots(2,1)
-        for js, p_s_mtx in enumerate(self.pres_s):
-            for jrec, p_spk in enumerate(p_s_mtx):
-                leg = 'source ' + str(js+1) + ' receiver ' + str(jrec+1)
-                axs[0].semilogx(self.controls.freq, 20 * np.log10(np.abs(p_spk) / 20e-6), label = leg)
-                # axs[0].semilogx(self.controls.freq, np.abs(p_spk), label = leg)
-        axs[0].grid(linestyle = '--', which='both')
-        axs[0].legend(loc = 'best')
-        # axs[0].set(xlabel = 'Frequency [Hz]')
-        axs[0].set(ylabel = '|p(f)| [dB]')
-        for p_s_mtx in self.pres_s:
-            for p_ph in p_s_mtx:
-                axs[1].semilogx(self.controls.freq, np.angle(p_ph), label=leg)
-        axs[1].grid(linestyle = '--', which='both')
-        axs[1].set(xlabel = 'Frequency [Hz]')
-        axs[1].set(ylabel = 'phase [-]')
-        plt.setp(axs, xticks=[50, 100, 500, 1000, 5000, 10000],
-        xticklabels=['50', '100', '500', '1000', '5000', '10000'])
-        plt.setp(axs, xlim=(0.8 * self.controls.freq[0], 1.2*self.controls.freq[-1]))
-        plt.show()
+        '''
+        Method to plot the spectrum of the sound pressure
+        '''
+        plot_spk(self.controls.freq, self.pres_s, ref = 20e-6)
 
     def plot_uz(self):
-        # plt.figure(2)
-        figuz, axs = plt.subplots(2,1)
-        for js, uz_s_mtx in enumerate(self.uz_s):
-            for jrec, uz_spk in enumerate(uz_s_mtx):
-                leg = 'source ' + str(js+1) + ' receiver ' + str(jrec+1)
-                axs[0].semilogx(self.controls.freq, 20 * np.log10(np.abs(uz_spk) / 5e-8), label = leg)
-                # axs[0].semilogx(self.controls.freq, np.abs(p_spk), label = leg)
-        axs[0].grid(linestyle = '--', which='both')
-        axs[0].legend(loc = 'best')
-        # axs[0].set(xlabel = 'Frequency [Hz]')
-        axs[0].set(ylabel = '|uz(f)| [dB]')
-        for uz_s_mtx in self.uz_s:
-            for uz_ph in uz_s_mtx:
-                axs[1].semilogx(self.controls.freq, np.angle(uz_ph), label=leg)
-        axs[1].grid(linestyle = '--', which='both')
-        axs[1].set(xlabel = 'Frequency [Hz]')
-        axs[1].set(ylabel = 'phase [-]')
-        plt.setp(axs, xticks=[50, 100, 500, 1000, 5000, 10000],
-        xticklabels=['50', '100', '500', '1000', '5000', '10000'])
-        plt.setp(axs, xlim=(0.8 * self.controls.freq[0], 1.2*self.controls.freq[-1]))
-        plt.show()
+        '''
+        Method to plot the spectrum of the particle velocity in zdir
+        '''
+        plot_spk(self.controls.freq, self.uz_s, ref = 5e-8)
+
 
     # def plot_ur(self):
     #     # plt.figure(2)
