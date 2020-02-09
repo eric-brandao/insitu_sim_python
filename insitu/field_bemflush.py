@@ -137,16 +137,24 @@ class BEMFlush(object):
             by the receivers for a given frequency
         '''
         # Loop the receivers
+        self.pres_s = []
         for js, s_coord in enumerate(self.sources.coord):
             hs = s_coord[2] # source height
             pres_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
             for jrec, r_coord in enumerate(self.receivers.coord):
-                r = ((s_coord[0] - r_coord[0])**2 + (s_coord[1] - r_coord[1]**2))**0.5 # horizontal distance source-receiver
+                xdist = (s_coord[0] - r_coord[0])**2.0
+                ydist = (s_coord[1] - r_coord[1])**2.0
+                r = (xdist + ydist)**0.5 # horizontal distance source-receiver
+
+                # print((s_coord[0] - r_coord[0])**2)
+                # print((s_coord[1] - r_coord[1])**2)
+                # print((s_coord[0] - r_coord[0])**2 + (s_coord[1] - r_coord[1])**2)
+                # print(((s_coord[0] - r_coord[0])**2 + (s_coord[1] - r_coord[1])**2)**0.5)
                 zr = r_coord[2]  # receiver height
                 r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5
                 r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
                 # print('Calculate p_scat and p_fp for rec: {}'.format(r_coord))
-                print('Calculate sound pressure for source {} and receiver {}'.format(js+1, jrec+1))
+                print('Calculate sound pressure for source {} at ({}) and receiver {} at ({})'.format(js+1, s_coord, jrec+1, r_coord))
                 bar = ChargingBar('Processing sound pressure at field point', max=len(self.controls.k0), suffix='%(percent)d%%')
                 for jf, k0 in enumerate(self.controls.k0):
                     # print('the ps passed is: {}'.format(self.p_surface[:,jf]))
@@ -197,7 +205,7 @@ class BEMFlush(object):
                 bar.finish()
             self.uz_s.append(uz_rec)
 
-    def plot_scene(self, vsam_size = 2):
+    def plot_scene(self, vsam_size = 2, mesh = True):
         '''
         a simple plot of the scene using matplotlib - not redered
         '''
@@ -205,40 +213,42 @@ class BEMFlush(object):
         fig.canvas.set_window_title("Measurement scene")
         ax = fig.gca(projection='3d')
         # vertexes plot
-        for jel in np.arange(len(self.el_center)):
-            nodex_el = self.node_x[jel]
-            nodey_el = self.node_y[jel]
-            nodex = np.reshape(nodex_el.flatten(), (4, 1))
-            nodey = np.reshape(nodey_el.flatten(), (4, 1))
-            nodez = np.reshape(np.zeros(4), (4, 1))
-            vertices = np.concatenate((nodex, nodey, nodez), axis=1)
+        if mesh:
+            for jel in np.arange(len(self.el_center)):
+                nodex_el = self.node_x[jel]
+                nodey_el = self.node_y[jel]
+                nodex = np.reshape(nodex_el.flatten(), (4, 1))
+                nodey = np.reshape(nodey_el.flatten(), (4, 1))
+                nodez = np.reshape(np.zeros(4), (4, 1))
+                vertices = np.concatenate((nodex, nodey, nodez), axis=1)
+                verts = [list(zip(vertices[:,0],
+                        vertices[:,1], vertices[:,2]))]
+                # mesh points
+                for v in verts[0]:
+                    ax.scatter(v[0], v[1], v[2],
+                    color='black',  marker = "o", s=1)
+                # patch plot
+                collection = Poly3DCollection(verts,
+                    linewidths=1, alpha=0.9, edgecolor = 'gray', zorder=1)
+                collection.set_facecolor('silver')
+                ax.add_collection3d(collection)
+        # baffle
+        else:
+            vertices = np.array([[-self.Lx/2, -self.Ly/2, 0.0],
+                [self.Lx/2, -self.Ly/2, 0.0],
+                [self.Lx/2, self.Ly/2, 0.0],
+                [-self.Lx/2, self.Ly/2, 0.0]])
             verts = [list(zip(vertices[:,0],
                     vertices[:,1], vertices[:,2]))]
-            # mesh points
-            for v in verts[0]:
-                ax.scatter(v[0], v[1], v[2],
-                color='black',  marker = "o", s=1)
             # patch plot
             collection = Poly3DCollection(verts,
-                linewidths=1, alpha=0.9, edgecolor = 'gray', zorder=1)
+                linewidths=2, alpha=0.9, edgecolor = 'black', zorder=2)
             collection.set_facecolor('silver')
             ax.add_collection3d(collection)
-        # baffle
-        # vertices = np.array([[-vsam_size/2, -vsam_size/2, 0.0],
-        #     [vsam_size/2, -vsam_size/2, 0.0],
-        #     [vsam_size/2, vsam_size/2, 0.0],
-        #     [-vsam_size/2, vsam_size/2, 0.0]])
-        # verts = [list(zip(vertices[:,0],
-        #         vertices[:,1], vertices[:,2]))]
-        # # patch plot
-        # collection = Poly3DCollection(verts,
-        #     linewidths=2, alpha=0.1, edgecolor = 'black', zorder=2)
-        # ax.add_collection3d(collection)
-        # collection.set_facecolor('white')
         # plot source
         for s_coord in self.sources.coord:
             ax.scatter(s_coord[0], s_coord[1], s_coord[2],
-                color='black',  marker = "*", s=500)
+                color='red',  marker = "o", s=200)
         # plot receiver
         for r_coord in self.receivers.coord:
             ax.scatter(r_coord[0], r_coord[1], r_coord[2],
@@ -288,7 +298,7 @@ class BEMFlush(object):
         '''
         This method is used to save the simulation object
         '''
-        filename = filename + '_Lx_' + str(self.Lx) + 'm_Ly_' + str(self.Ly) + 'm'
+        filename = filename# + '_Lx_' + str(self.Lx) + 'm_Ly_' + str(self.Ly) + 'm'
         self.path_filename = path + filename + '.pkl'
         f = open(self.path_filename, 'wb')
         pickle.dump(self.__dict__, f, 2)

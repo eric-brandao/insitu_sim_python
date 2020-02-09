@@ -57,7 +57,7 @@ class Receiver():
         '''
         pass
 
-    def double_planar_array(self, x_len = 1.0, n_x = 10, y_len = 1.0, n_y = 10, z_dist = 0.01):
+    def double_planar_array(self, x_len = 1.0, n_x = 8, y_len = 1.0, n_y = 8, zr = 0.01, dz = 0.01):
         '''
         This method initializes a double planar array of receivers (z/xy plane)
         separated by z_dist. It will overwrite
@@ -68,7 +68,48 @@ class Receiver():
             y_len - the length of the y direction (array goes from -x_len/2 to +x_len/2).
             n_y - the number of receivers in the y direction
         '''
-        pass
+        # x and y coordinates of the grid
+        xc = np.linspace(-x_len/2, x_len/2, n_x)
+        yc = np.linspace(-y_len/2, y_len/2, n_y)
+        # meshgrid
+        xv, yv = np.meshgrid(xc, yc)
+        # initialize receiver list in memory
+        self.coord = np.zeros((2 * n_x * n_y, 3), dtype = np.float32)
+        self.coord[0:n_x*n_y, 0] = xv.flatten()
+        self.coord[0:n_x*n_y, 1] = yv.flatten()
+        self.coord[0:n_x*n_y, 2] = zr
+        self.coord[n_x*n_y:, 0] = xv.flatten()
+        self.coord[n_x*n_y:, 1] = yv.flatten()
+        self.coord[n_x*n_y:, 2] = zr + dz
+
+    def brick_array(self, x_len = 1.0, n_x = 8, y_len = 1.0, n_y = 8, z_len = 1.0, n_z = 8, zr = 0.1):
+        '''
+        This method initializes a regular three dimensional array of receivers It will overwrite
+        self.coord to be a matrix where each line gives a 3D coordinate for each receiver
+        Inputs:
+            x_len - the length of the x direction (array goes from -x_len/2 to +x_len/2).
+            n_x - the number of receivers in the x direction
+            y_len - the length of the y direction (array goes from -x_len/2 to +x_len/2).
+            n_y - the number of receivers in the y direction
+            z_len - the length of the z direction (array goes from zr to zr+z_len).
+            n_z - the number of receivers in the y direction
+            zr - distance from the closest receiver to the sample's surface
+        '''
+        # x and y coordinates of the grid
+        xc = np.linspace(-x_len/2, x_len/2, n_x)
+        yc = np.linspace(-y_len/2, y_len/2, n_y)
+        zc = np.linspace(zr, zr+z_len, n_z)
+        # print('sizes: xc {}, yc {}, zc {}'.format(xc.size, yc.size, zc.size))
+        # meshgrid
+        xv, yv, zv = np.meshgrid(xc, yc, zc)
+        # print('sizes: xv {}, yv {}, zv {}'.format(xv.shape, yv.shape, zv.shape))
+        # initialize receiver list in memory
+        self.coord = np.zeros((n_x * n_y * n_z, 3), dtype = np.float32)
+        self.coord[0:n_x*n_y*n_z, 0] = xv.flatten()
+        self.coord[0:n_x*n_y*n_z, 1] = yv.flatten()
+        self.coord[0:n_x*n_y*n_z, 2] = zv.flatten()
+        # print(self.coord)
+
 
     def spherical_array(self, radius = 0.1, n_rec = 32, center_dist = 0.5):
         '''

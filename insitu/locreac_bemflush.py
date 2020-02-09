@@ -22,7 +22,7 @@ from insitu.qterm_estimation import ImpedanceDeductionQterm
 # (i) - set manually;
 air = AirProperties(temperature = 20)
 # step 2 - set your controls
-controls = AlgControls(c0 = air.c0, freq_step = 20, freq_end=4000)
+controls = AlgControls(c0 = air.c0, freq_step = 50, freq_init=100, freq_end=2000)
 # step 3 - set the boundary condition / absorber
 material = PorousAbsorber(air, controls)
 # material.jcal(resistivity = 10000)
@@ -31,34 +31,34 @@ material.layer_over_rigid(thickness = 0.04,theta = 0)
 # material.plot_absorption()
 #%%
 # step 4 - set the sources
-sources = Source(coord = [0.0, 0.0, 0.3])
+sources = Source(coord = [0.0, 0.0, 0.30])
 # step 5  - set the receivers
 receivers = Receiver(coord = [0.0, 0.0, 0.01])
 # receivers.double_rec()
 #%% step 6 - setup scene and run field calculations
-# field = BEMFlush(air, controls, material, sources, receivers)
-# field.generate_mesh(Lx = 2.0, Ly = 2.0, Nel_per_wavelenth=3)
-# field.psurf()
-# field.p_fps()
-# field.plot_pres()
-# field.uz_fps()
+field = BEMFlush(air, controls, material, sources, receivers)
+field.generate_mesh(Lx = 0.5, Ly = 0.5, Nel_per_wavelenth=3)
+field.psurf()
+field.p_fps()
+field.plot_pres()
+field.uz_fps()
 # field.plot_uz()
 # # field.plot_scene()
 # # field.plot_colormap()
 # field.save('my_bemflush')
 
 #%% Compare to infinite sample
-field_inf = LocallyReactiveInfSph(air, controls, material, sources, receivers)
+# field_inf = LocallyReactiveInfSph(air, controls, material, sources, receivers)
 # field_inf.p_loc()
 # field_inf.uz_loc()
 # field_inf.plot_pres()
 # field.save()
 #%% step 7 - load field
-saved_field = BEMFlush(air, controls, material, sources, receivers)
-saved_field.load(filename = 'my_bemflush_Lx_2.0m_Ly_2.0m')
-
+# saved_field = BEMFlush(air, controls, material, sources, receivers)
+# saved_field.load(filename = 'my_bemflush_Lx_2.0m_Ly_2.0m')
+# saved_field.plot_pres()
 #%% step 8 - create a deduction object with the loaded field sim
-zs_ded_qterm = ImpedanceDeductionQterm(saved_field)
+zs_ded_qterm = ImpedanceDeductionQterm(field)
 # zs_ded_qterm.pw_pp()
 # zs_ded_qterm.pwa_pp()
 # zs_ded_qterm.zq_pp(zs_ded_qterm.Zs_pwa_pp)

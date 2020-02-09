@@ -118,7 +118,10 @@ def plot_spk(freq, spk_in_sources, ref = 1.0):
     '''
     fig, axs = plt.subplots(2,1)
     for js, spk_mtx in enumerate(spk_in_sources):
+        # print('outer loop: {}'.format(js+1))
+        # print(spk_mtx.shape)
         for jrec, spk in enumerate(spk_mtx):
+            # print('inner loop: {}'.format(js+1))
             leg = 'source ' + str(js+1) + ' receiver ' + str(jrec+1)
             axs[0].semilogx(freq, 20 * np.log10(np.abs(spk) / ref), label = leg)
             axs[1].semilogx(freq, np.angle(spk), label=leg)
