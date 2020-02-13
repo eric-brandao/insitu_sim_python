@@ -41,6 +41,19 @@ class FreeField(object):
                 pres_rec[jrec, :] = (np.exp(-1j * self.controls.k0 * r)) / r
             self.pres_s.append(pres_rec)
 
+    def mirrorsource(self,):
+        # Loop the receivers
+        self.pres_s = []
+        for js, s_coord in enumerate(self.sources.coord):
+            # hs = s_coord[2] # source height
+            pres_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
+            for jrec, r_coord in enumerate(self.receivers.coord):
+                r1 = np.linalg.norm(r_coord - s_coord) # distance source-receiver
+                r2 = np.linalg.norm(r_coord + s_coord) # distance source-receiver
+                pres_rec[jrec, :] = (np.exp(-1j * self.controls.k0 * r1)) / r1 +\
+                    (np.exp(-1j * self.controls.k0 * r2)) / r2
+            self.pres_s.append(pres_rec)
+
     def planewave_ff(self, theta = 0, phi = 0):
         # Loop the receivers
         self.pres_s = []
@@ -56,6 +69,26 @@ class FreeField(object):
                     k_vec = np.array([kx, ky, kz])
                     pres_rec[jrec, jf] = np.exp(1j * np.dot(k_vec, r_coord))
             self.pres_s.append(pres_rec)
+
+    def add_noise(self, snr = np.Inf):
+        '''
+        Method used to artificially add gaussian noise to the measued data
+        '''
+        for js, s_coord in enumerate(self.sources.coord):
+            # hs = s_coord[2] # source height
+            pres_rec = self.pres_s[js]
+            # N = (pres_rec).shape
+            # print(N)
+            for jrec, r_coord in enumerate(self.receivers.coord):
+                for jf, k0 in enumerate(self.controls.k0):
+                    # Here, the signal power is 2 (1 for real and imaginary component)
+                    signal = pres_rec[jrec, jf]
+                    signalPower_lin = np.abs(signal)**2
+                    signalPower_dB = 10 * np.log10(signalPower_lin)
+                    noisePower_dB = signalPower_dB - snr
+                    noisePower_lin = 10 ** (noisePower_dB/10)
+                    noise = np.sqrt(noisePower_lin/2)*(np.random.randn(1) + 1j*np.random.randn(1))
+                    self.pres_s[js][jrec][jf] = signal + noise
 
     def plot_pres(self):
         '''

@@ -45,7 +45,7 @@ class Receiver():
         '''
         pass
 
-    def planar_array(self, x_len = 1.0, n_x = 10, y_len = 1.0, n_y = 10):
+    def planar_array(self, x_len = 1.0, n_x = 10, y_len = 1.0, n_y = 10, zr = 0.1):
         '''
         This method initializes a planar array of receivers (z/xy plane). It will overwrite
         self.coord to be a matrix where each line gives a 3D coordinate for each receiver
@@ -54,8 +54,18 @@ class Receiver():
             n_x - the number of receivers in the x direction
             y_len - the length of the y direction (array goes from -x_len/2 to +x_len/2).
             n_y - the number of receivers in the y direction
+            zr - distance from the closest microphone layer to the sample
         '''
-        pass
+        # x and y coordinates of the grid
+        xc = np.linspace(-x_len/2, x_len/2, n_x)
+        yc = np.linspace(-y_len/2, y_len/2, n_y)
+        # meshgrid
+        xv, yv = np.meshgrid(xc, yc)
+        # initialize receiver list in memory
+        self.coord = np.zeros((n_x * n_y, 3), dtype = np.float32)
+        self.coord[:, 0] = xv.flatten()
+        self.coord[:, 1] = yv.flatten()
+        self.coord[:, 2] = zr
 
     def double_planar_array(self, x_len = 1.0, n_x = 8, y_len = 1.0, n_y = 8, zr = 0.01, dz = 0.01):
         '''
@@ -67,6 +77,8 @@ class Receiver():
             n_x - the number of receivers in the x direction
             y_len - the length of the y direction (array goes from -x_len/2 to +x_len/2).
             n_y - the number of receivers in the y direction
+            zr - distance from the closest microphone layer to the sample
+            dz - separation distance between the two layers
         '''
         # x and y coordinates of the grid
         xc = np.linspace(-x_len/2, x_len/2, n_x)
@@ -110,6 +122,31 @@ class Receiver():
         self.coord[0:n_x*n_y*n_z, 2] = zv.flatten()
         # print(self.coord)
 
+    def random_3d_array(self, x_len = 1.0, y_len = 1.0, z_len = 1.0, zr = 0.1, n_total = 192, seed = 0):
+        '''
+        This method initializes a regular three dimensional array of receivers It will overwrite
+        self.coord to be a matrix where each line gives a 3D coordinate for each receiver
+        Inputs:
+            x_len - the length of the x direction (array goes from -x_len/2 to +x_len/2).
+            n_x - the number of receivers in the x direction
+            y_len - the length of the y direction (array goes from -x_len/2 to +x_len/2).
+            n_y - the number of receivers in the y direction
+            z_len - the length of the z direction (array goes from zr to zr+z_len).
+            n_z - the number of receivers in the y direction
+            zr - distance from the closest receiver to the sample's surface
+        '''
+        # x and y coordinates of the grid
+        np.random.seed(seed)
+        xc = -x_len/2 + x_len * np.random.rand(n_total)#np.linspace(-x_len/2, x_len/2, n_x)
+        yc = -y_len/2 + y_len * np.random.rand(n_total)
+        zc = zr + z_len * np.random.rand(n_total)
+        # meshgrid
+        # xv, yv, zv = np.meshgrid(xc, yc, zc)
+        # initialize receiver list in memory
+        self.coord = np.zeros((n_total, 3), dtype = np.float32)
+        self.coord[0:n_total, 0] = xc.flatten()
+        self.coord[0:n_total, 1] = yc.flatten()
+        self.coord[0:n_total, 2] = zc.flatten()
 
     def spherical_array(self, radius = 0.1, n_rec = 32, center_dist = 0.5):
         '''

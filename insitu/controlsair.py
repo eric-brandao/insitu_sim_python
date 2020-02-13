@@ -85,7 +85,7 @@ class AirProperties():
         # return self.m
 
 class AlgControls():
-    def __init__(self, c0, freq_init = 100.0, freq_end = 10000.0, freq_step = 10):
+    def __init__(self, c0, freq_init = 100.0, freq_end = 10000.0, freq_step = 10, freq_vec = []):
         '''
         Set up algorithm controls. You set-up your frequency span:
         Inputs:
@@ -94,10 +94,16 @@ class AlgControls():
             freq_step (default - 10 Hz)
         '''
         # config = load_cfg(config_file)
-        self.freq_init = np.array(freq_init, dtype = np.float32)
-        self.freq_end = np.array(freq_end, dtype = np.float32)
-        self.freq_step = np.array(freq_step, dtype = np.float32)
-        self.freq = np.arange(self.freq_init, self.freq_end + self.freq_step, self.freq_step, dtype = np.float32)
+        freq_vec = np.array(freq_vec)
+        if freq_vec.size == 0:
+            self.freq_init = np.array(freq_init, dtype = np.float32)
+            self.freq_end = np.array(freq_end, dtype = np.float32)
+            self.freq_step = np.array(freq_step, dtype = np.float32)
+            self.freq = np.arange(self.freq_init, self.freq_end + self.freq_step, self.freq_step, dtype = np.float32)
+        else:
+            self.freq_init = np.array(freq_vec[0], dtype = np.float32)
+            self.freq_end = np.array(freq_vec[-1], dtype = np.float32)
+            self.freq = freq_vec
         self.w = 2.0 * np.pi * self.freq
         self.k0 = self.w / c0
 

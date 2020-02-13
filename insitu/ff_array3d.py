@@ -23,33 +23,43 @@ from insitu.parray_estimation import PArrayDeduction
 # (i) - set manually;
 air = AirProperties(temperature = 20)
 # step 2 - set your controls
-controls = AlgControls(c0 = air.c0, freq_init = 100, freq_step = 100, freq_end=2000)
+# controls = AlgControls(c0 = air.c0, freq_init = 500, freq_step = 500, freq_end=2000)
+controls = AlgControls(c0 = air.c0, freq_vec = [1000])
+
 #%% step 4 - set the sources
-sources = Source(coord = [-50, 0.0, 50.0])
+sources = Source(coord = [0, 0, 50])
 # step 5  - set the receivers
 receivers = Receiver()
-receivers.brick_array(x_len=.6, y_len=0.8, z_len=0.25, n_x = 8, n_y = 8, n_z=3)
+##### 3D Regular array
+receivers.double_planar_array(x_len=0.6, y_len=0.8, n_x = 8, n_y = 8)
+# receivers.brick_array(x_len=0.6, y_len=0.8, z_len=0.25, n_x = 8, n_y = 8, n_z=3)
+# receivers.brick_array(x_len=1.2, y_len=1.6, z_len=0.5, n_x = 8, n_y = 8, n_z=3)
+##### 3D Random array
+# receivers.random_3d_array(x_len=0.6, y_len=0.8, z_len=0.25, n_total = 192, zr = 0.1)
 
-#%% step 7 - run/load field
+# #%% step 7 - run/load field
 field = FreeField(air, controls, sources, receivers)
 # field.plot_scene()
 # field.monopole_ff()
-field.planewave_ff(theta = np.pi/2, phi = 0)
-# field.plot_pres()
-# field.save(filename='bemflush_Lx_1.0m_Ly_1.0m_3darray')
+field.planewave_ff(theta = 0, phi = 0)
+# field.add_noise(snr = 3)
+# field.mirrorsource()
+# # field.plot_pres()
+# # field.save(filename='bemflush_Lx_1.0m_Ly_1.0m_3darray')
 
 #%% step 8 - create a deduction object with the loaded field sim
 ff_ded_parray = PArrayDeduction(field)
-ff_ded_parray.wavenum_dir(n_waves=2000, plot = True)
-# ff_ded_parray.pk_a3d_constrained(xi = 0.01)
-ff_ded_parray.pk_a3d_tikhonov(lambd_value=1.03e-4)
-
-# ff_ded_parray.pk_a3d_tikhonov(lam_init = -2, lam_end = 1, n_lam = 5)
-ff_ded_parray.plot_pk_sphere(freq=100)
-ff_ded_parray.plot_pk_sphere(freq=500)
+ff_ded_parray.wavenum_dir(n_waves=2000, plot = False)
+# ff_ded_parray.pk_a3d_constrained(xi = 0.1)
+ff_ded_parray.pk_a3d_tikhonov(method = 'direct', lambd_value=[])
+# ff_ded_parray.save(filename='ff_pw_regulara_60cmx80cmx25mm_192m')
+# ff_ded_parray.load(filename = 'ff_pw_regulara_60cmx80cmx25mm_192m')
+#%% plots
+# ff_ded_parray.plot_pk_sphere(freq=100)
+# ff_ded_parray.plot_pk_sphere(freq=500)
 ff_ded_parray.plot_pk_sphere(freq=1000, db=False)
-ff_ded_parray.plot_pk_sphere(freq=2000, db=False)
-ff_ded_parray.plot_pk_sphere(freq=1000, db=True)
+# ff_ded_parray.plot_pk_sphere(freq=2000, db=False)
+ff_ded_parray.plot_pk_sphere(freq=1000, db=True, dinrange=30, save=False)
 # ff_ded_parray.plot_pk_sphere(freq=2000)
 plt.show()
 
@@ -67,14 +77,14 @@ plt.show()
 #     {'Inf': field_inf.uz_s[0][0]}, ref = 5e-8)
 
 #%% Save to mat file
-import scipy.io as sio
-receivers_m = receivers.coord
-sio.savemat('receivers.mat', {'receivers_m':receivers_m})
-freq_m = controls.freq
-sio.savemat('freq.mat', {'freq_m':freq_m})
-c0 = air.c0
-sio.savemat('c0.mat', {'c0':c0})
-dir_m = ff_ded_parray.dir
-sio.savemat('directions.mat', {'dir_m':dir_m})
-p_m = field.pres_s
-sio.savemat('pm.mat', {'p_m':p_m})
+# import scipy.io as sio
+# receivers_m = receivers.coord
+# sio.savemat('receivers.mat', {'receivers_m':receivers_m})
+# freq_m = controls.freq
+# sio.savemat('freq.mat', {'freq_m':freq_m})
+# c0 = air.c0
+# sio.savemat('c0.mat', {'c0':c0})
+# dir_m = ff_ded_parray.dir
+# sio.savemat('directions.mat', {'dir_m':dir_m})
+# p_m = field.pres_s
+# sio.savemat('pm.mat', {'p_m':p_m})

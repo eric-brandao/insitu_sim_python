@@ -95,9 +95,9 @@ def l_corner(rho,eta,reg_param,u,sig,bm):
     kappa_max = - curvature(reg_c, sig, beta, xi) # Maximum curvature.
     if kappa_max < 0:
         lr = len(rho)
-        reg_c = reg_param[lr]
-        rho_c = rho[lr]
-        eta_c = eta[lr]
+        reg_c = reg_param[lr-1]
+        rho_c = rho[lr-1]
+        eta_c = eta[lr-1]
     else:
         f = np.divide((sig**2), (sig**2 + reg_c**2))
         eta_c = np.linalg.norm(f * xi)
