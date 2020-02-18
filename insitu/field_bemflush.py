@@ -386,7 +386,7 @@ class BEMFlush(object):
         #         0.0, zv[jrec,jrec]])
         # print(r_fpts)
 
-    def save(self, filename = 'my_bemflush', path = '/home/eric/dev/insitu/data/'):
+    def save(self, filename = 'my_bemflush', path = '/home/eric/dev/insitu/data/bem_simulations/'):
         '''
         This method is used to save the simulation object
         '''
@@ -396,7 +396,7 @@ class BEMFlush(object):
         pickle.dump(self.__dict__, f, 2)
         f.close()
 
-    def load(self, filename = 'my_qterm', path = '/home/eric/dev/insitu/data/'):
+    def load(self, filename = 'my_qterm', path = '/home/eric/dev/insitu/data/bem_simulations/'):
         '''
         This method is used to load a simulation object. You build a empty object
         of the class and load a saved one. It will overwrite the empty one.

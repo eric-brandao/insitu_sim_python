@@ -87,7 +87,7 @@ class PArrayDeduction(object):
                     (3) - else: via cvxpy
         '''
         # loop over frequencies
-        bar = ChargingBar('Calculating...', max=len(self.controls.k0), suffix='%(percent)d%%')
+        bar = ChargingBar('Calculating Tikhonov inversion...', max=len(self.controls.k0), suffix='%(percent)d%%')
         self.pk = np.zeros((self.n_waves, len(self.controls.k0)), dtype=np.csingle)
         # print(self.pk.shape)
         for jf, k0 in enumerate(self.controls.k0):
@@ -146,7 +146,7 @@ class PArrayDeduction(object):
             epsilon - upper bound of noise floor vector
         '''
         # loop over frequencies
-        bar = ChargingBar('Calculating...', max=len(self.controls.k0), suffix='%(percent)d%%')
+        bar = ChargingBar('Calculating bounded optmin...', max=len(self.controls.k0), suffix='%(percent)d%%')
         self.pk = np.zeros((self.n_waves, len(self.controls.k0)), dtype=np.csingle)
         # print(self.pk.shape)
         for jf, k0 in enumerate(self.controls.k0):
@@ -189,10 +189,16 @@ class PArrayDeduction(object):
         '''
         grid = Receiver()
         grid.planar_array(x_len=Lx, y_len=Ly, zr=0.0, n_x = n_x, n_y = n_x)
-        self.grid = grid.coord
+        if n_x > 1 or n_y > 1:
+            self.grid = grid.coord
+        else:
+            self.grid = np.array([0,0,0])
+        # print('the grid: {}'.format(self.grid))
         # loop over frequency dommain
         self.Zs = np.zeros(len(self.controls.k0), dtype=complex)
         # self.alpha = np.zeros(len(self.controls.k0))
+        self.p_s = np.zeros((len(self.grid), len(self.controls.k0)), dtype=complex)
+        self.uz_s = np.zeros((len(self.grid), len(self.controls.k0)), dtype=complex)
         bar = ChargingBar('Calculating impedance and absorption (backpropagation)',\
             max=len(self.controls.k0), suffix='%(percent)d%%')
         for jf, k0 in enumerate(self.controls.k0):
@@ -205,6 +211,8 @@ class PArrayDeduction(object):
             # pressure and particle velocity at surface
             p_surf_mtx = h_mtx @ x
             uz_surf_mtx = ((np.divide(k_vec[:,2], k0)) * h_mtx) @ x
+            self.p_s[:,jf] =  p_surf_mtx
+            self.uz_s[:,jf] =  uz_surf_mtx
             if avgZs:
                 Zs_pt = np.divide(p_surf_mtx, uz_surf_mtx)
                 self.Zs[jf] = np.mean(Zs_pt)
@@ -212,9 +220,14 @@ class PArrayDeduction(object):
                 self.Zs[jf] = np.mean(p_surf_mtx) / (np.mean(uz_surf_mtx)) 
             bar.next()
         bar.finish()
-        self.alpha = 1 - (np.abs(np.divide((self.Zs-1), (self.Zs+1))))**2
+        theta = self.material.theta
+        self.alpha = 1 - (np.abs(np.divide((self.Zs  * np.cos(theta) - 1),\
+            (self.Zs * np.cos(theta) + 1))))**2
+        # self.alpha = 1 - (np.abs(np.divide((self.Zs - 1),\
+        #     (self.Zs + 1))))**2
+        return self.alpha
 
-    def plot_pk_sphere(self, freq = 1000, db = False, dinrange = 40, save = False):
+    def plot_pk_sphere(self, freq = 1000, db = False, dinrange = 40, save = False, name='name'):
         '''
         Method to plot the magnitude of the spatial fourier transform on the surface of a sphere.
         It is a normalized version of the magnitude, either between 0 and 1 or between -dinrange and 0.
@@ -244,13 +257,13 @@ class PArrayDeduction(object):
         ax.set_xlabel('X axis')
         ax.set_ylabel('Y axis')
         ax.set_zlabel('Z axis')
-        plt.title('|P(k)| at ' + str(self.controls.freq[id_f]) + 'Hz')
+        plt.title('|P(k)| at ' + str(self.controls.freq[id_f]) + 'Hz - ' + name)
         # plt.show()
         if save:
-            filename = 'data/cmat_' + str(int(freq)) + 'Hz'
+            filename = 'data/colormaps/cmat_' + str(int(freq)) + 'Hz_' + name
             plt.savefig(fname = filename, format='pdf')
 
-    def save(self, filename = 'array_zest', path = '/home/eric/dev/insitu/data/'):
+    def save(self, filename = 'array_zest', path = '/home/eric/dev/insitu/data/zs_recovery/'):
         '''
         This method is used to save the simulation object
         '''
@@ -260,7 +273,7 @@ class PArrayDeduction(object):
         pickle.dump(self.__dict__, f, 2)
         f.close()
 
-    def load(self, filename = 'array_zest', path = '/home/eric/dev/insitu/data/'):
+    def load(self, filename = 'array_zest', path = '/home/eric/dev/insitu/data/zs_recovery/'):
         '''
         This method is used to load a simulation object. You build a empty object
         of the class and load a saved one. It will overwrite the empty one.

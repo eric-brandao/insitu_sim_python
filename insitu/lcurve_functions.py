@@ -89,8 +89,8 @@ def l_corner(rho,eta,reg_param,u,sig,bm):
     # reg_c = optimize.fmin(curvature, 0.0, args = (sig, beta, xi), full_output=False, disp=False)
     # Minimize 1
     curv_id = np.argmin(curv)
-    x1 = reg_param[int(np.amin([curv_id, len(curv)]))]
-    x2 = reg_param[int(np.amax([curv_id, 0]))]
+    x1 = reg_param[int(np.amin([curv_id+1, len(curv)]))]
+    x2 = reg_param[int(np.amax([curv_id-1, 0]))]
     reg_c = optimize.fminbound(curvature, x1, x2, args = (sig, beta, xi), full_output=False, disp=False)
     kappa_max = - curvature(reg_c, sig, beta, xi) # Maximum curvature.
     if kappa_max < 0:

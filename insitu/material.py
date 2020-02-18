@@ -91,10 +91,16 @@ class PorousAbsorber():
             theta [deg] - incidence angle (default 0 [deg] - normal incidence)
         '''
         self.thickness = np.float32(thickness)
-        self.theta = np.radians(theta)
-        self.material_scene = 'locally reactive, sample over rigid backing; thickness: '+\
-            "{:.2f}".format(self.thickness) + ' [m]'
-        self.Zs = -1j * self.Zp * (1 / np.tan(self.kp * self.thickness)) #FixMe - correct Zs for other angles
+        self.theta = theta
+        self.material_scene = 'sample over rigid backing; thickness: '+\
+            "{:.4f}".format(self.thickness) + ' [m]'
+        w = 2 * np.pi * self.freq
+        k0 = w / self.c0
+        n_index = np.divide(self.kp, k0)
+        theta_t = np.arcsin(np.sin(self.theta)/n_index)
+        kzp = self.kp * np.cos(theta_t)
+        self.Zs = -1j * self.Zp * (np.divide(self.kp, kzp)) *\
+            (1 / np.tan(kzp * self.thickness)) #FixMe - correct Zs for other angles
         self.Vp = (self.Zs * np.cos(self.theta) - self.rho0 * self.c0) /\
             (self.Zs * np.cos(self.theta) + self.rho0 * self.c0)
         self.alpha = 1 - (np.abs(self.Vp)) ** 2.0

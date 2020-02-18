@@ -117,7 +117,7 @@ def load_cfg(cfgfile):
     return config
 
 ### Function to make spk plots
-def plot_spk(freq, spk_in_sources, ref = 1.0):
+def plot_spk(freq, spk_in_sources, ref = 1.0, legendon = True, title='Spectrum'):
     '''
     This function is used to make plots of the spectrum of pressure or
     particle velocity
@@ -130,22 +130,21 @@ def plot_spk(freq, spk_in_sources, ref = 1.0):
             # print('inner loop: {}'.format(js+1))
             leg = 'source ' + str(js+1) + ' receiver ' + str(jrec+1)
             axs[0].semilogx(freq, 20 * np.log10(np.abs(spk) / ref), label = leg)
-            axs[1].semilogx(freq, np.angle(spk), label=leg)
+            axs[1].semilogx(freq, np.rad2deg(np.angle(spk)), label=leg)
             # axs[0].semilogx(self.controls.freq, np.abs(p_spk), label = leg)
     axs[0].grid(linestyle = '--', which='both')
-    axs[0].legend(loc = 'best')
-    # axs[0].set(xlabel = 'Frequency [Hz]')
-    axs[0].set(ylabel = '|p(f)| [dB]')
-    # for p_s_mtx in self.pres_s:
-    #     for p_ph in p_s_mtx:
-    #         axs[1].semilogx(self.controls.freq, np.angle(p_ph), label=leg)
+    if legendon:
+        axs[0].legend(loc = 'best')
+    axs[0].set(ylabel = '|H(f)| [dB]')
+    axs[0].set(title = title)
+    # axs[0].set(ylim = dblimq)
     axs[1].grid(linestyle = '--', which='both')
     axs[1].set(xlabel = 'Frequency [Hz]')
     axs[1].set(ylabel = 'phase [-]')
     plt.setp(axs, xticks=[50, 100, 500, 1000, 5000, 10000],
     xticklabels=['50', '100', '500', '1000', '5000', '10000'])
     plt.setp(axs, xlim=(0.8 * freq[0], 1.2*freq[-1]))
-    plt.show()
+    # plt.show()
 
 ### Function to compare spectrums
 def compare_spk(freq, *spks, ref = 1.0):
@@ -171,7 +170,7 @@ def compare_spk(freq, *spks, ref = 1.0):
     plt.show()
 
 ### Function to compare spectrums
-def compare_alpha(freq, *alphas, title = 'absorption comparison'):
+def compare_alpha(*alphas, title = 'absorption comparison', freq_max=4000):
     '''
     This function is used to compare the absorption coefficients of several estimations
     '''
@@ -180,16 +179,18 @@ def compare_alpha(freq, *alphas, title = 'absorption comparison'):
     for alpha_dict in alphas:
         alpha_color = alpha_dict['color']
         alpha_lw = alpha_dict['linewidth']
-        alpha_leg = list(alpha_dict.keys())[0]
+        freq_leg = list(alpha_dict.keys())[0]
+        alpha_leg = list(alpha_dict.keys())[1]
+        freq = alpha_dict[freq_leg]
         alpha = alpha_dict[alpha_leg]
         plt.semilogx(freq, alpha, alpha_color, label = alpha_leg, linewidth = alpha_lw)
     plt.grid(linestyle = '--', which='both')
     plt.xscale('log')
-    plt.legend(loc = 'best')
-    plt.xticks([50, 100, 500, 1000, 5000, 10000],
-        ['50', '100', '500', '1000', '5000', '10000'])
+    plt.legend(loc = 'upper left')
+    plt.xticks([50, 100, 500, 1000, 4000, 5000, 10000],
+        ['50', '100', '500', '1000', '4000', '5000', '10000'])
     plt.xlabel('Frequency [Hz]')
     plt.ylabel('absorption coefficient [-]')
     plt.ylim((-0.2, 1.2))
-    plt.xlim((0.8 * freq[0], 1.2*freq[-1]))
+    plt.xlim((0.8 * freq[0], freq_max))
     plt.show()
