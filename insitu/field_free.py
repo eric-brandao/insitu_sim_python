@@ -10,6 +10,8 @@ import sys
 from progress.bar import Bar, IncrementalBar, FillingCirclesBar, ChargingBar
 import pickle
 import time
+from insitu.controlsair import sph2cart, cart2sph
+
 
 # import impedance-py/C++ module and other stuff
 import insitu_cpp
@@ -31,6 +33,9 @@ class FreeField(object):
         self.uz_s = []
 
     def monopole_ff(self,):
+        '''
+        Method used to calculate the free field response due to a monopole with a given source coordinate
+        '''
         # Loop the receivers
         self.pres_s = []
         for js, s_coord in enumerate(self.sources.coord):
@@ -42,6 +47,11 @@ class FreeField(object):
             self.pres_s.append(pres_rec)
 
     def mirrorsource(self,):
+        '''
+        Method used to calculate the half-space response due to a monopole with a given source coordinate.
+        The original monopole is mirroed against the plane z=0 and its strength is the same as the original
+        monopole
+        '''
         # Loop the receivers
         self.pres_s = []
         for js, s_coord in enumerate(self.sources.coord):
@@ -55,6 +65,12 @@ class FreeField(object):
             self.pres_s.append(pres_rec)
 
     def planewave_ff(self, theta = 0, phi = 0):
+        '''
+        Method used to calculate the free field response due to a plane wave
+        Inputs:
+            theta - the elevation angle
+            phi - the azimuth angle
+        '''
         # Loop the receivers
         self.pres_s = []
         for js, s_coord in enumerate(self.sources.coord):
@@ -69,6 +85,26 @@ class FreeField(object):
                     k_vec = np.array([kx, ky, kz])
                     pres_rec[jrec, jf] = np.exp(1j * np.dot(k_vec, r_coord))
             self.pres_s.append(pres_rec)
+
+    def planewave_diffuse(self,):
+        '''
+        Method used to calculate the free field response due to multiple plane wave incidence.
+        The directions are supposed to come from a list of unity vectors contained in sources.coord
+        Inputs:
+            theta - the elevation angle
+            phi - the azimuth angle
+        '''
+        # r, theta, phi = sph2cart(self.sources.coord[:,0], self.sources.coord[:,1], self.sources.coord[:,2])
+        pres_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
+        bar = ChargingBar('Calculating sound pressure at each receiver', max=len(self.receivers.coord), suffix='%(percent)d%%')
+        for jrec, r_coord in enumerate(self.receivers.coord):
+            # r = np.linalg.norm(r_coord) # distance source-receiver
+            for jf, k0 in enumerate(self.controls.k0):
+                k_vec = k0 * self.sources.coord
+                pres_rec[jrec, jf] = np.sum(np.exp(1j * np.dot(k_vec, r_coord)))
+            bar.next()
+        bar.finish()
+        self.pres_s = [pres_rec]
 
     def add_noise(self, snr = np.Inf):
         '''
@@ -117,7 +153,7 @@ class FreeField(object):
         # plot source
         for s_coord in self.sources.coord:
             ax.scatter(s_coord[0], s_coord[1], s_coord[2],
-                color='red',  marker = "o", s=200)
+                color='red',  marker = "o", s=20)
         # plot receiver
         for r_coord in self.receivers.coord:
             ax.scatter(r_coord[0], r_coord[1], r_coord[2],
@@ -130,8 +166,11 @@ class FreeField(object):
         # ax.grid(linestyle = ' ', which='both')
         ax.set_xlim((-vsam_size/2, vsam_size/2))
         ax.set_ylim((-vsam_size/2, vsam_size/2))
-        ax.set_zlim((0, 1.2*np.amax(np.linalg.norm(self.sources.coord))))
-        ax.set_zticks((0, 1.2*np.amax(np.linalg.norm(self.sources.coord))))
+        # ax.set_zlim((0, 1.2*np.amax(np.linalg.norm(self.sources.coord))))
+        # ax.set_zlim((0, 1.2))
+
+        # ax.set_zticks((0, 1.2*np.amax(np.linalg.norm(self.sources.coord))))
+        # ax.set_zticks((0, 1.2))
         ax.view_init(elev=30, azim=-50)
         # ax.invert_zaxis()
         plt.show() # show plot

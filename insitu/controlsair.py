@@ -194,3 +194,27 @@ def compare_alpha(*alphas, title = 'absorption comparison', freq_max=4000):
     plt.ylim((-0.2, 1.2))
     plt.xlim((0.8 * freq[0], freq_max))
     plt.show()
+
+def sph2cart(r, theta, phi):
+    '''
+    this function is used to convert from spherical to cartesian coordinates
+    Inputs:
+        r - the radius of the sphere
+        theta - the elevation angle
+        phi - the azimuth angle
+    '''
+    x = r*np.sin(phi)*np.cos(theta)
+    y = r*np.sin(phi)*np.sin(theta)
+    z = r*np.cos(phi)
+    return x, y, z
+
+def cart2sph(x,y,z):
+    '''
+    this function is used to convert from cartesian to spherical coordinates
+    Inputs:
+        x, y, z - cartesian coordinates over the sphere
+    '''
+    phi = np.arctan2(y,x) # azimuth
+    theta = np.arctan2(z,np.sqrt(x**2 + y**2)) # elevation
+    r = np.sqrt(x**2 + y**2 + z**2)
+    return r, theta, phi

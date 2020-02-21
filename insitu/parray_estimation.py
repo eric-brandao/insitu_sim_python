@@ -220,7 +220,10 @@ class PArrayDeduction(object):
                 self.Zs[jf] = np.mean(p_surf_mtx) / (np.mean(uz_surf_mtx)) 
             bar.next()
         bar.finish()
-        theta = self.material.theta
+        try:
+            theta = self.material.theta
+        except:
+            theta = 0
         self.alpha = 1 - (np.abs(np.divide((self.Zs  * np.cos(theta) - 1),\
             (self.Zs * np.cos(theta) + 1))))**2
         # self.alpha = 1 - (np.abs(np.divide((self.Zs - 1),\
