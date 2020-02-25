@@ -33,7 +33,7 @@ receivers.random_3d_array(x_len=0.6, y_len=0.8, z_len=0.25, n_total = 192, zr = 
 
 #%% step 7 - run/load field
 field = FreeField(air, controls, sources, receivers)
-field.planewave_diffuse()
+field.planewave_diffuse(seed = 42)
 field.plot_scene()
 
 #%% step 8 - create a deduction object with the loaded field sim

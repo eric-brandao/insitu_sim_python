@@ -86,7 +86,7 @@ class FreeField(object):
                     pres_rec[jrec, jf] = np.exp(1j * np.dot(k_vec, r_coord))
             self.pres_s.append(pres_rec)
 
-    def planewave_diffuse(self,):
+    def planewave_diffuse(self, randomize = True, seed = 0):
         '''
         Method used to calculate the free field response due to multiple plane wave incidence.
         The directions are supposed to come from a list of unity vectors contained in sources.coord
@@ -101,7 +101,12 @@ class FreeField(object):
             # r = np.linalg.norm(r_coord) # distance source-receiver
             for jf, k0 in enumerate(self.controls.k0):
                 k_vec = k0 * self.sources.coord
-                pres_rec[jrec, jf] = np.sum(np.exp(1j * np.dot(k_vec, r_coord)))
+                if randomize:
+                    np.random.seed(seed)
+                    q = np.random.randn(1) + 1j*np.random.randn(1)
+                else:
+                    q = 1
+                pres_rec[jrec, jf] = np.sum(q * np.exp(1j * np.dot(k_vec, r_coord)))
             bar.next()
         bar.finish()
         self.pres_s = [pres_rec]

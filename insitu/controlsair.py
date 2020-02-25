@@ -187,8 +187,8 @@ def compare_alpha(*alphas, title = 'absorption comparison', freq_max=4000):
     plt.grid(linestyle = '--', which='both')
     plt.xscale('log')
     plt.legend(loc = 'upper left')
-    plt.xticks([50, 100, 500, 1000, 4000, 5000, 10000],
-        ['50', '100', '500', '1000', '4000', '5000', '10000'])
+    plt.xticks([50, 100, 500, 1000, 4000, 6000, 10000],
+        ['50', '100', '500', '1k', '4k', '6k', '10k'])
     plt.xlabel('Frequency [Hz]')
     plt.ylabel('absorption coefficient [-]')
     plt.ylim((-0.2, 1.2))
@@ -203,9 +203,16 @@ def sph2cart(r, theta, phi):
         theta - the elevation angle
         phi - the azimuth angle
     '''
-    x = r*np.sin(phi)*np.cos(theta)
-    y = r*np.sin(phi)*np.sin(theta)
-    z = r*np.cos(phi)
+    # x = r*np.sin(theta)*np.cos(phi)
+    # y = r*np.sin(theta)*np.sin(phi)
+    # z = r*np.cos(theta)
+    # x = r*np.sin(phi)*np.cos(theta)
+    # y = r*np.sin(phi)*np.sin(theta)
+    # z = r*np.cos(phi)
+    ## Same as Matlab
+    x = r*np.cos(phi)*np.cos(theta)
+    y = r*np.sin(phi)*np.cos(theta)
+    z = r*np.sin(theta)
     return x, y, z
 
 def cart2sph(x,y,z):
@@ -214,7 +221,11 @@ def cart2sph(x,y,z):
     Inputs:
         x, y, z - cartesian coordinates over the sphere
     '''
+    # phi = np.arctan2(y,z) # azimuth
+    # theta = np.arctan2(np.sqrt(z**2 + y**2), x) # elevation
+    # r = np.sqrt(x**2 + y**2 + z**2)
+    ## Same as Matlab
     phi = np.arctan2(y,x) # azimuth
-    theta = np.arctan2(z,np.sqrt(x**2 + y**2)) # elevation
+    theta = np.arctan2(z, np.sqrt(x**2 + y**2)) # elevation
     r = np.sqrt(x**2 + y**2 + z**2)
     return r, theta, phi

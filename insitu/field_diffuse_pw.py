@@ -32,19 +32,33 @@ class PWDifField(object):
         self.pres_s = []
         self.uz_s = []
 
-    def p_fps(self, resistivity = 25000, thickness = 0.1):
+    def p_fps(self, resistivity = 25000, thickness = 0.1, locally = True, randomize = True, seed = 0):
         '''
         Method to calculate the diffuse field incidence at every receiver. 
         '''
         # We loop over each source and create the correct boundary conditions
         Vp = np.zeros((len(self.sources.coord), len(self.controls.freq)), dtype = np.csingle)
+        np.random.seed(seed)
         for js, s_coord in enumerate(self.sources.coord):
             r, theta, phi = cart2sph(s_coord[0], s_coord[1], s_coord[2])
             material = PorousAbsorber(self.air, self.controls)
             material.delany_bazley(resistivity=resistivity)
-            material.layer_over_rigid(thickness = thickness, theta = theta)
+            if locally:
+                material.layer_over_rigid(thickness = thickness, theta = 0)
+                Vp[js,:] = np.divide(material.Zs - self.air.c0*self.air.rho0,
+                    material.Zs + self.air.c0*self.air.rho0)
+            else:
+                material.layer_over_rigid(thickness = thickness, theta = theta)
+                Vp[js,:] = material.Vp
             self.material.append(material)
-            Vp[js,:] = material.Vp
+        ns = len(self.sources.coord)
+        if randomize:
+            amp = np.sqrt(np.random.randn(ns)**2 + np.random.randn(ns)**2)
+            amp = amp/np.amax(amp)
+            phase = np.random.rand(ns)
+            q = amp * np.exp(1j*phase)#np.random.randn(ns) + 1j*np.random.randn(ns)
+        else:
+            q = np.ones(ns)
 
         pres_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
         bar = ChargingBar('Calculating sound pressure at each receiver', max=len(self.receivers.coord), suffix='%(percent)d%%')
@@ -52,8 +66,8 @@ class PWDifField(object):
             # r = np.linalg.norm(r_coord) # distance source-receiver
             for jf, k0 in enumerate(self.controls.k0):
                 k_vec = k0 * self.sources.coord
-                pres_rec[jrec, jf] = np.sum(np.exp(1j * np.dot(k_vec, r_coord))+\
-                Vp[:,jf] * np.exp(-1j * np.dot(k_vec, r_coord)))
+                pres_rec[jrec, jf] = np.sum(q * (np.exp(1j * np.dot(k_vec, r_coord))+\
+                Vp[:,jf] * np.exp(-1j * np.dot(k_vec, r_coord))))
             bar.next()
         bar.finish()
         self.pres_s = [pres_rec]

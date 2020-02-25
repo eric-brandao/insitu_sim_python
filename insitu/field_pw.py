@@ -47,6 +47,8 @@ class PWField(object):
                 # print('shape r :{}'.format(r_coord.shape))
                 pres_rec[jrec, jf] = np.exp(1j * np.dot(k_vec, r_coord)) +\
                     self.material.Vp[jf] * np.exp(-1j * np.dot(k_vec, r_coord))
+                # pres_rec[jrec, jf] = np.exp(1j * np.dot(k_vec, r_coord)) +\
+                #     np.exp(-1j * np.dot(k_vec, r_coord))
         self.pres_s.append(pres_rec)
 
     def uz_fps(self,):

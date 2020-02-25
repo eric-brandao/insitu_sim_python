@@ -22,7 +22,7 @@ class ImpedanceDeductionQterm(object):
         self.material = sim_field.material
         self.sources = sim_field.sources
         self.receivers = sim_field.receivers
-        self.pres_s = sim_field.pres_s[source_num] #FixMe
+        # self.pres_s = sim_field.pres_s[source_num] #FixMe
         try:
             self.pres_s = sim_field.pres_s[source_num] #FixMe
         except:
@@ -117,7 +117,6 @@ class ImpedanceDeductionQterm(object):
         # print(self.uz_s[0:10])
         # ((s_coord[0] - r_coord[0])**2 + (s_coord[1] - r_coord[1]**2)) self.rec1.r_r
         h_s = self.sources.coord[0][2]
-        
         # determine the farthest microphone
         zr = self.receivers.coord[0,2]
         r1 = (r ** 2 + (h_s - zr) ** 2) ** 0.5
@@ -269,6 +268,28 @@ class ImpedanceDeductionQterm(object):
         self.Vp_q_pu = (self.Zs_q_pu - 1) / (self.Zs_q_pu + 1)
         self.alpha_q_pu = 1 - (np.abs(self.Vp_q_pu)) ** 2
         # return self.Vp_q_pp, self.Zs_q_pp, self.alpha_q_pp
+
+    def z_eanoise_pp(self,):
+        '''
+        Method to calculate the surface impedance under normal incidence with 2 mics
+        '''
+        # determine the distance between the microphones
+        x12 = np.abs(self.receivers.coord[0,2] - self.receivers.coord[1,2])
+        k0 = self.controls.k0
+        # determine the farthest microphone
+        if (self.receivers.coord[0,2] > self.receivers.coord[1,2]): # right order
+            Hw = self.pres_s[1] / self.pres_s[0]
+            x1 = self.receivers.coord[0,2]
+        else:
+            Hw = self.pres_s[0] / self.pres_s[1]
+            x1 = self.receivers.coord[1,2]
+        self.Zs_ea_pp = np.divide(Hw * (1 - np.exp(2*1j*k0*(x12 + x1))) -\
+            np.exp(1j*k0*x12) * (1 - np.exp(2*1j*k0*x1)),
+            Hw * (1 + np.exp(2*1j*k0*(x12 + x1))) -\
+            np.exp(1j*k0*x12) * (1 + np.exp(2*1j*k0*x1)))
+        self.Vp_ea_pp = np.divide(self.Zs_ea_pp - 1, self.Zs_ea_pp + 1)
+        self.alpha_ea_pp = 1 - (np.abs(self.Vp_ea_pp)) ** 2
+        # print(self.alpha_ea_pp)
 
 def p_integral(k0, Zg, hs, r, zr):
     '''

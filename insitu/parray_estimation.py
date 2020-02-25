@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+# from matplotlib import cm
 import toml
 # from insitu.controlsair import load_cfg
 import scipy.integrate as integrate
@@ -13,6 +14,7 @@ from scipy import linalg # for svd
 from lcurve_functions import csvd, l_cuve
 import pickle
 from receivers import Receiver
+from controlsair import cart2sph, sph2cart
 
 # from insitu.field_calc import LocallyReactive
 
@@ -74,7 +76,7 @@ class PArrayDeduction(object):
 
 
 
-    def pk_a3d_tikhonov(self, lambd_value = [], method = 'scipy'):
+    def pk_tikhonov(self, lambd_value = [], method = 'scipy'):
         '''
         Method to estimate wave number spectrum based on the Tikhonov matrix inversion technique.
         Inputs:
@@ -139,7 +141,7 @@ class PArrayDeduction(object):
         bar.finish()
         return self.pk
 
-    def pk_a3d_constrained(self, epsilon = 0.1):
+    def pk_constrained(self, epsilon = 0.1):
         '''
         Method to estimate wave number spectrum based on constrained optimization matrix inversion technique.
         Inputs:
@@ -172,13 +174,244 @@ class PArrayDeduction(object):
         bar.finish()
         return self.pk
 
-    def alpha_from_array3d(self,):
+    def pk_cs(self, lambd_value = [], method = 'scipy'):
+        '''
+        Method to estimate wave number spectrum based on the l1 inversion technique.
+        This is supposed to give us a sparse solution for the sound field decomposition.
+        Inputs:
+            method: string defining the method to be used on finding the correct P(k).
+                It can be:
+                    (1) - 'scipy': using scipy.linalg.lsqr
+                    (2) - 'direct': via x= (Hm^H) * ((Hm * Hm^H + lambd_value * I)^-1) * pm
+                    (3) - else: via cvxpy
+        '''
+        # loop over frequencies
+        bar = ChargingBar('Calculating CS inversion...', max=len(self.controls.k0), suffix='%(percent)d%%')
+        self.pk = np.zeros((self.n_waves, len(self.controls.k0)), dtype=np.csingle)
+        # print(self.pk.shape)
+        for jf, k0 in enumerate(self.controls.k0):
+            # wave numbers
+            k_vec = k0 * self.dir
+            # Form H matrix
+            h_mtx = np.exp(1j*self.receivers.coord @ k_vec.T)
+            # measured data
+            pm = self.pres_s[:,jf].astype(complex)
+            ## Choosing the method to find the P(k)
+            if method == 'scipy':
+                # from scipy.sparse.linalg import lsqr, lsmr
+                # x = lsqr(h_mtx, self.pres_s[:,jf], damp=np.sqrt(lambd_value))
+                # self.pk[:,jf] = x[0]
+                pass
+            elif method == 'direct':
+                # Hm = np.matrix(h_mtx)
+                # self.pk[:,jf] = Hm.getH() @ np.linalg.inv(Hm @ Hm.getH() + lambd_value*np.identity(len(pm))) @ pm
+                pass
+            # print('x values: {}'.format(x[0]))
+            #### Performing the Tikhonov inversion with cvxpy #########################
+            else:
+                H = h_mtx.astype(complex)
+                x = cp.Variable(h_mtx.shape[1], complex = True)
+                objective = cp.Minimize(cp.pnorm(x, p=1))
+                constraints = [H*x == pm]
+                # Create the problem and solve
+                problem = cp.Problem(objective, constraints)
+                # problem.solve()
+                # problem.solve(verbose=False) # Fast but gives some warnings
+                problem.solve(solver=cp.SCS, verbose=True) # Fast but gives some warnings
+                # problem.solve(solver=cp.ECOS, abstol=1e-3) # slow
+                # problem.solve(solver=cp.ECOS_BB) # slow
+                # problem.solve(solver=cp.NAG) # not installed
+                # problem.solve(solver=cp.CPLEX) # not installed
+                # problem.solve(solver=cp.CBC)  # not installed
+                # problem.solve(solver=cp.CVXOPT) # not installed
+                # problem.solve(solver=cp.MOSEK) # not installed
+                # problem.solve(solver=cp.OSQP) # did not work
+                self.pk[:,jf] = x.value
+            bar.next()
+        bar.finish()
+        return self.pk
+
+    def pk_interpolate(self, npts=10000):
+        '''
+        Method to interpolate the wave number spectrum.
+        '''
+        # Recover the actual measured points
+        # r, theta, phi = cart2sph(self.dir[:,0], self.dir[:,1], self.dir[:,2])
+        r, theta, phi = cart2sph(self.dir[:,2], self.dir[:,1], self.dir[:,0])
+        # print('available phi {}'.format(np.unique(np.sort(np.rad2deg(phi)))))
+        # print('avalilable theta {}'.format(np.unique(np.sort(np.rad2deg(theta)))))
+        # theta = np.pi/2 - theta
+        thetaphi_pts = np.transpose(np.array([phi, theta]))
+        # thetaphi_pts = np.transpose(np.array([theta, phi]))
+        # Create a grid to interpolate on
+        nn = int(np.sqrt(npts))
+        sorted_phi = np.sort(phi)
+        new_phi = np.linspace(sorted_phi[0], sorted_phi[-1], nn)
+        sorted_theta = np.sort(theta)
+        new_theta = np.linspace(sorted_theta[0], sorted_theta[-1],nn)#(0, np.pi, nn)
+        # print('sorted phi {}'.format(sorted_phi))
+        # print('initial and end phi {}, {}'.format(sorted_phi[0], sorted_phi[-1]))
+        # print('sorted theta {}'.format(sorted_theta))
+        # print('initial and end phi {}, {}'.format(sorted_theta[0], sorted_theta[-1]))
+        # new_theta = np.linspace(-np.pi/2, np.pi/2,nn)#(0, np.pi, nn)
+        # new_phi = np.linspace(-np.pi, np.pi, nn)
+        self.grid_phi, self.grid_theta = np.meshgrid(new_phi, new_theta)
+        # self.grid_phi = np.transpose(self.grid_phi)
+        # self.grid_theta = np.transpose(self.grid_theta)
+        # self.grid_phi, self.grid_theta = np.mgrid[sorted_phi[0]:sorted_phi[-1]:nn, sorted_theta[0]:sorted_theta[-1]:nn]
+        # print('available grid phi {}'.format(np.rad2deg(self.grid_phi)))
+        # print('avalilable grid theta {}'.format(np.rad2deg(self.grid_theta)))
+        # print(np.rad2deg(np.unique(np.sort(phi))))
+        # interpolate
+        from scipy.interpolate import griddata
+        self.grid_pk = []
+        bar = ChargingBar('Interpolating the grid for P(k)',\
+            max=len(self.controls.k0), suffix='%(percent)d%%')
+        for jf, k0 in enumerate(self.controls.k0):
+            # self.grid_pk.append(griddata(thetaphi_pts, self.pk[:,jf],
+            #     (self.grid_phi, self.grid_theta), method='nearest'))
+            # a=self.grid_pk[jf]
+            # print('pk values {}'.format(a[4:7, 6:10]))
+            self.grid_pk.append(griddata(thetaphi_pts, self.pk[:,jf],
+                (self.grid_phi, self.grid_theta), method='cubic', fill_value=np.finfo(float).eps, rescale=True))
+            # self.grid_pk.append(griddata(thetaphi_pts, self.pk[:,jf],
+            #     (self.grid_phi, np.pi/2-self.grid_theta), method='cubic', fill_value=0.01, rescale=True))
+            bar.next()
+        bar.finish()
+
+    def alpha_from_array(self, desired_theta = 0, target_range = 3):
         '''
         Method to calculate the absorption coefficient straight from 3D array data.
+        Inputs:
+            desired_theta: a target angle of incidence for which you desire information
+                (has to be between 0deg and 90deg)
         '''
-        pass
+        # Rotate desired angle to be correct and transform to radians
+        desired_theta = np.deg2rad(90-desired_theta)
+        print('desired angle {} deg.'.format(np.rad2deg(desired_theta)))
+        # get theta and phi from directions
+        r, theta, phi = cart2sph(self.dir[:,0], self.dir[:,1], self.dir[:,2])
+        # print('thetas available {}'.format(np.unique(np.sort(np.rad2deg(theta)))))
+        # Get the incident directions
+        theta_inc_id = np.where(np.logical_and(theta >= 0, theta <= np.pi/2))
+        incident_dir = self.dir[theta_inc_id[0]]
+        incident_theta = theta[theta_inc_id[0]]
+        # Get the reflected directions
+        theta_ref_id = np.where(np.logical_and(theta >= -np.pi/2, theta <= 0))
+        reflected_dir = self.dir[theta_ref_id[0]]
+        reflected_theta = theta[theta_ref_id[0]]
+        # Get the indexes for and the desired angle
+        thetainc_des, thetainc_des_list = find_desiredangle(desired_theta, incident_theta, target_range=target_range)
+        thetaref_des, thetaref_des_list = find_desiredangle(-desired_theta, reflected_theta, target_range=target_range)
+        nel = int(len(thetainc_des_list)/2)
+        # thetainc_des_list = thetainc_des_list[0:nel]
+        # thetaref_des_list = thetaref_des_list[nel:2*nel]
+        # print(theta_inc_id[0])
+        # print(theta_ref_id[0])
+        # Loop over frequency
+        self.alpha_avg = np.zeros(len(self.controls.k0))
+        bar = ChargingBar('Calculating absorption (avg...)',\
+            max=len(self.controls.k0), suffix='%(percent)d%%')
+        for jf, k0 in enumerate(self.controls.k0):
+            pk_inc = self.pk[theta_inc_id[0], jf]
+            pk_ref = self.pk[theta_ref_id[0], jf]
+            # inc_energy = np.mean(np.abs(pk_inc[thetainc_des_list])**2)
+            # ref_energy = np.mean(np.abs(pk_ref[thetaref_des_list])**2)
+            inc_energy = np.abs(np.mean(pk_inc[thetainc_des_list]))**2
+            ref_energy = np.abs(np.mean(pk_ref[thetaref_des_list]))**2
+            self.alpha_avg[jf] = 1 - ref_energy/inc_energy
+            bar.next()
+        # print(self.alpha_avg)
+        bar.finish()
 
-    def zs(self, Lx = 0.1, Ly = 0.1, n_x = 21, n_y = 21, avgZs = True):
+        fig = plt.figure()
+        ax = fig.gca(projection='3d')
+        ax.scatter(incident_dir[thetainc_des_list,0], incident_dir[thetainc_des_list,1], incident_dir[thetainc_des_list,2],
+            color='blue')
+        ax.scatter(reflected_dir[thetaref_des_list,0], reflected_dir[thetaref_des_list,1], reflected_dir[thetaref_des_list,2],
+            color='red')
+        ax.set_xlabel('X axis')
+        ax.set_ylabel('Y axis')
+        ax.set_zlabel('Z axis')
+        ax.set_zlim((-1, 1))
+        plt.show()
+
+    def alpha_from_array2(self, desired_theta = 0, target_range = 3):
+        '''
+        Method to calculate the absorption coefficient straight from 3D array data.
+        Inputs:
+            desired_theta: a target angle of incidence for which you desire information
+                (has to be between 0deg and 90deg)
+        '''
+        # Rotate desired angle to be correct and transform to radians
+        desired_theta = np.deg2rad(90-desired_theta)
+        print('desired angle {} deg.'.format(np.rad2deg(desired_theta)))
+        # get theta and phi from directions
+        # r, theta, phi = cart2sph(self.dir[:,0], self.dir[:,1], self.dir[:,2])
+        # print('thetas available {}'.format(np.unique(np.sort(np.rad2deg(theta)))))
+        # Get the incident directions
+        theta_inc_id = np.where(np.logical_and(self.grid_theta >= 0, self.grid_theta <= np.pi/2))
+        # print(theta_inc_id[0])
+        # print(theta_inc_id[1])
+        incident_dir = self.grid_theta[theta_inc_id[0], theta_inc_id[1]]
+        incident_theta = self.grid_theta[theta_inc_id[0], theta_inc_id[1]]
+        # Get the reflected directions
+        theta_ref_id = np.where(np.logical_and(self.grid_theta >= -np.pi/2, self.grid_theta <= 0))
+        reflected_dir = self.grid_theta[theta_ref_id[0], theta_ref_id[1]]
+        reflected_theta = self.grid_theta[theta_ref_id[0], theta_ref_id[1]]
+        # # Get the indexes for and the desired angle
+        thetainc_des, thetainc_des_list = find_desiredangle(desired_theta, incident_theta, target_range=target_range)
+        thetaref_des, thetaref_des_list = find_desiredangle(-desired_theta, reflected_theta, target_range=target_range)
+        # nel = int(len(thetainc_des_list)/2)
+        # thetainc_des_list = thetainc_des_list[0:nel]
+        # thetaref_des_list = thetaref_des_list[nel:2*nel]
+        # print(theta_inc_id[0])
+        # print(theta_ref_id[0])
+        # Loop over frequency
+        # self.alpha_avg = np.zeros(len(self.controls.k0))
+        # bar = ChargingBar('Calculating absorption (avg...)',\
+        #     max=len(self.controls.k0), suffix='%(percent)d%%')
+        # for jf, k0 in enumerate(self.controls.k0):
+        #     pk_inc = self.pk[theta_inc_id[0], jf]
+        #     pk_ref = self.pk[theta_ref_id[0], jf]
+        #     # inc_energy = np.mean(np.abs(pk_inc[thetainc_des_list])**2)
+        #     # ref_energy = np.mean(np.abs(pk_ref[thetaref_des_list])**2)
+        #     inc_energy = np.abs(np.mean(pk_inc[thetainc_des_list]))**2
+        #     ref_energy = np.abs(np.mean(pk_ref[thetaref_des_list]))**2
+        #     self.alpha_avg[jf] = 1 - ref_energy/inc_energy
+        #     bar.next()
+        # # print(self.alpha_avg)
+        # bar.finish()
+
+        fig = plt.figure()
+        ax = fig.gca(projection='3d')
+        ax.scatter(incident_dir[thetainc_des_list,0], incident_dir[thetainc_des_list,1], incident_dir[thetainc_des_list,2],
+            color='blue')
+        # ax.scatter(reflected_dir[thetaref_des_list,0], reflected_dir[thetaref_des_list,1], reflected_dir[thetaref_des_list,2],
+        #     color='red')
+        ax.set_xlabel('X axis')
+        ax.set_ylabel('Y axis')
+        ax.set_zlabel('Z axis')
+        ax.set_zlim((-1, 1))
+        plt.show()
+
+        # incident_dir = self.dir[0:int(len(self.dir)):2]
+        # reflected_dir = self.dir[int(len(self.dir)/2):len(self.dir)]
+        # print('theta inc shape {}'.format(incident_dir.shape))
+        # print('theta ref shape {}'.format(reflected_dir.shape))
+        # print('theta {}'.format(np.rad2deg(theta)))
+        # print('phi {}'.format(np.rad2deg(phi)))
+        # print('theta inc shape {}'.format(np.rad2deg(incident_theta[100:110])))
+        # print('theta ref shape {}'.format(np.rad2deg(reflected_theta[100:110])))
+        # print(90-np.rad2deg(np.pi-desired_theta))
+        # ang_range = np.deg2rad(1)
+        # theta_des_list = np.where(np.logical_and(incident_theta <= desired_theta+ang_range,
+        #     incident_theta >= desired_theta-ang_range))
+        # print(theta_des_list[0].shape)
+        # print(incident_theta)
+        # theta_des_ = np.where(incident_theta <= np.deg2rad(desired_theta))
+
+    def zs(self, Lx = 0.1, Ly = 0.1, n_x = 21, n_y = 21, theta = 0, avgZs = True):
         '''
         Method to calculate the absorption coefficient straight from 3D array data.
         Inputs:
@@ -220,10 +453,10 @@ class PArrayDeduction(object):
                 self.Zs[jf] = np.mean(p_surf_mtx) / (np.mean(uz_surf_mtx)) 
             bar.next()
         bar.finish()
-        try:
-            theta = self.material.theta
-        except:
-            theta = 0
+        # try:
+        #     theta = self.material.theta
+        # except:
+        #     theta = 0
         self.alpha = 1 - (np.abs(np.divide((self.Zs  * np.cos(theta) - 1),\
             (self.Zs * np.cos(theta) + 1))))**2
         # self.alpha = 1 - (np.abs(np.divide((self.Zs - 1),\
@@ -247,7 +480,7 @@ class PArrayDeduction(object):
         fig = plt.figure()
         ax = fig.gca(projection='3d')
         if db:
-            color_par = 10*np.log10(np.abs(self.pk[:,id_f])/np.amax(np.abs(self.pk[:,id_f])))
+            color_par = 20*np.log10(np.abs(self.pk[:,id_f])/np.amax(np.abs(self.pk[:,id_f])))
             id_outofrange = np.where(color_par < -dinrange)
             color_par[id_outofrange] = -dinrange
         else:
@@ -265,6 +498,104 @@ class PArrayDeduction(object):
         if save:
             filename = 'data/colormaps/cmat_' + str(int(freq)) + 'Hz_' + name
             plt.savefig(fname = filename, format='pdf')
+
+    def plot_pk_sphere_interp(self, freq = 1000, db = False, dinrange = 40, save = False, name='name'):
+        '''
+        Method to plot the magnitude of the spatial fourier transform on the surface of a sphere.
+        The data should be interpolated first. Then, you can see a smooth representation of the colors
+        on the surface of a sphere.
+        It is a normalized version of the magnitude, either between 0 and 1 or between -dinrange and 0.
+        inputs:
+            freq - Which frequency you want to see. If the calculated spectrum does not contain it
+                we plot the closest frequency before the asked one.
+            dB (bool) - Whether to plot in linear scale (default) or decibel scale.
+            dinrange - You can specify a dinamic range for the decibel scale. It will not affect the
+            linear scale.
+            save (bool) - Whether to save or not the figure. PDF file with simple standard name
+        '''
+        id_f = np.where(self.controls.freq <= freq)
+        id_f = id_f[0][-1]
+        fig = plt.figure()
+        ax = fig.gca(projection='3d')
+        if db:
+            color_par = 20*np.log10(np.abs(self.grid_pk[id_f])/np.amax(np.abs(self.grid_pk[id_f])))
+            id_outofrange = np.where(color_par < -dinrange)
+            color_par[id_outofrange] = -dinrange
+        else:
+            color_par = np.abs(self.grid_pk[id_f])/np.amax(np.abs(self.grid_pk[id_f]))
+        norm = plt.Normalize()
+        facecolors = plt.cm.jet(norm(color_par))
+        zz, yy, xx = sph2cart(1, self.grid_theta, self.grid_phi)
+        p=ax.plot_surface(xx, yy, zz,
+            facecolors=facecolors, linewidth=0, antialiased=False, shade=False, cmap=plt.cm.coolwarm)
+        # p=ax.plot_trisurf(xx.flatten(), yy.flatten(), zz.flatten(),
+        #     color=facecolors, antialiased=False, shade=False)
+        fig.colorbar(p, shrink=0.5, aspect=5)
+        # fig.colorbar(p)
+        ax.set_xlabel('X axis')
+        ax.set_ylabel('Y axis')
+        ax.set_zlabel('Z axis')
+        plt.title('|P(k)| at ' + str(self.controls.freq[id_f]) + 'Hz - ' + name)
+        # plt.show()
+        if save:
+            filename = 'data/colormaps/cmatinterp_' + str(int(freq)) + 'Hz_' + name
+            plt.savefig(fname = filename, format='pdf')
+
+    def plot_pk_map(self, freq = 1000, db = False, dinrange = 40, save = False, name='name'):
+        '''
+        Method to plot the magnitude of the spatial fourier transform on a map of interpolated theta and phi.
+        It is a normalized version of the magnitude, either between 0 and 1 or between -dinrange and 0.
+        inputs:
+            freq - Which frequency you want to see. If the calculated spectrum does not contain it
+                we plot the closest frequency before the asked one.
+            dB (bool) - Whether to plot in linear scale (default) or decibel scale.
+            dinrange - You can specify a dinamic range for the decibel scale. It will not affect the
+            linear scale.
+            save (bool) - Whether to save or not the figure. PDF file with simple standard name
+        '''
+        id_f = np.where(self.controls.freq <= freq)
+        id_f = id_f[0][-1]
+        fig = plt.figure()
+        # ax = fig.gca(projection='3d')
+        if db:
+            color_par = 20*np.log10(np.abs(self.grid_pk[id_f])/np.amax(np.abs(self.grid_pk[id_f])))
+            id_outofrange = np.where(color_par < -dinrange)
+            color_par[id_outofrange] = -dinrange
+        else:
+            color_par = np.abs(self.grid_pk[id_f])/np.amax(np.abs(self.grid_pk[id_f]))
+        p=plt.contourf(np.rad2deg(self.grid_phi),
+            np.rad2deg(self.grid_theta), color_par)
+        fig.colorbar(p)
+        plt.xlabel('phi (azimuth) [deg]')
+        plt.ylabel('theta (elevation) [deg]')
+        plt.title('|P(k)| at ' + str(self.controls.freq[id_f]) + 'Hz - ' + name)
+        # plt.show()
+        if save:
+            filename = 'data/colormaps/map_' + str(int(freq)) + 'Hz_' + name
+            plt.savefig(fname = filename, format='pdf')
+
+    def plot_flat_pk(self, freq = 1000):
+        '''
+        Auxiliary method to plot the wave number spectrum in a xy plot
+        '''
+        id_f = np.where(self.controls.freq <= freq)
+        id_f = id_f[0][-1]
+        pk = self.pk[:,id_f]
+        xk = np.linspace(0, 1, len(pk))
+        pk_int = (self.grid_pk[id_f]).flatten()
+        # pk_int = np.flip(pk_int)
+        # print('pk {}'.format(pk_int))
+        xk_int = np.linspace(0, 1, len(pk_int))
+        plt.figure()
+        plt.title('Flat P(k)')
+        plt.plot(xk, np.abs(pk)/np.amax(np.abs(pk)), label = 'not interpolated')
+        plt.plot(xk_int,np.abs(pk_int)/np.amax(np.abs(pk_int)), '--r', label = 'interpolated')
+        plt.grid(linestyle = '--', which='both')
+        plt.legend(loc = 'upper left')
+        plt.xlabel('k/len(k) - index [-]')
+        plt.ylabel('|P(k)| [-]')
+        plt.ylim((-0.2, 1.2))
+        # plt.show()
 
     def save(self, filename = 'array_zest', path = '/home/eric/dev/insitu/data/zs_recovery/'):
         '''
@@ -290,6 +621,7 @@ class PArrayDeduction(object):
             # print('shape of k_vec: {}'.format(k_vec.shape))
             # print('shape of r: {}'.format(self.receivers.coord.shape))
             # print('shape of H: {}'.format(h_mtx.shape))
+
     # def tamura_pp(self,):
     #     '''
     #     Tamura's method to measure surface impedance based on measurements taked with a double planar array
@@ -334,6 +666,17 @@ class PArrayDeduction(object):
     #         # # reflection coefficient
     #         # vp_kxy = p_r / p_i
     #         # # print(vp_kxy.shape)
+
+#%% Auxiliary functions
+def find_desiredangle(desired_angle, angles, target_range = 3):
+    ang_sorted_list = np.unique(np.sort(angles))
+    ang_range = np.mean(ang_sorted_list[1:]-ang_sorted_list[0:-1])
+    if ang_range < np.deg2rad(target_range):
+        ang_range = np.deg2rad(target_range)
+    theta_des_list = np.where(np.logical_and(angles <= desired_angle+ang_range,
+        angles >= desired_angle-ang_range))
+    angles_in_range = angles[theta_des_list[0]]
+    return angles_in_range, theta_des_list[0]
 
 #%% Functions to use with cvxpy
 def loss_fn(H, pm, x):
