@@ -98,6 +98,8 @@ class PorousAbsorber():
         k0 = w / self.c0
         n_index = np.divide(self.kp, k0)
         theta_t = np.arcsin(np.sin(self.theta)/n_index)
+        # print(self.theta)
+        # print(theta_t)
         kzp = self.kp * np.cos(theta_t)
         self.Zs = -1j * self.Zp * (np.divide(self.kp, kzp)) *\
             (1 / np.tan(kzp * self.thickness)) #FixMe - correct Zs for other angles

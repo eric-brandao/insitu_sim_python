@@ -10,7 +10,7 @@ import sys
 from progress.bar import Bar, IncrementalBar, FillingCirclesBar, ChargingBar
 import pickle
 import time
-from insitu.controlsair import sph2cart, cart2sph
+from controlsair import sph2cart, cart2sph
 
 
 # import impedance-py/C++ module and other stuff

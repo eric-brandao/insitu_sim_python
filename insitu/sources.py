@@ -1,5 +1,5 @@
 import numpy as np
-from insitu.controlsair import sph2cart, cart2sph
+from controlsair import sph2cart, cart2sph
 from rayinidir import RayInitialDirections
 
 
@@ -50,8 +50,10 @@ class Source():
         if plot:
             directions.plot_points()
         r, theta, phi = cart2sph(directions[:,0], directions[:,1], directions[:,2])
+        # print('theta: {}'.format(np.sort(np.unique(np.rad2deg(theta)))))
+        # print('phi: {}'.format(np.sort(np.unique(np.rad2deg(phi)))))
         # theta_id = np.where(theta > -np.pi/2 and theta < np.pi/2)
-        theta_id = np.where(np.logical_and(theta > 0, theta < np.pi))
+        theta_id = np.where(np.logical_and(theta > 0, theta < np.pi/2))
         self.coord = directions[theta_id[0]]
         # print(theta_id)
         # phiv = np.linspace(start = 0, stop = 2*np.pi, num = int(np.sqrt(ns)))

@@ -8,6 +8,7 @@ import scipy as spy
 import time
 import sys
 from progress.bar import Bar, IncrementalBar, FillingCirclesBar, ChargingBar
+from tqdm import tqdm
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 unused import
 import cvxpy as cp
 from scipy import linalg # for svd
@@ -89,7 +90,8 @@ class PArrayDeduction(object):
                     (3) - else: via cvxpy
         '''
         # loop over frequencies
-        bar = ChargingBar('Calculating Tikhonov inversion...', max=len(self.controls.k0), suffix='%(percent)d%%')
+        # bar = ChargingBar('Calculating Tikhonov inversion...', max=len(self.controls.k0), suffix='%(percent)d%%')
+        bar = tqdm(total = len(self.controls.k0), desc = 'Calculating Tikhonov inversion...')
         self.pk = np.zeros((self.n_waves, len(self.controls.k0)), dtype=np.csingle)
         # print(self.pk.shape)
         for jf, k0 in enumerate(self.controls.k0):
@@ -137,8 +139,10 @@ class PArrayDeduction(object):
                 # problem.solve(solver=cp.MOSEK) # not installed
                 # problem.solve(solver=cp.OSQP) # did not work
                 self.pk[:,jf] = x.value
-            bar.next()
-        bar.finish()
+            # bar.next()
+            bar.update(1)
+        # bar.finish()
+        bar.close()
         return self.pk
 
     def pk_constrained(self, epsilon = 0.1):
@@ -238,8 +242,12 @@ class PArrayDeduction(object):
         # Recover the actual measured points
         # r, theta, phi = cart2sph(self.dir[:,0], self.dir[:,1], self.dir[:,2])
         r, theta, phi = cart2sph(self.dir[:,2], self.dir[:,1], self.dir[:,0])
-        # print('available phi {}'.format(np.unique(np.sort(np.rad2deg(phi)))))
-        # print('avalilable theta {}'.format(np.unique(np.sort(np.rad2deg(theta)))))
+        # theta = theta+np.pi/2
+        # theta[-1] = np.pi-0.0001
+        # phi = phi+np.pi
+        # phi[-1] = 2*np.pi-0.0001
+        # print('available phi {}'.format(np.unique(np.sort(phi))))
+        # print('avalilable theta {}'.format(np.unique(np.sort(theta))))
         # theta = np.pi/2 - theta
         thetaphi_pts = np.transpose(np.array([phi, theta]))
         # thetaphi_pts = np.transpose(np.array([theta, phi]))
@@ -249,12 +257,15 @@ class PArrayDeduction(object):
         new_phi = np.linspace(sorted_phi[0], sorted_phi[-1], nn)
         sorted_theta = np.sort(theta)
         new_theta = np.linspace(sorted_theta[0], sorted_theta[-1],nn)#(0, np.pi, nn)
+        # print('phi {}'.format(new_phi))
+        # print('theta {}'.format(new_theta))
+
         # print('sorted phi {}'.format(sorted_phi))
         # print('initial and end phi {}, {}'.format(sorted_phi[0], sorted_phi[-1]))
         # print('sorted theta {}'.format(sorted_theta))
-        # print('initial and end phi {}, {}'.format(sorted_theta[0], sorted_theta[-1]))
-        # new_theta = np.linspace(-np.pi/2, np.pi/2,nn)#(0, np.pi, nn)
-        # new_phi = np.linspace(-np.pi, np.pi, nn)
+        # print('initial and end theta {}, {}'.format(sorted_theta[0], sorted_theta[-1]))
+        # new_theta = np.linspace(0, np.pi, nn)#(0, np.pi, nn)
+        # new_phi = np.linspace(0, 2*np.pi, nn)
         self.grid_phi, self.grid_theta = np.meshgrid(new_phi, new_theta)
         # self.grid_phi = np.transpose(self.grid_phi)
         # self.grid_theta = np.transpose(self.grid_theta)
@@ -264,18 +275,24 @@ class PArrayDeduction(object):
         # print(np.rad2deg(np.unique(np.sort(phi))))
         # interpolate
         from scipy.interpolate import griddata
+        from scipy.interpolate import SmoothSphereBivariateSpline
+        data = np.empty((new_theta.shape[0], new_phi.shape[0]))
         self.grid_pk = []
         bar = ChargingBar('Interpolating the grid for P(k)',\
             max=len(self.controls.k0), suffix='%(percent)d%%')
         for jf, k0 in enumerate(self.controls.k0):
-            # self.grid_pk.append(griddata(thetaphi_pts, self.pk[:,jf],
-            #     (self.grid_phi, self.grid_theta), method='nearest'))
-            # a=self.grid_pk[jf]
-            # print('pk values {}'.format(a[4:7, 6:10]))
+            ###### With SmoothSphereBivariateSpline ######################
+            # interpolator = SmoothSphereBivariateSpline(theta, phi, np.real(self.pk[:,jf]))
+            # pk_smth_r = interpolator(new_theta, new_phi)
+            # interpolator = SmoothSphereBivariateSpline(theta, phi, np.imag(self.pk[:,jf]))
+            # pk_smth_i = interpolator(new_theta, new_phi)
+            # self.grid_pk.append(pk_smth_r + 1j* pk_smth_i)
+            ###### Nearest with griddata #################################
             self.grid_pk.append(griddata(thetaphi_pts, self.pk[:,jf],
-                (self.grid_phi, self.grid_theta), method='cubic', fill_value=np.finfo(float).eps, rescale=True))
+                (self.grid_phi, self.grid_theta), method='nearest'))
+            ###### Cubic with griddata #################################
             # self.grid_pk.append(griddata(thetaphi_pts, self.pk[:,jf],
-            #     (self.grid_phi, np.pi/2-self.grid_theta), method='cubic', fill_value=0.01, rescale=True))
+            #     (self.grid_phi, self.grid_theta), method='cubic', fill_value=np.finfo(float).eps, rescale=False))
             bar.next()
         bar.finish()
 
@@ -288,7 +305,7 @@ class PArrayDeduction(object):
         '''
         # Rotate desired angle to be correct and transform to radians
         desired_theta = np.deg2rad(90-desired_theta)
-        print('desired angle {} deg.'.format(np.rad2deg(desired_theta)))
+        # print('desired angle {} deg.'.format(np.rad2deg(desired_theta)))
         # get theta and phi from directions
         r, theta, phi = cart2sph(self.dir[:,0], self.dir[:,1], self.dir[:,2])
         # print('thetas available {}'.format(np.unique(np.sort(np.rad2deg(theta)))))
@@ -330,6 +347,8 @@ class PArrayDeduction(object):
             color='blue')
         ax.scatter(reflected_dir[thetaref_des_list,0], reflected_dir[thetaref_des_list,1], reflected_dir[thetaref_des_list,2],
             color='red')
+        ax.scatter(self.dir[:,0], self.dir[:,1], self.dir[:,2], 
+            color='silver', alpha=0.2)
         ax.set_xlabel('X axis')
         ax.set_ylabel('Y axis')
         ax.set_zlabel('Z axis')
@@ -345,71 +364,55 @@ class PArrayDeduction(object):
         '''
         # Rotate desired angle to be correct and transform to radians
         desired_theta = np.deg2rad(90-desired_theta)
-        print('desired angle {} deg.'.format(np.rad2deg(desired_theta)))
+        # print('desired angle {} deg.'.format(np.rad2deg(desired_theta)))
         # get theta and phi from directions
-        # r, theta, phi = cart2sph(self.dir[:,0], self.dir[:,1], self.dir[:,2])
+        theta = self.grid_theta.flatten()
+        phi = self.grid_phi.flatten()
+        xx, yy, zz = sph2cart(1, theta, phi)
+        dirs = np.transpose(np.array([xx, yy, zz]))
         # print('thetas available {}'.format(np.unique(np.sort(np.rad2deg(theta)))))
         # Get the incident directions
-        theta_inc_id = np.where(np.logical_and(self.grid_theta >= 0, self.grid_theta <= np.pi/2))
-        # print(theta_inc_id[0])
-        # print(theta_inc_id[1])
-        incident_dir = self.grid_theta[theta_inc_id[0], theta_inc_id[1]]
-        incident_theta = self.grid_theta[theta_inc_id[0], theta_inc_id[1]]
+        theta_inc_id = np.where(np.logical_and(theta >= 0, theta <= np.pi/2))
+        incident_dir = dirs[theta_inc_id[0]]
+        incident_theta = theta[theta_inc_id[0]]
         # Get the reflected directions
-        theta_ref_id = np.where(np.logical_and(self.grid_theta >= -np.pi/2, self.grid_theta <= 0))
-        reflected_dir = self.grid_theta[theta_ref_id[0], theta_ref_id[1]]
-        reflected_theta = self.grid_theta[theta_ref_id[0], theta_ref_id[1]]
+        theta_ref_id = np.where(np.logical_and(theta >= -np.pi/2, theta <= 0))
+        reflected_dir = dirs[theta_ref_id[0]]
+        reflected_theta = theta[theta_ref_id[0]]
         # # Get the indexes for and the desired angle
         thetainc_des, thetainc_des_list = find_desiredangle(desired_theta, incident_theta, target_range=target_range)
         thetaref_des, thetaref_des_list = find_desiredangle(-desired_theta, reflected_theta, target_range=target_range)
-        # nel = int(len(thetainc_des_list)/2)
-        # thetainc_des_list = thetainc_des_list[0:nel]
-        # thetaref_des_list = thetaref_des_list[nel:2*nel]
-        # print(theta_inc_id[0])
-        # print(theta_ref_id[0])
+        nel = int(len(thetainc_des_list)/2)
         # Loop over frequency
-        # self.alpha_avg = np.zeros(len(self.controls.k0))
-        # bar = ChargingBar('Calculating absorption (avg...)',\
-        #     max=len(self.controls.k0), suffix='%(percent)d%%')
-        # for jf, k0 in enumerate(self.controls.k0):
-        #     pk_inc = self.pk[theta_inc_id[0], jf]
-        #     pk_ref = self.pk[theta_ref_id[0], jf]
-        #     # inc_energy = np.mean(np.abs(pk_inc[thetainc_des_list])**2)
-        #     # ref_energy = np.mean(np.abs(pk_ref[thetaref_des_list])**2)
-        #     inc_energy = np.abs(np.mean(pk_inc[thetainc_des_list]))**2
-        #     ref_energy = np.abs(np.mean(pk_ref[thetaref_des_list]))**2
-        #     self.alpha_avg[jf] = 1 - ref_energy/inc_energy
-        #     bar.next()
-        # # print(self.alpha_avg)
-        # bar.finish()
+        self.alpha_avg2 = np.zeros(len(self.controls.k0))
+        bar = ChargingBar('Calculating absorption (avg...)',\
+            max=len(self.controls.k0), suffix='%(percent)d%%')
+        for jf, k0 in enumerate(self.controls.k0):
+            pk = self.grid_pk[jf].flatten()
+            pk_inc = pk[theta_inc_id[0]]
+            pk_ref = pk[theta_ref_id[0]]
+            inc_energy = np.mean(np.abs(pk_inc[thetainc_des_list])**2)
+            ref_energy = np.mean(np.abs(pk_ref[thetaref_des_list])**2)
+            # inc_energy = np.abs(np.mean(pk_inc[thetainc_des_list]))**2
+            # ref_energy = np.abs(np.mean(pk_ref[thetaref_des_list]))**2
+            self.alpha_avg2[jf] = 1 - ref_energy/inc_energy
+            bar.next()
+        # print(self.alpha_avg)
+        bar.finish()
 
         fig = plt.figure()
         ax = fig.gca(projection='3d')
         ax.scatter(incident_dir[thetainc_des_list,0], incident_dir[thetainc_des_list,1], incident_dir[thetainc_des_list,2],
-            color='blue')
-        # ax.scatter(reflected_dir[thetaref_des_list,0], reflected_dir[thetaref_des_list,1], reflected_dir[thetaref_des_list,2],
-        #     color='red')
+            color='blue', alpha=1)
+        ax.scatter(reflected_dir[thetaref_des_list,0], reflected_dir[thetaref_des_list,1], reflected_dir[thetaref_des_list,2],
+            color='red', alpha=1)
+        ax.scatter(dirs[:,0], dirs[:,1], dirs[:,2], 
+            color='silver', alpha=0.2)
         ax.set_xlabel('X axis')
         ax.set_ylabel('Y axis')
         ax.set_zlabel('Z axis')
         ax.set_zlim((-1, 1))
         plt.show()
-
-        # incident_dir = self.dir[0:int(len(self.dir)):2]
-        # reflected_dir = self.dir[int(len(self.dir)/2):len(self.dir)]
-        # print('theta inc shape {}'.format(incident_dir.shape))
-        # print('theta ref shape {}'.format(reflected_dir.shape))
-        # print('theta {}'.format(np.rad2deg(theta)))
-        # print('phi {}'.format(np.rad2deg(phi)))
-        # print('theta inc shape {}'.format(np.rad2deg(incident_theta[100:110])))
-        # print('theta ref shape {}'.format(np.rad2deg(reflected_theta[100:110])))
-        # print(90-np.rad2deg(np.pi-desired_theta))
-        # ang_range = np.deg2rad(1)
-        # theta_des_list = np.where(np.logical_and(incident_theta <= desired_theta+ang_range,
-        #     incident_theta >= desired_theta-ang_range))
-        # print(theta_des_list[0].shape)
-        # print(incident_theta)
-        # theta_des_ = np.where(incident_theta <= np.deg2rad(desired_theta))
 
     def zs(self, Lx = 0.1, Ly = 0.1, n_x = 21, n_y = 21, theta = 0, avgZs = True):
         '''
@@ -583,6 +586,7 @@ class PArrayDeduction(object):
         pk = self.pk[:,id_f]
         xk = np.linspace(0, 1, len(pk))
         pk_int = (self.grid_pk[id_f]).flatten()
+        # pk_int = np.roll(pk_int, 500)
         # pk_int = np.flip(pk_int)
         # print('pk {}'.format(pk_int))
         xk_int = np.linspace(0, 1, len(pk_int))

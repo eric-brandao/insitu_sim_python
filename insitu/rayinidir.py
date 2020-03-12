@@ -1,6 +1,6 @@
 import numpy as np
 import quaternion as qua
-from insitu.tessellation import SphereTessellator
+from tessellation import SphereTessellator
 
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 unused import
 import matplotlib.pyplot as plt

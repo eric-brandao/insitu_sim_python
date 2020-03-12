@@ -45,8 +45,8 @@ class PWDifField(object):
             material.delany_bazley(resistivity=resistivity)
             if locally:
                 material.layer_over_rigid(thickness = thickness, theta = 0)
-                Vp[js,:] = np.divide(material.Zs - self.air.c0*self.air.rho0,
-                    material.Zs + self.air.c0*self.air.rho0)
+                Vp[js,:] = np.divide(material.Zs * np.cos(theta) - self.air.c0*self.air.rho0,
+                    material.Zs * np.cos(theta) + self.air.c0*self.air.rho0)
             else:
                 material.layer_over_rigid(thickness = thickness, theta = theta)
                 Vp[js,:] = material.Vp
