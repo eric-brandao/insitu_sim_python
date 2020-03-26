@@ -39,7 +39,15 @@ class PorousAbsorber():
         Inputs:
             resistivity - Flow resistivity
         '''
-        pass
+        self.model = 'Miki'
+        self.resistivity = resistivity
+        X = self.freq / self.resistivity
+        w = 2 * np.pi * self.freq
+        k0 = w / self.c0
+        self.Zp = np.array((self.rho0 * self.c0) * (1 + 0.070 * X ** (-0.632)
+        - 1j * (0.107 * X ** (-0.632))), dtype = np.csingle)
+        self.kp = np.array(-1j * k0 * (0.160 * X ** (-0.618) +
+            1j * (1 + 0.109 * X ** (-0.618))), dtype = np.csingle)
 
     def jcal(self, resistivity = 10000.0, porosity = 0.99, tortuosity = 1.01, lam = 300, lam_l = 600):
         '''
@@ -106,7 +114,7 @@ class PorousAbsorber():
         self.Vp = (self.Zs * np.cos(self.theta) - self.rho0 * self.c0) /\
             (self.Zs * np.cos(self.theta) + self.rho0 * self.c0)
         self.alpha = 1 - (np.abs(self.Vp)) ** 2.0
-        # return self.Zs, self.Vp, self.alpha
+        return self.Zs, self.Vp, self.alpha
 
     def plot_zc(self,):
         '''

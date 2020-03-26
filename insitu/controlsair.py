@@ -1,6 +1,7 @@
 import numpy as np
 #import toml
 import matplotlib.pyplot as plt
+import time, sys
 
 class AirProperties():
     def __init__(self, c0 = 343.0, rho0 = 1.21, temperature = 20.0, humid = 50.0, p_atm = 101325.0):
@@ -186,14 +187,42 @@ def compare_alpha(*alphas, title = 'absorption comparison', freq_max=4000):
         plt.semilogx(freq, alpha, alpha_color, label = alpha_leg, linewidth = alpha_lw)
     plt.grid(linestyle = '--', which='both')
     plt.xscale('log')
-    plt.legend(loc = 'upper left')
+    plt.legend(loc = 'best')
     plt.xticks([50, 100, 500, 1000, 4000, 6000, 10000],
         ['50', '100', '500', '1k', '4k', '6k', '10k'])
     plt.xlabel('Frequency [Hz]')
     plt.ylabel('absorption coefficient [-]')
     plt.ylim((-0.2, 1.2))
+    plt.xlim((80, freq_max))
+    # plt.show()
+
+### Function to compare impedances
+def compare_zs(*zs, title = 'surface impedance comparison', freq_max=4000):
+    '''
+    This function is used to compare the absorption coefficients of several estimations
+    '''
+    fig, axs = plt.subplots(2,1)
+    for zs_dict in zs:
+        zs_color = zs_dict['color']
+        zs_lw = zs_dict['linewidth']
+        freq_leg = list(zs_dict.keys())[0]
+        zs_leg = list(zs_dict.keys())[1]
+        freq = zs_dict[freq_leg]
+        zs = zs_dict[zs_leg]
+        axs[0].semilogx(freq, np.real(zs), zs_color, label = zs_leg, linewidth = zs_lw)
+        axs[1].semilogx(freq, np.imag(zs), zs_color, linewidth = zs_lw)
+        # plt.semilogx(freq, alpha, alpha_color, label = alpha_leg, linewidth = alpha_lw)
+    axs[0].grid(linestyle = '--', which='both')
+    axs[0].legend(loc = 'best')
+    axs[0].set(ylabel = 'Re{Zs} [-]')
+    axs[1].grid(linestyle = '--', which='both')
+    axs[1].set(xlabel = 'Frequency [Hz]')
+    axs[1].set(ylabel = 'Im{Zs} [-]')
+    plt.xticks([50, 100, 500, 1000, 4000, 6000, 10000],
+        ['50', '100', '500', '1k', '4k', '6k', '10k'])
+    plt.xlabel('Frequency [Hz]')
     plt.xlim((0.8 * freq[0], freq_max))
-    plt.show()
+    # plt.show()
 
 def sph2cart(r, theta, phi):
     '''
@@ -229,3 +258,23 @@ def cart2sph(x,y,z):
     theta = np.arctan2(z, np.sqrt(x**2 + y**2)) # elevation
     r = np.sqrt(x**2 + y**2 + z**2)
     return r, theta, phi
+
+def update_progress(progress):
+    barLength = 20 # Modify this to change the length of the progress bar
+    status = ""
+    if isinstance(progress, int):
+        progress = float(progress)
+    if not isinstance(progress, float):
+        progress = 0
+        status = "error: progress var must be float\r\n"
+    # progress = float("{0:.2f}".format(progress))
+    if progress < 0:
+        progress = 0
+        status = "Halt...\r\n"
+    if progress >= 1:
+        progress = 1
+        status = "Done...\r\n"
+    block = int(round(barLength*progress))
+    text = "\rPercent: [{0}] {1}% {2}".format( "#"*block + "-"*(barLength-block), float("{0:.2f}".format(progress*100)), status)
+    sys.stdout.write(text)
+    sys.stdout.flush()

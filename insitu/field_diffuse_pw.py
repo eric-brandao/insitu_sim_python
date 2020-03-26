@@ -10,11 +10,11 @@ import sys
 from progress.bar import Bar, IncrementalBar, FillingCirclesBar, ChargingBar
 import pickle
 import time
-from insitu.controlsair import sph2cart, cart2sph
+from controlsair import sph2cart, cart2sph
 # import impedance-py/C++ module and other stuff
-import insitu_cpp
-from controlsair import plot_spk
-from insitu.material import PorousAbsorber
+# import insitu_cpp
+from controlsair import plot_spk, update_progress
+from material import PorousAbsorber
 
 class PWDifField(object):
     '''
@@ -42,7 +42,7 @@ class PWDifField(object):
         for js, s_coord in enumerate(self.sources.coord):
             r, theta, phi = cart2sph(s_coord[0], s_coord[1], s_coord[2])
             material = PorousAbsorber(self.air, self.controls)
-            material.delany_bazley(resistivity=resistivity)
+            material.miki(resistivity=resistivity)
             if locally:
                 material.layer_over_rigid(thickness = thickness, theta = 0)
                 Vp[js,:] = np.divide(material.Zs * np.cos(theta) - self.air.c0*self.air.rho0,
@@ -61,15 +61,16 @@ class PWDifField(object):
             q = np.ones(ns)
 
         pres_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
-        bar = ChargingBar('Calculating sound pressure at each receiver', max=len(self.receivers.coord), suffix='%(percent)d%%')
+        # bar = ChargingBar('Calculating sound pressure at each receiver', max=len(self.receivers.coord), suffix='%(percent)d%%')
         for jrec, r_coord in enumerate(self.receivers.coord):
+            update_progress(jrec/len(self.receivers.coord))
             # r = np.linalg.norm(r_coord) # distance source-receiver
             for jf, k0 in enumerate(self.controls.k0):
                 k_vec = k0 * self.sources.coord
                 pres_rec[jrec, jf] = np.sum(q * (np.exp(1j * np.dot(k_vec, r_coord))+\
                 Vp[:,jf] * np.exp(-1j * np.dot(k_vec, r_coord))))
-            bar.next()
-        bar.finish()
+        #     bar.next()
+        # bar.finish()
         self.pres_s = [pres_rec]
 
     def plot_pres(self):
@@ -119,3 +120,23 @@ class PWDifField(object):
         ax.view_init(elev=5, azim=-55)
         # ax.invert_zaxis()
         plt.show() # show plot
+
+    def save(self, filename = 'my_pw', path = '/home/eric/dev/insitu/data/'):
+        '''
+        This method is used to save the simulation object
+        '''
+        self.path_filename = path + filename + '.pkl'
+        f = open(self.path_filename, 'wb')
+        pickle.dump(self.__dict__, f, 2)
+        f.close()
+
+    def load(self, filename = 'my_pw', path = '/home/eric/dev/insitu/data/'):
+        '''
+        This method is used to load a simulation object. You build a empty object
+        of the class and load a saved one. It will overwrite the empty one.
+        '''
+        lpath_filename = path + filename + '.pkl'
+        f = open(lpath_filename, 'rb')
+        tmp_dict = pickle.load(f)
+        f.close()
+        self.__dict__.update(tmp_dict)

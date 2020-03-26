@@ -13,6 +13,7 @@ import time
 
 # import impedance-py/C++ module and other stuff
 import insitu_cpp
+
 from controlsair import plot_spk
 
 class BEMFlush(object):
@@ -22,13 +23,16 @@ class BEMFlush(object):
     finite samples)
     The inputs are the objects: air, controls, material, sources, receivers
     '''
-    def __init__(self, air, controls, material, sources, receivers):
+    def __init__(self, air = [], controls = [], material = [], sources = [], receivers = []):
         self.air = air
         self.controls = controls
         self.material = material
         self.sources = sources
         self.receivers = receivers
-        self.beta = (self.air.rho0 * self.air.c0) / self.material.Zs  # normalized surface admitance
+        try:
+            self.beta = (self.air.rho0 * self.air.c0) / self.material.Zs  # normalized surface admitance
+        except:
+            self.beta = []
         self.pres_s = []
         self.uz_s = []
         # Load Gauss points and weights
@@ -158,6 +162,7 @@ class BEMFlush(object):
         bar = ChargingBar('Assembling BEM matrix for each frequency step',
             max=len(self.controls.k0), suffix='%(percent)d%%')
         self.gij_f = []
+        # print(dir(insitu_cpp))
         for jf, k0 in enumerate(self.controls.k0):
             # fakebeta = np.array(0.02+1j*0.2)
             # Assemble the bem matrix (c++)

@@ -21,7 +21,7 @@ class PWField(object):
     using plane wave incidence. This can be of use with array methods
     The inputs are the objects: air, controls, material, sources, receivers
     '''
-    def __init__(self,  air, controls, material, receivers, theta = 0, phi = 0):
+    def __init__(self,  air = [], controls = [], material = [], receivers = [], theta = 0, phi = 0):
         self.air = air
         self.controls = controls
         self.material = material
@@ -133,4 +133,30 @@ class PWField(object):
         ax.view_init(elev=5, azim=-55)
         # ax.invert_zaxis()
         plt.show() # show plot
+
+    def plot_pres(self):
+        '''
+        Method to plot the spectrum of the sound pressure
+        '''
+        plot_spk(self.controls.freq, self.pres_s, ref = 20e-6)
+
+    def save(self, filename = 'my_pw', path = '/home/eric/dev/insitu/data/'):
+        '''
+        This method is used to save the simulation object
+        '''
+        self.path_filename = path + filename + '.pkl'
+        f = open(self.path_filename, 'wb')
+        pickle.dump(self.__dict__, f, 2)
+        f.close()
+
+    def load(self, filename = 'my_pw', path = '/home/eric/dev/insitu/data/'):
+        '''
+        This method is used to load a simulation object. You build a empty object
+        of the class and load a saved one. It will overwrite the empty one.
+        '''
+        lpath_filename = path + filename + '.pkl'
+        f = open(lpath_filename, 'rb')
+        tmp_dict = pickle.load(f)
+        f.close()
+        self.__dict__.update(tmp_dict)
 
