@@ -116,6 +116,44 @@ class PorousAbsorber():
         self.alpha = 1 - (np.abs(self.Vp)) ** 2.0
         return self.Zs, self.Vp, self.alpha
 
+    def layer_over_airgap(self, thick1 = 25.0/1000, thick2 = 10.0/1000, theta = 0.0):
+        '''
+        This method calculates the surface impedance and the associated reflection and 
+        absorption coefficient - for a layer over an air gap over a rigid backing
+        Inputs:
+            thick1 [m] of top layer (default 25 [mm])
+            thick2 [m] of bottom layer (default 100 [mm])
+            theta [rad] - incidence angle (default 0 [-] - normal incidence)
+        '''
+        self.thick1 = np.float32(thick1)
+        self.thick2 = np.float32(thick2)
+        self.theta = theta
+        self.material_scene = 'sample over an air gap and rigid backing; thick1: '+\
+            "{:.4f}".format(self.thick1) + ' [m]' + ' and thick2: '+\
+            "{:.4f}".format(self.thick2) + ' [m]'
+        w = 2 * np.pi * self.freq
+        k0 = w / self.c0
+        # get the refraction angle to porous layer
+        n_1 = np.divide(self.kp, k0)
+        theta_t1 = np.arcsin(np.sin(self.theta)/n_1)
+        # get the refraction angle to air gap
+        n_2 = np.divide(k0, self.kp)
+        theta_t2 = np.arcsin(np.sin(theta_t1)/n_2)
+        # air characteristic impedance
+        Z0 = self.c0 * self.rho0
+        # surface impedance at the top of air gap
+        kz2 = k0 * np.cos(theta_t2)
+        Zs2 = -1j * Z0 * (np.divide(k0, kz2)) * (1 / np.tan(kz2 * self.thick2))
+        # surface impedance at the top of porous layer
+        self.Zs = np.divide((-1j*Zs2*self.Zp*np.cos(theta_t1)*\
+            (1/np.tan(self.kp*np.cos(theta_t1)*self.thick1)) + (self.Zp)**2),
+            (Zs2*((np.cos(theta_t1))**2) - 1j*self.Zp*np.cos(theta_t1)*\
+            (1/np.tan(self.kp*np.cos(theta_t1)*self.thick1))))
+        self.Vp = (self.Zs * np.cos(self.theta) - self.rho0 * self.c0) /\
+            (self.Zs * np.cos(self.theta) + self.rho0 * self.c0)
+        self.alpha = 1 - (np.abs(self.Vp)) ** 2.0
+        return self.Zs, self.Vp, self.alpha
+
     def plot_zc(self,):
         '''
         This method is used to plot the reference characteristic impedance

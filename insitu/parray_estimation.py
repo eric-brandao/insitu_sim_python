@@ -725,6 +725,18 @@ class PArrayDeduction(object):
         # plt.show()
 
     def plot_alpha(self, theta = [0], save = False, path = 'single_pw/', filename = 'absorption'):
+        '''
+        A method to plot the absorption coefficient. If your acoustic field is composed of a single
+        sound source, then the "material" object passed to this class is used as a reference basis of
+        comparison (the "except" case). In that case "self.desired_theta" is composed of a single angle of incidence targeting
+        the only existing sound source in the acoustic field. The incidence angle comes with the passed "material".
+        It is the same as self.desired_theta.
+
+        Now, if the acoustic field is composed of a more difuse sound incidence (the "try" case)
+        you would need to recreate a reference material. In that case, as the flow resistivity and thickness
+        of the sample do not change you can just take this data out of the list of materials in "field"
+        (use material[0]). The incidence angle is the theta passed as an argument to the function.
+        '''
         id_t = np.where(self.desired_theta <= theta)
         id_t = id_t[0][-1]
         try:
@@ -733,9 +745,9 @@ class PArrayDeduction(object):
             material.layer_over_rigid(thickness = self.material[0].thickness, theta = theta)
         except:
             material = self.material
-        leg_ref = str(int(1000*material.thickness)) + ' mm, with ' +\
-            str(int(material.resistivity)) + ' resistivity at ' +\
-            str(int(np.rad2deg(material.theta))) + ' deg inc'
+        leg_ref = str(int(1000*material.thickness)) + ' mm, ' +\
+            str(int(material.resistivity)) + ' resist. (' +\
+            str(int(np.ceil(np.rad2deg(material.theta)))) + ' deg.)'
         if self.flag_oct_interp:
             freq = self.freq_oct
         else:
@@ -744,13 +756,10 @@ class PArrayDeduction(object):
         compare_alpha(
             {'freq': material.freq, leg_ref: material.alpha, 'color': 'black', 'linewidth': 4},
             {'freq': self.controls.freq, 'backpropagation': self.alpha[id_t,:], 'color': 'blue', 'linewidth': 3},
-            #{'freq': self.controls.freq, 'backpropagation sel': self.alpha_sel, 'color': 'orange', 'linewidth': 2},
+            {'freq': self.controls.freq, 'backpropagation sel': self.alpha_sel, 'color': 'orange', 'linewidth': 2},
             {'freq': self.controls.freq, "Melanie's way": self.alpha_avg[id_t,:], 'color': 'red', 'linewidth': 1},
             {'freq': freq, "Melanie's way with interp": self.alpha_avg2[id_t,:], 'color': 'green', 'linewidth': 2})
-        # compare_alpha(
-        #     {'freq': material.freq, leg_ref: material.alpha, 'color': 'black', 'linewidth': 4},
-        #     {'freq': self.controls.freq, 'backpropagation': self.alpha, 'color': 'blue', 'linewidth': 3},
-        #     {'freq': self.controls.freq, 'backpropagation sel': self.alpha_sel, 'color': 'maroon', 'linewidth': 2})
+
         if save:
             filename = '/home/eric/research/insitu_arrays/results/figures/' + path + '/absorption/' + filename
             plt.savefig(fname = filename, format='pdf')
@@ -762,14 +771,14 @@ class PArrayDeduction(object):
             material.layer_over_rigid(thickness = self.material[0].thickness, theta = theta)
         except:
             material = self.material
-        leg_ref = str(int(1000*material.thickness)) + ' mm, with ' +\
-            str(int(material.resistivity)) + ' resistivity at ' +\
-            str(int(np.rad2deg(material.theta))) + ' deg inc'
+        leg_ref = str(int(1000*material.thickness)) + ' mm, ' +\
+            str(int(material.resistivity)) + ' resist. (' +\
+            str(int(np.ceil(np.rad2deg(material.theta)))) + ' deg.)'
 
         compare_zs(
             {'freq': material.freq, leg_ref: material.Zs/(self.air.c0*self.air.rho0), 'color': 'black', 'linewidth': 4},
-            {'freq': self.controls.freq, 'backpropagation': self.Zs, 'color': 'blue', 'linewidth': 2})
-            # {'freq': self.controls.freq, 'backpropagation sel': self.Zs_sel, 'color': 'orange', 'linewidth': 2})
+            {'freq': self.controls.freq, 'backpropagation': self.Zs, 'color': 'blue', 'linewidth': 2},
+            {'freq': self.controls.freq, 'backpropagation sel': self.Zs_sel, 'color': 'orange', 'linewidth': 2})
         if save:
             filename = '/home/eric/research/insitu_arrays/results/figures/' + path + '/surfimpedance/' + filename
             plt.savefig(fname = filename, format='pdf')
@@ -777,39 +786,65 @@ class PArrayDeduction(object):
     def plot_alphavstheta(self, save = False, path = 'single_pw/', filename = 'absorption'):
         '''
         Function used to plot alpha vs. theta per frequency band
-        '''
-        # Find frequency bands to plot from 315 - 2000 (Melanie's papper)
-        id_fplt = np.where(np.logical_and(self.freq_oct > 250,
-            self.freq_oct < 2500))
-        freq_oct = self.freq_oct[id_fplt[0]]
-        # Create a reference:
-        porous = PorousAbsorber(self.air, self.controls)
-        porous.freq = freq_oct
-        porous.miki(resistivity=self.material[0].resistivity)
 
-        alpha_ref = np.zeros((len(self.desired_theta), len(freq_oct)))
-        for jel, el in enumerate(self.desired_theta):
-            Zs, Vp, alpha_ref[jel, :] = porous.layer_over_rigid(thickness=self.material[0].thickness,
-                theta = el)
-        # The figure
-        fig, axs = plt.subplots(3,3)
-        jfc = 0
-        jfc_data = id_fplt[0][0]
-        for jl in np.arange(0, 3):
-            for jc in np.arange(0,3):
-                axs[jl, jc].plot(np.rad2deg(self.desired_theta),
-                    alpha_ref[:, jfc], 'black', label = 'data', linewidth = 2)
-                axs[jl, jc].plot(np.rad2deg(self.desired_theta),
-                    self.alpha_avg2[:, jfc_data], 'green', label = 'data', linewidth = 2)
-                axs[jl, jc].grid(linestyle = '--', which='both')
-                # axs[0].legend(loc = 'best')
-                axs[jl, jc].set(title = 'fc = ' + str(freq_oct[jfc]) + 'Hz')
-                axs[jl, jc].set(ylabel = 'absorption coefficient')
-                axs[jl, jc].set(xlabel = 'angle [deg]')
-                plt.setp(axs[jl, jc], ylim=(0.0, 1.0))
-                jfc += 1
-                jfc_data +=1
-        print('done')
+        If your acoustic field is composed of a single sound source, it does not make sense to use this method,
+        as outputs away from the angle where the source is will be very imprecise.
+
+        Now, if the acoustic field is composed of a more difuse sound incidence (the "try" case)
+        you would need to recreate a reference material. In that case, as the flow resistivity and thickness
+        of the sample do not change you can just take this data out of the list of materials in "field"
+        (use material[0]). The target incidence angles are the ones in self.desired_theta.
+
+        Frequency bands from 315 to 2000 are ploted at this stage.
+        '''
+        # Let's test if the acoustic field is diffuse or composed of a single sound source.
+        if (not self.sources or len(self.sources.coord) == 1):
+            print('You only have a single sound source incidence. It does not make sense to print angle variation of absorption coefficient')
+        # if diffuse field is the case, then:
+        else:
+            # Create a reference:
+            alpha_ref = alpha_vs_angle(self.desired_theta, self.air, self.controls,
+                self.material[0].resistivity, self.material[0].thick1, thick2 = self.material[0].thick2)
+            freq_oct, flower, fupper = octave_freq(self.controls.freq, nband = 3)
+            # octave avg each direction
+            alpha_ref_oct = np.zeros((len(self.desired_theta), len(freq_oct)), dtype=np.csingle)
+            for jang in np.arange(0, len(self.desired_theta)):
+                alpha_ref_oct[jang,:] = octave_avg(self.controls.freq, alpha_ref[jang, :], freq_oct, flower, fupper)
+            # Find frequency bands to plot from 315 - 2000 (Melanie's papper)
+            id_fplt = np.where(np.logical_and(self.freq_oct > 250,
+                self.freq_oct < 2500))
+            freq_oct = self.freq_oct[id_fplt[0]]
+            alpha_ref_oct = alpha_ref_oct[:,id_fplt[0]]
+            #############################################################################
+            # porous = PorousAbsorber(self.air, self.controls)
+            # porous.freq = freq_oct
+            # porous.miki(resistivity=self.material[0].resistivity)
+
+            # alpha_ref = np.zeros((len(self.desired_theta), len(freq_oct)))
+            # for jel, el in enumerate(self.desired_theta):
+            #     Zs, Vp, alpha_ref[jel, :] = porous.layer_over_rigid(thickness=self.material[0].thickness,
+            #         theta = el)
+            #############################################################################
+            # The figure
+            fig, axs = plt.subplots(3,3)
+            jfc = 0
+            jfc_data = id_fplt[0][0]
+            for jl in np.arange(0, 3):
+                for jc in np.arange(0,3):
+                    axs[jl, jc].plot(np.rad2deg(self.desired_theta),
+                        alpha_ref_oct[:, jfc], 'black', label = 'data', linewidth = 2)
+                    axs[jl, jc].plot(np.rad2deg(self.desired_theta),
+                        self.alpha_avg2[:, jfc_data], 'green', label = 'data', linewidth = 2)
+                    axs[jl, jc].grid(linestyle = '--', which='both')
+                    # axs[0].legend(loc = 'best')
+                    axs[jl, jc].set(title = 'fc = ' + str("{:.1f}".format(freq_oct[jfc])) + 'Hz')
+                    # axs[jl, jc].set(title = 'fc = ' + str(freq_oct[jfc]) + 'Hz')
+                    axs[jl, jc].set(ylabel = 'absorption coefficient')
+                    axs[jl, jc].set(xlabel = 'angle [deg]')
+                    plt.setp(axs[jl, jc], ylim=(0.0, 1.0))
+                    jfc += 1
+                    jfc_data +=1
+            print('done')
 
     def save(self, filename = 'array_zest', path = '/home/eric/dev/insitu/data/zs_recovery/'):
         '''
@@ -849,8 +884,8 @@ def find_desiredangle(desired_angle, angles, target_range = 3):
     ang_range = np.mean(ang_sorted_list[1:]-ang_sorted_list[0:-1])
     if ang_range < np.deg2rad(target_range):
         ang_range = np.deg2rad(target_range)
-    theta_des_list = np.where(np.logical_and(angles <= desired_angle+ang_range,
-        angles >= desired_angle-ang_range))
+    theta_des_list = np.where(np.logical_and(angles <= desired_angle+ang_range/2,
+        angles >= desired_angle-ang_range/2))
     angles_in_range = angles[theta_des_list[0]]
     return angles_in_range, theta_des_list[0]
 
@@ -926,6 +961,16 @@ def octave_avg(freq, signal, fcentre, flower, fupper):
         # print('for fc of {}, frequencies are: {}'.format(fc, freq[id_f[0]]))
         signal_oct[jfc] = np.mean(signal[id_f[0]])
     return signal_oct
+
+def alpha_vs_angle(desired_theta, air, controls, resistivity, thick1, thick2 = 0):
+    porous = PorousAbsorber(air, controls)
+    # porous.freq = controls.freq
+    porous.miki(resistivity=resistivity)
+    alpha_ref = np.zeros((len(desired_theta), len(porous.freq)))
+    for jel, el in enumerate(desired_theta):
+        Zs, Vp, alpha_ref[jel, :] = porous.layer_over_rigid(thickness = thick1,
+            theta = el)
+    return alpha_ref
 
 # def absorption_calc(freq, pk, theta, desired_theta, theta_inc_id, theta_ref_id, target_range):
 #     # Initialize

@@ -32,9 +32,9 @@ class PWDifField(object):
         self.pres_s = []
         self.uz_s = []
 
-    def p_fps(self, resistivity = 25000, thickness = 0.1, locally = True, randomize = True, seed = 0):
+    def p_fps(self, resistivity = 25000, thickness = 0.1, thick2=0, locally = True, randomize = True, seed = 0):
         '''
-        Method to calculate the diffuse field incidence at every receiver. 
+        Method to calculate the diffuse field incidence at every receiver.
         '''
         # We loop over each source and create the correct boundary conditions
         Vp = np.zeros((len(self.sources.coord), len(self.controls.freq)), dtype = np.csingle)
@@ -44,11 +44,17 @@ class PWDifField(object):
             material = PorousAbsorber(self.air, self.controls)
             material.miki(resistivity=resistivity)
             if locally:
-                material.layer_over_rigid(thickness = thickness, theta = 0)
+                if thick2 == 0:
+                    material.layer_over_rigid(thickness = thickness, theta = 0)
+                else:
+                    material.layer_over_airgap(thick1 = thickness, thick2 = thick2, theta = 0)
                 Vp[js,:] = np.divide(material.Zs * np.cos(theta) - self.air.c0*self.air.rho0,
                     material.Zs * np.cos(theta) + self.air.c0*self.air.rho0)
             else:
-                material.layer_over_rigid(thickness = thickness, theta = theta)
+                if thick2 == 0:
+                    material.layer_over_rigid(thickness = thickness, theta = theta)
+                else:
+                    material.layer_over_airgap(thick1 = thickness, thick2 = thick2, theta = theta)
                 Vp[js,:] = material.Vp
             self.material.append(material)
         ns = len(self.sources.coord)

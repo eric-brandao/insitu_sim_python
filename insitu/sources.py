@@ -14,7 +14,7 @@ class Source():
         self.coord = np.reshape(np.array(coord, dtype = np.float32), (1,3))
         self.q = np.array(q, dtype = np.float32)
 
-    def set_arc_sources(self, radius = 1.0, ns = 10, angle_span = (-90, 90), random = False):
+    def set_arc_sources(self, radius = 1.0, ns = 100, angle_span = (-90, 90), random = False):
         '''
         This method is used to generate an array of sound sources in an 2D arc
         Inputs:
@@ -23,7 +23,14 @@ class Source():
             angle_span - tuple with the range for which the sources span
             random (bool) - if True, then the complex amplitudes are randomized
         '''
-        pass
+        theta = np.linspace(start = 0, stop = np.pi/2, num = ns)
+        x_coord = radius * np.sin(theta)
+        y_coord = np.zeros(len(theta))
+        z_coord = radius * np.cos(theta)
+        self.coord = np.zeros((len(theta), 3), dtype=np.float32)
+        self.coord[:,0] = x_coord.flatten()
+        self.coord[:,1] = y_coord.flatten()
+        self.coord[:,2] = z_coord.flatten()
 
     # def set_sphdir_sources(self, ns = 100, random = False):
     #     '''

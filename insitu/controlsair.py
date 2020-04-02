@@ -209,15 +209,17 @@ def compare_zs(*zs, title = 'surface impedance comparison', freq_max=4000):
         zs_leg = list(zs_dict.keys())[1]
         freq = zs_dict[freq_leg]
         zs = zs_dict[zs_leg]
-        axs[0].semilogx(freq, np.real(zs), zs_color, label = zs_leg, linewidth = zs_lw)
-        axs[1].semilogx(freq, np.imag(zs), zs_color, linewidth = zs_lw)
+        axs[0].semilogx(freq, np.real(zs), zs_color, linewidth = zs_lw)
+        axs[1].semilogx(freq, np.imag(zs), zs_color, label = zs_leg, linewidth = zs_lw)
         # plt.semilogx(freq, alpha, alpha_color, label = alpha_leg, linewidth = alpha_lw)
     axs[0].grid(linestyle = '--', which='both')
-    axs[0].legend(loc = 'best')
     axs[0].set(ylabel = 'Re{Zs} [-]')
+    axs[0].set(ylim = (0.0, 3.0))
     axs[1].grid(linestyle = '--', which='both')
     axs[1].set(xlabel = 'Frequency [Hz]')
     axs[1].set(ylabel = 'Im{Zs} [-]')
+    axs[1].set(ylim = (-20.0, 5.0))
+    axs[1].legend(loc = 'lower right')
     plt.xticks([50, 100, 500, 1000, 4000, 6000, 10000],
         ['50', '100', '500', '1k', '4k', '6k', '10k'])
     plt.xlabel('Frequency [Hz]')
