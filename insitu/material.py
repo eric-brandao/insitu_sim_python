@@ -45,11 +45,11 @@ class PorousAbsorber():
         w = 2 * np.pi * self.freq
         k0 = w / self.c0
         self.Zp = np.array((self.rho0 * self.c0) * (1 + 0.070 * X ** (-0.632)
-        - 1j * (0.107 * X ** (-0.632))), dtype = np.csingle)
+        - 1j * (0.107 * X ** (-0.632))), dtype = complex)
         self.kp = np.array(-1j * k0 * (0.160 * X ** (-0.618) +
-            1j * (1 + 0.109 * X ** (-0.618))), dtype = np.csingle)
+            1j * (1 + 0.109 * X ** (-0.618))), dtype = complex)
 
-    def jcal(self, resistivity = 10000.0, porosity = 0.99, tortuosity = 1.01, lam = 300, lam_l = 600):
+    def jcal(self, resistivity = 10000.0, porosity = 0.99, tortuosity = 1.00, lam = 300/1000000, lam_l = 600/1000000):
         '''
         This method calculates the Characteristic impedance and the characteristic wave number
         by the Johnson, Champoux, Allard, Lafarge model
@@ -61,12 +61,16 @@ class PorousAbsorber():
             thermal characteristic lengh (m 10^-6)
         '''
         self.model = 'JCAL'
-        self.resistivity = np.float32(resistivity)
-        self.porosity = np.float32(porosity)
-        self.tortuosity = np.float32(tortuosity)
-        self.lam = np.float32(lam)
+        # self.resistivity = np.float32(resistivity)
+        # self.porosity = np.float32(porosity)
+        # self.tortuosity = np.float32(tortuosity)
+        # self.lam = np.float32(lam)
+        self.resistivity = np.array(resistivity)
+        self.porosity = np.array(porosity)
+        self.tortuosity = np.array(tortuosity)
+        self.lam = np.array(lam)
         if lam_l > self.lam:
-            self.lam_l = np.float32(lam_l)
+            self.lam_l = np.array(lam_l)
         else:
             self.lam_l = 2.0 * self.lam
             print('bla')
@@ -98,7 +102,7 @@ class PorousAbsorber():
             thickness [m] (default 25 [mm])
             theta [deg] - incidence angle (default 0 [deg] - normal incidence)
         '''
-        self.thickness = np.float32(thickness)
+        self.thickness = np.array(thickness)
         self.theta = theta
         self.material_scene = 'sample over rigid backing; thickness: '+\
             "{:.4f}".format(self.thickness) + ' [m]'

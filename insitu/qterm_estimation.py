@@ -159,7 +159,7 @@ class ImpedanceDeductionQterm(object):
             z1 = self.receivers.coord[1,2]
             z2 = self.receivers.coord[0,2]
         # allocate memory for the estimated impedance
-        self.Zs_q_pp = np.zeros(len(k0), dtype = np.csingle)
+        self.Zs_q_pp = np.zeros(len(k0), dtype = complex)
         # setup progressbar
         bar = ChargingBar('Calculating the surface impedance (q-term)', max=len(k0), suffix='%(percent)d%%')
         for jf, kf in enumerate(k0): # scan all frequencies
@@ -226,7 +226,7 @@ class ImpedanceDeductionQterm(object):
         zr = self.receivers.coord[0,2]
 
         # allocate memory for the estimated impedance
-        self.Zs_q_pu = np.zeros(len(k0), dtype = np.csingle)
+        self.Zs_q_pu = np.zeros(len(k0), dtype = complex)
         # setup progressbar
         bar = ChargingBar('Calculating the surface impedance (q-term)', max=len(k0), suffix='%(percent)d%%')
         for jf, kf in enumerate(k0): # scan all frequencies

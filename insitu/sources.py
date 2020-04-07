@@ -23,7 +23,7 @@ class Source():
             angle_span - tuple with the range for which the sources span
             random (bool) - if True, then the complex amplitudes are randomized
         '''
-        theta = np.linspace(start = 0, stop = np.pi/2, num = ns)
+        theta = np.linspace(start = -np.pi/2, stop = np.pi/2, num = ns)
         x_coord = radius * np.sin(theta)
         y_coord = np.zeros(len(theta))
         z_coord = radius * np.cos(theta)

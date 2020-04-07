@@ -15,8 +15,10 @@ class AirProperties():
             p_atm - atmospheric pressure (default 101325.0 Pa)
         '''
         # config = load_cfg(config_file)
-        self.c0 = np.array(c0, dtype = np.float32)
-        self.rho0 = np.array(rho0, dtype = np.float32)
+        # self.c0 = np.array(c0, dtype = np.float32)
+        # self.rho0 = np.array(rho0, dtype = np.float32)
+        self.c0 = np.array(c0)
+        self.rho0 = np.array(rho0)
         self.temperature = np.array(temperature, dtype = np.float32)
         self.hr = np.array(humid, dtype = np.float32)
         self.p_atm = np.array(p_atm, dtype = np.float32)
@@ -97,13 +99,13 @@ class AlgControls():
         # config = load_cfg(config_file)
         freq_vec = np.array(freq_vec)
         if freq_vec.size == 0:
-            self.freq_init = np.array(freq_init, dtype = np.float32)
-            self.freq_end = np.array(freq_end, dtype = np.float32)
-            self.freq_step = np.array(freq_step, dtype = np.float32)
-            self.freq = np.arange(self.freq_init, self.freq_end + self.freq_step, self.freq_step, dtype = np.float32)
+            self.freq_init = np.array(freq_init)
+            self.freq_end = np.array(freq_end)
+            self.freq_step = np.array(freq_step)
+            self.freq = np.arange(self.freq_init, self.freq_end + self.freq_step, self.freq_step)
         else:
-            self.freq_init = np.array(freq_vec[0], dtype = np.float32)
-            self.freq_end = np.array(freq_vec[-1], dtype = np.float32)
+            self.freq_init = np.array(freq_vec[0])
+            self.freq_end = np.array(freq_vec[-1])
             self.freq = freq_vec
         self.w = 2.0 * np.pi * self.freq
         self.k0 = self.w / c0

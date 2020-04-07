@@ -38,7 +38,7 @@ class PWDifField(object):
         '''
         # We loop over each source and create the correct boundary conditions
         Vp = np.zeros((len(self.sources.coord), len(self.controls.freq)), dtype = np.csingle)
-        np.random.seed(seed)
+        # np.random.seed(seed)
         for js, s_coord in enumerate(self.sources.coord):
             r, theta, phi = cart2sph(s_coord[0], s_coord[1], s_coord[2])
             material = PorousAbsorber(self.air, self.controls)
@@ -48,8 +48,10 @@ class PWDifField(object):
                     material.layer_over_rigid(thickness = thickness, theta = 0)
                 else:
                     material.layer_over_airgap(thick1 = thickness, thick2 = thick2, theta = 0)
-                Vp[js,:] = np.divide(material.Zs * np.cos(theta) - self.air.c0*self.air.rho0,
-                    material.Zs * np.cos(theta) + self.air.c0*self.air.rho0)
+                # Vp[js,:] = np.divide(material.Zs * np.cos(theta) - self.air.c0*self.air.rho0,
+                #     material.Zs * np.cos(theta) + self.air.c0*self.air.rho0)
+                Vp[js,:] = np.divide(material.Zs - self.air.c0*self.air.rho0,
+                    material.Zs + self.air.c0*self.air.rho0)
             else:
                 if thick2 == 0:
                     material.layer_over_rigid(thickness = thickness, theta = theta)
@@ -58,20 +60,30 @@ class PWDifField(object):
                 Vp[js,:] = material.Vp
             self.material.append(material)
         ns = len(self.sources.coord)
-        if randomize:
-            amp = np.sqrt(np.random.randn(ns)**2 + np.random.randn(ns)**2)
-            amp = amp/np.amax(amp)
-            phase = np.random.rand(ns)
-            q = amp * np.exp(1j*phase)#np.random.randn(ns) + 1j*np.random.randn(ns)
-        else:
-            q = np.ones(ns)
+        # if randomize:
+        #     # amp = np.sqrt(np.random.randn(ns)**2 + np.random.randn(ns)**2)
+        #     amp = np.sqrt(np.random.normal(0,1,ns)**2 + np.random.normal(0,1,ns)**2)
+        #     # amp = amp/np.amax(amp)
+        #     phase = np.random.rand(ns)
+        #     q = amp * np.exp(1j*phase)#np.random.randn(ns) + 1j*np.random.randn(ns)
+        # else:
+        #     q = np.ones(ns)
 
         pres_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
         # bar = ChargingBar('Calculating sound pressure at each receiver', max=len(self.receivers.coord), suffix='%(percent)d%%')
         for jrec, r_coord in enumerate(self.receivers.coord):
             update_progress(jrec/len(self.receivers.coord))
+            np.random.seed(seed)
             # r = np.linalg.norm(r_coord) # distance source-receiver
             for jf, k0 in enumerate(self.controls.k0):
+                if randomize:
+                    # amp = np.sqrt(np.random.randn(ns)**2 + np.random.randn(ns)**2)
+                    amp = np.sqrt(np.random.normal(0,2,ns)**2 + np.random.normal(0,2,ns)**2)
+                    # amp = amp/np.amax(amp)
+                    phase = np.random.rand(ns)
+                    q = amp * np.exp(1j*phase)#np.random.randn(ns) + 1j*np.random.randn(ns)
+                else:
+                    q = np.ones(ns)
                 k_vec = k0 * self.sources.coord
                 pres_rec[jrec, jf] = np.sum(q * (np.exp(1j * np.dot(k_vec, r_coord))+\
                 Vp[:,jf] * np.exp(-1j * np.dot(k_vec, r_coord))))

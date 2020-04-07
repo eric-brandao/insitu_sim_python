@@ -756,7 +756,7 @@ class PArrayDeduction(object):
         compare_alpha(
             {'freq': material.freq, leg_ref: material.alpha, 'color': 'black', 'linewidth': 4},
             {'freq': self.controls.freq, 'backpropagation': self.alpha[id_t,:], 'color': 'blue', 'linewidth': 3},
-            {'freq': self.controls.freq, 'backpropagation sel': self.alpha_sel, 'color': 'orange', 'linewidth': 2},
+            # {'freq': self.controls.freq, 'backpropagation sel': self.alpha_sel, 'color': 'orange', 'linewidth': 2},
             {'freq': self.controls.freq, "Melanie's way": self.alpha_avg[id_t,:], 'color': 'red', 'linewidth': 1},
             {'freq': freq, "Melanie's way with interp": self.alpha_avg2[id_t,:], 'color': 'green', 'linewidth': 2})
 
