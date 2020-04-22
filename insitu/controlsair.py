@@ -173,7 +173,7 @@ def compare_spk(freq, *spks, ref = 1.0):
     plt.show()
 
 ### Function to compare spectrums
-def compare_alpha(*alphas, title = 'absorption comparison', freq_max=4000):
+def compare_alpha(*alphas, title = 'absorption comparison', freq_max=4000, save = False, path = '', fname = ''):
     '''
     This function is used to compare the absorption coefficients of several estimations
     '''
@@ -186,20 +186,23 @@ def compare_alpha(*alphas, title = 'absorption comparison', freq_max=4000):
         alpha_leg = list(alpha_dict.keys())[1]
         freq = alpha_dict[freq_leg]
         alpha = alpha_dict[alpha_leg]
-        plt.semilogx(freq, alpha, alpha_color, label = alpha_leg, linewidth = alpha_lw)
+        plt.semilogx(freq, alpha, color = alpha_color, label = alpha_leg, linewidth = alpha_lw)
     plt.grid(linestyle = '--', which='both')
     plt.xscale('log')
     plt.legend(loc = 'best')
-    plt.xticks([50, 100, 500, 1000, 4000, 6000, 10000],
-        ['50', '100', '500', '1k', '4k', '6k', '10k'])
+    plt.xticks([50, 100, 500, 1000, 2000, 4000, 8000, 10000],
+        ['50', '100', '500', '1k', '2k', '4k', '8k', '10k'])
     plt.xlabel('Frequency [Hz]')
-    plt.ylabel('absorption coefficient [-]')
+    plt.ylabel(r'$\alpha$ [-]')
     plt.ylim((-0.2, 1.2))
     plt.xlim((80, freq_max))
+    if save:
+        filename = path + fname
+        plt.savefig(fname = filename, format='pdf')
     # plt.show()
 
 ### Function to compare impedances
-def compare_zs(*zs, title = 'surface impedance comparison', freq_max=4000):
+def compare_zs(*zs, title = 'surface impedance comparison', freq_max=4000, save = False, path = '', fname = ''):
     '''
     This function is used to compare the absorption coefficients of several estimations
     '''
@@ -217,15 +220,25 @@ def compare_zs(*zs, title = 'surface impedance comparison', freq_max=4000):
     axs[0].grid(linestyle = '--', which='both')
     axs[0].set(ylabel = 'Re{Zs} [-]')
     axs[0].set(ylim = (0.0, 3.0))
+    axs[0].set(title = title)
+    plt.setp(axs[0], xticks=[50, 100, 500, 1000, 2000, 4000, 8000, 10000], 
+        xticklabels=['50', '100', '500', '1k', '2k', '4k', '8k', '10k'])
     axs[1].grid(linestyle = '--', which='both')
     axs[1].set(xlabel = 'Frequency [Hz]')
     axs[1].set(ylabel = 'Im{Zs} [-]')
     axs[1].set(ylim = (-20.0, 5.0))
     axs[1].legend(loc = 'lower right')
-    plt.xticks([50, 100, 500, 1000, 4000, 6000, 10000],
-        ['50', '100', '500', '1k', '4k', '6k', '10k'])
+    plt.setp(axs[1], xticks=[50, 100, 500, 1000, 2000, 4000, 8000, 10000], 
+        xticklabels=['50', '100', '500', '1k', '2k', '4k', '8k', '10k'])
+    # plt.xticks([50, 100, 500, 1000, 4000, 6000, 10000],
+    #     ['50', '100', '500', '1k', '4k', '6k', '10k'])
     plt.xlabel('Frequency [Hz]')
-    plt.xlim((0.8 * freq[0], freq_max))
+    # plt.xlim((0.8 * freq[0], freq_max))
+    plt.setp(axs[0], xlim = (0.8 * freq[0], freq_max))
+    plt.setp(axs[1], xlim = (0.8 * freq[0], freq_max))
+    if save:
+        filename = path + fname
+        plt.savefig(fname = filename, format='pdf')
     # plt.show()
 
 def sph2cart(r, theta, phi):

@@ -86,7 +86,7 @@ class PArrayDeduction(object):
                     (3) - else: via cvxpy
         '''
         # loop over frequencies
-        # bar = ChargingBar('Calculating Tikhonov inversion...', max=len(self.controls.k0), suffix='%(percent)d%%')
+        bar = ChargingBar('Calculating Tikhonov inversion...', max=len(self.controls.k0), suffix='%(percent)d%%')
         # bar = tqdm(total = len(self.controls.k0), desc = 'Calculating Tikhonov inversion...')
         self.pk = np.zeros((self.n_waves, len(self.controls.k0)), dtype=np.csingle)
         # print(self.pk.shape)
@@ -97,7 +97,7 @@ class PArrayDeduction(object):
         for jf, k0 in enumerate(self.controls.k0):
             # sys.stdout.write('-')
             # sys.stdout.flush()
-            update_progress(jf/len(self.controls.k0))
+            # update_progress(jf/len(self.controls.k0))
             # wave numbers
             # kx = k0 * np.cos(self.phi) * np.sin(self.theta)
             # ky = k0 * np.sin(self.phi) * np.sin(self.theta)
@@ -142,9 +142,9 @@ class PArrayDeduction(object):
                 # problem.solve(solver=cp.MOSEK) # not installed
                 # problem.solve(solver=cp.OSQP) # did not work
                 self.pk[:,jf] = x.value
-            # bar.next()
+            bar.next()
             # bar.update(1)
-        # bar.finish()
+        bar.finish()
         # bar.close()
         # sys.stdout.write("]\n")
         return self.pk
@@ -626,7 +626,7 @@ class PArrayDeduction(object):
             filename = 'data/colormaps/cmatinterp_' + str(int(freq)) + 'Hz_' + name
             plt.savefig(fname = filename, format='pdf')
 
-    def plot_pk_map(self, freq = 1000, db = False, dinrange = 40, save = False, name=''):
+    def plot_pk_map(self, freq = 1000, db = False, dinrange = 40, phase = False, save = False, name='', path = '', fname=''):
         '''
         Method to plot the magnitude of the spatial fourier transform on a map of interpolated theta and phi.
         It is a normalized version of the magnitude, either between 0 and 1 or between -dinrange and 0.
@@ -644,26 +644,30 @@ class PArrayDeduction(object):
             id_f = np.where(self.controls.freq <= freq)
         id_f = id_f[0][-1]
         fig = plt.figure()
+        # plt.subplot(111, projection="lambert")
         # ax = fig.gca(projection='3d')
         if db:
             color_par = 20*np.log10(np.abs(self.grid_pk[id_f])/np.amax(np.abs(self.grid_pk[id_f])))
             id_outofrange = np.where(color_par < -dinrange)
             color_par[id_outofrange] = -dinrange
         else:
-            color_par = np.abs(self.grid_pk[id_f])/np.amax(np.abs(self.grid_pk[id_f]))
+            if phase:
+                color_par = np.rad2deg(np.angle(self.grid_pk[id_f]))
+            else:
+                color_par = np.abs(self.grid_pk[id_f])/np.amax(np.abs(self.grid_pk[id_f]))
         p=plt.contourf(np.rad2deg(self.grid_phi),
             90-np.rad2deg(self.grid_theta), color_par)
         fig.colorbar(p)
         plt.xlabel('phi (azimuth) [deg]')
         plt.ylabel('theta (elevation) [deg]')
         if self.flag_oct_interp:
-            plt.title('|P(k)| at ' + str(self.freq_oct[id_f]) + 'Hz - ' + name)
+            plt.title('|P(k)| at ' + str(self.freq_oct[id_f]) + 'Hz - '+ name)
         else:
-            plt.title('|P(k)| at ' + str(self.controls.freq[id_f]) + 'Hz - ' + name)
+            plt.title('|P(k)| at ' + str(self.controls.freq[id_f]) + 'Hz - '+ name)
         # plt.show()
         if save:
-            filename = 'data/colormaps/map_' + str(int(freq)) + 'Hz_' + name
-            plt.savefig(fname = filename, format='pdf')
+            filename = path + fname + '_' + str(int(freq)) + 'Hz'
+            plt.savefig(fname = filename, format='png')
 
     def plot_pk_mapscat(self, freq = 1000, db = False, dinrange = 40, save = False, name='name'):
         '''
@@ -756,7 +760,7 @@ class PArrayDeduction(object):
         compare_alpha(
             {'freq': material.freq, leg_ref: material.alpha, 'color': 'black', 'linewidth': 4},
             {'freq': self.controls.freq, 'backpropagation': self.alpha[id_t,:], 'color': 'blue', 'linewidth': 3},
-            # {'freq': self.controls.freq, 'backpropagation sel': self.alpha_sel, 'color': 'orange', 'linewidth': 2},
+            {'freq': self.controls.freq, 'backpropagation sel': self.alpha_sel, 'color': 'orange', 'linewidth': 2},
             {'freq': self.controls.freq, "Melanie's way": self.alpha_avg[id_t,:], 'color': 'red', 'linewidth': 1},
             {'freq': freq, "Melanie's way with interp": self.alpha_avg2[id_t,:], 'color': 'green', 'linewidth': 2})
 

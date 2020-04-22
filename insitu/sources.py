@@ -11,8 +11,19 @@ class Source():
         q - volume velocity [m^3/s]
     '''
     def __init__(self, coord = [0.0, 0.0, 1.0], q = 1.0):
-        self.coord = np.reshape(np.array(coord, dtype = np.float32), (1,3))
+        self.coord = np.reshape(np.array(coord), (1,3))
         self.q = np.array(q, dtype = np.float32)
+
+    def add_sources(self, coord):
+        '''
+        This method adds new sources to the initial sound source. It will overwrite
+        self.coord to be a matrix where each line gives a 3D coordinate for each source
+        '''
+        coord = np.array(coord)
+        ns = int(len(coord.flatten())/3)
+        coord = np.reshape(coord, (ns, 3))
+        self.coord = np.append(self.coord, coord, axis = 0)
+        # self.coord = np.reshape(self.coord, (len(coord)+1,3))
 
     def set_arc_sources(self, radius = 1.0, ns = 100, angle_span = (-90, 90), random = False):
         '''
@@ -60,8 +71,8 @@ class Source():
         # print('theta: {}'.format(np.sort(np.unique(np.rad2deg(theta)))))
         # print('phi: {}'.format(np.sort(np.unique(np.rad2deg(phi)))))
         # theta_id = np.where(theta > -np.pi/2 and theta < np.pi/2)
-        theta_id = np.where(np.logical_and(theta > 0, theta < np.pi/2))
-        self.coord = directions[theta_id[0]]
+        theta_id = np.where(np.logical_and(theta > np.deg2rad(0), theta < np.pi/2))
+        self.coord = radius * directions[theta_id[0]]
         # print(theta_id)
         # phiv = np.linspace(start = 0, stop = 2*np.pi, num = int(np.sqrt(ns)))
         # thetav = np.linspace(start = -np.pi/2+np.deg2rad(5), stop = np.pi/2-np.deg2rad(5), num = int(np.sqrt(ns)))
@@ -71,7 +82,7 @@ class Source():
         # self.coord[:,0] = xm.flatten()
         # self.coord[:,1] = ym.flatten()
         # self.coord[:,2] = zm.flatten()
-        self.coord /= np.linalg.norm(self.coord, axis = 1)[:,None]
+        # self.coord /= np.linalg.norm(self.coord, axis = 1)[:,None]
 
     def set_vsph_sources(self, radii_span = (1.0, 10.0), ns = 100, random = False):
         '''

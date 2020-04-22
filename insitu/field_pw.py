@@ -2,7 +2,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-# from insitu.controlsair import load_cfg
+from controlsair import load_cfg, cart2sph, sph2cart
+from material import PorousAbsorber
+
 # import scipy.integrate as integrate
 import scipy as spy
 import time
@@ -35,18 +37,22 @@ class PWField(object):
     def p_fps(self,):
         # Loop the receivers
         self.pres_s = []
-        pres_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
+        pres_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = complex)
         for jrec, r_coord in enumerate(self.receivers.coord):
             # r = np.linalg.norm(r_coord) # distance source-receiver
             for jf, k0 in enumerate(self.controls.k0):
-                kx = k0 * np.cos(self.phi) * np.sin(self.theta)
-                ky = k0 * np.sin(self.phi) * np.sin(self.theta)
-                kz = k0 * np.cos(self.theta)
-                k_vec = np.array([kx, ky, kz])
-                # print('shape k :{}'.format(k_vec.shape))
-                # print('shape r :{}'.format(r_coord.shape))
-                pres_rec[jrec, jf] = np.exp(1j * np.dot(k_vec, r_coord)) +\
-                    self.material.Vp[jf] * np.exp(-1j * np.dot(k_vec, r_coord))
+                # kx = k0 * np.cos(self.phi) * np.sin(self.theta)
+                # ky = k0 * np.sin(self.phi) * np.sin(self.theta)
+                # kz = k0 * np.cos(self.theta)
+                kx, ky, kz = sph2cart(k0, np.pi/2-self.theta, self.phi)
+                k_veci = np.array([kx, ky, kz])
+                k_vecr = np.array([kx, ky, -kz])
+                pres_rec[jrec, jf] = np.exp(1j * np.dot(k_veci, r_coord)) +\
+                    self.material.Vp[jf] * np.exp(1j * np.dot(k_vecr, r_coord))
+                # pres_rec[jrec, jf] = (np.exp(1j * k_vec[2] * r_coord[2]) +\
+                #     self.material.Vp[jf] * np.exp(-1j * k_vec[2] * r_coord[2]))*\
+                #     (np.exp(1j * k_vec[0] * r_coord[0]))*\
+                #     (np.exp(1j * k_vec[1] * r_coord[1]))
                 # pres_rec[jrec, jf] = np.exp(1j * np.dot(k_vec, r_coord)) +\
                 #     np.exp(-1j * np.dot(k_vec, r_coord))
         self.pres_s.append(pres_rec)
@@ -54,16 +60,56 @@ class PWField(object):
     def uz_fps(self,):
         # Loop the receivers
         self.uz_s = []
-        uz_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
+        uz_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = complex)
         for jrec, r_coord in enumerate(self.receivers.coord):
             # r = np.linalg.norm(r_coord) # distance source-receiver
             for jf, k0 in enumerate(self.controls.k0):
-                kx = k0 * np.cos(self.phi) * np.sin(self.theta)
-                ky = k0 * np.sin(self.phi) * np.sin(self.theta)
-                kz = k0 * np.cos(self.theta)
-                k_vec = np.array([kx, ky, kz])
-                uz_rec[jrec, jf] = (kz/k0) * (np.exp(1j * np.dot(k_vec, r_coord)) -\
-                    self.material.Vp[jf] * np.exp(-1j * np.dot(k_vec, r_coord)))
+                # kx = k0 * np.cos(self.phi) * np.sin(self.theta)
+                # ky = k0 * np.sin(self.phi) * np.sin(self.theta)
+                # kz = k0 * np.cos(self.theta)
+                kx, ky, kz = sph2cart(k0, np.pi/2-self.theta, self.phi)
+                k_veci = np.array([kx, ky, kz])
+                k_vecr = np.array([kx, ky, -kz])
+                uz_rec[jrec, jf] = (kz/k0) * (np.exp(1j * np.dot(k_veci, r_coord)) -\
+                    self.material.Vp[jf] * np.exp(1j * np.dot(k_vecr, r_coord)))
+                # uz_rec[jrec, jf] = (kz/k0) *(np.exp(1j * k_vec[2] * r_coord[2]) -\
+                #     self.material.Vp[jf] * np.exp(-1j * k_vec[2] * r_coord[2]))*\
+                #     (np.exp(1j * k_vec[0] * r_coord[0]))*\
+                #     (np.exp(1j * k_vec[1] * r_coord[1]))
+        self.uz_s.append(uz_rec)
+
+    def p_mult(self,):
+        # Loop the receivers
+        self.pres_s = []
+        pres_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = complex)
+        for jrec, r_coord in enumerate(self.receivers.coord):
+            for jel, el in enumerate(self.theta):
+                material_m = PorousAbsorber(self.air, self.controls)
+                material_m.miki(resistivity=self.material.resistivity)
+                material_m.layer_over_rigid(thickness = self.material.thickness, theta = el)
+                for jf, k0 in enumerate(self.controls.k0):
+                    kx, ky, kz = sph2cart(k0, np.pi/2-el, self.phi[jel])
+                    k_veci = np.array([kx, ky, kz])
+                    k_vecr = np.array([kx, ky, -kz])
+                    pres_rec[jrec, jf] += np.exp(1j * np.dot(k_veci, r_coord)) +\
+                        material_m.Vp[jf] * np.exp(1j * np.dot(k_vecr, r_coord))
+        self.pres_s.append(pres_rec)
+
+    def uz_mult(self,):
+        # Loop the receivers
+        self.uz_s = []
+        uz_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = complex)
+        for jrec, r_coord in enumerate(self.receivers.coord):
+            for jel, el in enumerate(self.theta):
+                material_m = PorousAbsorber(self.air, self.controls)
+                material_m.miki(resistivity=self.material.resistivity)
+                material_m.layer_over_rigid(thickness = self.material.thickness, theta = el)
+                for jf, k0 in enumerate(self.controls.k0):
+                    kx, ky, kz = sph2cart(k0, np.pi/2-el, self.phi[jel])
+                    k_veci = np.array([kx, ky, kz])
+                    k_vecr = np.array([kx, ky, -kz])
+                    uz_rec[jrec, jf] += (kz/k0) * (np.exp(1j * np.dot(k_veci, r_coord)) -\
+                    material_m.Vp[jf] * np.exp(1j * np.dot(k_vecr, r_coord)))
         self.uz_s.append(uz_rec)
 
     def plot_scene(self, vsam_size = 2):
