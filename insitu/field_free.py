@@ -14,7 +14,7 @@ from controlsair import sph2cart, cart2sph
 
 
 # import impedance-py/C++ module and other stuff
-import insitu_cpp
+# import insitu_cpp
 from controlsair import plot_spk
 
 class FreeField(object):

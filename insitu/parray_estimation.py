@@ -298,6 +298,7 @@ class PArrayDeduction(object):
                 (has to be between 0deg and 90deg)
         '''
         # Transform to spherical coordinates
+        self.desired_theta = desired_theta
         r, theta, phi = cart2sph(self.dir[:,0], self.dir[:,1], self.dir[:,2])
         # Get the incident and reflected hemispheres
         theta_inc_id, theta_ref_id = get_hemispheres(theta)
@@ -346,8 +347,8 @@ class PArrayDeduction(object):
             desired_theta: a target angle of incidence for which you desire information
                 (has to be between 0deg and 90deg)
         '''
-        self.desired_theta = desired_theta
         # Get theta and phi in a flat list
+        self.desired_theta = desired_theta
         theta = self.grid_theta.flatten()
         phi = self.grid_phi.flatten()
         # Get the directions of interpolated data.
@@ -480,6 +481,7 @@ class PArrayDeduction(object):
             n_x - The number of calculation points in x dir
             n_y - The number of calculation points in y dir
         '''
+        self.desired_theta = desired_theta
         ######### Find target angles for calculations ###########################
         # Get theta and phi in a flat list
         theta = self.grid_theta.flatten()
@@ -489,62 +491,60 @@ class PArrayDeduction(object):
         dirs = np.transpose(np.array([xx, yy, zz]))
         # Get the incident and reflected hemispheres
         theta_inc_id, theta_ref_id = get_hemispheres(theta)
-        # Get the list of indexes for angles you want
-        thetainc_des_list, thetaref_des_list = desired_theta_list(theta_inc_id, theta_ref_id,
-            theta, desired_theta = desired_theta, target_range = target_range)
-        # Get the incident and reflected directions
-        dirs_inc = dirs[theta_inc_id[0]] # hemisphere
-        dirs_ref = dirs[theta_ref_id[0]] # hemisphere
-        dirs_inc_target = dirs_inc[thetainc_des_list] # at target angles along phi
-        dirs_ref_target = dirs_ref[thetaref_des_list] # at target angles along phi
-        dirs_target = np.concatenate((dirs_inc_target, dirs_ref_target))
-        ################# Reconstruction pts ############################
-        grid = Receiver()
-        grid.planar_array(x_len=Lx, y_len=Ly, zr=0.0, n_x = n_x, n_y = n_x)
-        if n_x > 1 or n_y > 1:
-            self.grid_sel = grid.coord
-        else:
-            self.grid_sel = np.array([0,0,0])
-        ################ Initialize variables ####################################
-        self.Zs_sel = np.zeros(len(self.controls.k0), dtype=complex)
-        self.p_s_sel = np.zeros((len(self.grid_sel), len(self.controls.k0)), dtype=complex)
-        self.uz_s_sel = np.zeros((len(self.grid_sel), len(self.controls.k0)), dtype=complex)
-        # loop over frequency dommain
-        bar = ChargingBar('Calculating impedance and absorption (selective backpropagation)',\
-            max=len(self.controls.k0), suffix='%(percent)d%%')
-        for jf, k0 in enumerate(self.controls.k0):
-            # Wave number vector
-            k_vec = k0 * dirs_target
-            # Form H matrix
-            h_mtx = np.exp(1j*self.grid_sel @ k_vec.T)
-            # complex amplitudes of selected waves
-            pk = self.grid_pk[jf].flatten()
-            pk_inc = pk[theta_inc_id[0]] # hemisphere
-            pk_ref = pk[theta_ref_id[0]] # hemisphere
-            pk_inc_target = pk_inc[thetainc_des_list] # at target angles along phi
-            pk_ref_target = pk_ref[thetaref_des_list] # at target angles along phi
-            x = np.concatenate((pk_inc_target, pk_ref_target))
-            # pressure and particle velocity at surface
-            p_surf_mtx = h_mtx @ x
-            uz_surf_mtx = ((np.divide(k_vec[:,2], k0)) * h_mtx) @ x
-            self.p_s_sel[:,jf] =  p_surf_mtx
-            self.uz_s_sel[:,jf] =  uz_surf_mtx
-            if avgZs:
-                Zs_pt = np.divide(p_surf_mtx, uz_surf_mtx)
-                self.Zs_sel[jf] = np.mean(Zs_pt)
+        # Initialize Zs_sel
+        self.Zs_sel = np.zeros((len(desired_theta), len(self.controls.k0)), dtype=complex)
+        self.alpha_sel = np.zeros((len(desired_theta), len(self.controls.k0)))
+        for jtheta, dtheta in enumerate(desired_theta):
+            # Get the list of indexes for angles you want
+            thetainc_des_list, thetaref_des_list = desired_theta_list(theta_inc_id, theta_ref_id,
+                theta, desired_theta = dtheta, target_range = target_range)
+            # Get the incident and reflected directions
+            dirs_inc = dirs[theta_inc_id[0]] # hemisphere
+            dirs_ref = dirs[theta_ref_id[0]] # hemisphere
+            dirs_inc_target = dirs_inc[thetainc_des_list] # at target angles along phi
+            dirs_ref_target = dirs_ref[thetaref_des_list] # at target angles along phi
+            dirs_target = np.concatenate((dirs_inc_target, dirs_ref_target))
+            ################# Reconstruction pts ############################
+            grid = Receiver()
+            grid.planar_array(x_len=Lx, y_len=Ly, zr=0.0, n_x = n_x, n_y = n_x)
+            if n_x > 1 or n_y > 1:
+                self.grid_sel = grid.coord
             else:
-                self.Zs_sel[jf] = np.mean(p_surf_mtx) / (np.mean(uz_surf_mtx)) 
-            bar.next()
-        bar.finish()
-        # try:
-        #     theta = self.material.theta
-        # except:
-        #     theta = 0
-        self.alpha_sel = 1 - (np.abs(np.divide((self.Zs_sel  * np.cos(desired_theta) - 1),\
-            (self.Zs_sel * np.cos(desired_theta) + 1))))**2
-        # self.alpha = 1 - (np.abs(np.divide((self.Zs - 1),\
-        #     (self.Zs + 1))))**2
-        return self.alpha_sel
+                self.grid_sel = np.array([0,0,0])
+        ################ Initialize variables ####################################
+        # self.Zs_sel = np.zeros(len(self.controls.k0), dtype=complex)
+            self.p_s_sel = np.zeros((len(self.grid_sel), len(self.controls.k0)), dtype=complex)
+            self.uz_s_sel = np.zeros((len(self.grid_sel), len(self.controls.k0)), dtype=complex)
+            # loop over frequency dommain
+            bar = ChargingBar('Calculating Zs and absorption (sel. backprop.) for angle {}'.format(np.rad2deg(dtheta)),\
+                max=len(self.controls.k0), suffix='%(percent)d%%')
+            for jf, k0 in enumerate(self.controls.k0):
+                # Wave number vector
+                k_vec = k0 * dirs_target
+                # Form H matrix
+                h_mtx = np.exp(1j*self.grid_sel @ k_vec.T)
+                # complex amplitudes of selected waves
+                pk = self.grid_pk[jf].flatten()
+                pk_inc = pk[theta_inc_id[0]] # hemisphere
+                pk_ref = pk[theta_ref_id[0]] # hemisphere
+                pk_inc_target = pk_inc[thetainc_des_list] # at target angles along phi
+                pk_ref_target = pk_ref[thetaref_des_list] # at target angles along phi
+                x = np.concatenate((pk_inc_target, pk_ref_target))
+                # pressure and particle velocity at surface
+                p_surf_mtx = h_mtx @ x
+                uz_surf_mtx = ((np.divide(k_vec[:,2], k0)) * h_mtx) @ x
+                self.p_s_sel[:,jf] =  p_surf_mtx
+                self.uz_s_sel[:,jf] =  uz_surf_mtx
+                if avgZs:
+                    Zs_pt = np.divide(p_surf_mtx, uz_surf_mtx)
+                    self.Zs_sel[jtheta,jf] = np.mean(Zs_pt)
+                else:
+                    self.Zs_sel[jtheta,jf] = np.mean(p_surf_mtx) / (np.mean(uz_surf_mtx)) 
+                bar.next()
+            bar.finish()
+            self.alpha_sel[jtheta,:] = 1 - (np.abs(np.divide((self.Zs_sel[jtheta,:]  * np.cos(dtheta) - 1),\
+                (self.Zs_sel[jtheta,:] * np.cos(dtheta) + 1))))**2
+        # return self.alpha_sel
 
     def plot_pk_sphere(self, freq = 1000, db = False, dinrange = 40, save = False, name='name'):
         '''
@@ -759,9 +759,9 @@ class PArrayDeduction(object):
 
         compare_alpha(
             {'freq': material.freq, leg_ref: material.alpha, 'color': 'black', 'linewidth': 4},
-            {'freq': self.controls.freq, 'backpropagation': self.alpha[id_t,:], 'color': 'blue', 'linewidth': 3},
-            {'freq': self.controls.freq, 'backpropagation sel': self.alpha_sel, 'color': 'orange', 'linewidth': 2},
-            {'freq': self.controls.freq, "Melanie's way": self.alpha_avg[id_t,:], 'color': 'red', 'linewidth': 1},
+            # {'freq': self.controls.freq, 'backpropagation': self.alpha[id_t,:], 'color': 'blue', 'linewidth': 3},
+            # {'freq': self.controls.freq, 'backpropagation sel': self.alpha_sel, 'color': 'orange', 'linewidth': 2},
+            # {'freq': self.controls.freq, "Melanie's way": self.alpha_avg[id_t,:], 'color': 'red', 'linewidth': 1},
             {'freq': freq, "Melanie's way with interp": self.alpha_avg2[id_t,:], 'color': 'green', 'linewidth': 2})
 
         if save:
@@ -976,37 +976,7 @@ def alpha_vs_angle(desired_theta, air, controls, resistivity, thick1, thick2 = 0
             theta = el)
     return alpha_ref
 
-# def absorption_calc(freq, pk, theta, desired_theta, theta_inc_id, theta_ref_id, target_range):
-#     # Initialize
-#     alpha_avg = np.zeros((len(desired_theta), len(freq))) # Nangles x Nfreq
-#     for jtheta, dtheta in enumerate(desired_theta):
-#         # Get the list of indexes for angles you want
-#         thetainc_des_list, thetaref_des_list = desired_theta_list(theta_inc_id, theta_ref_id,
-#             theta, desired_theta = dtheta, target_range = target_range)
-#         # Loop over frequency
-#         bar = ChargingBar('Calculating absorption (avg...) for angle: ' +\
-#             str(np.rad2deg(dtheta)) + ' deg.',\
-#             max=len(freq), suffix='%(percent)d%%')
-#         for jf, f in enumerate(freq):
-#             pk = self.grid_pk[jf].flatten()
-#             pk_inc = pk[theta_inc_id[0]] # hemisphere
-#             pk_ref = pk[theta_ref_id[0]] # hemisphere
-#             pk_inc_target = pk_inc[thetainc_des_list] # at target angles along phi
-#             pk_ref_target = pk_ref[thetaref_des_list] # at target angles along phi
-#             inc_energy = np.mean(np.abs(pk_inc_target)**2)
-#             ref_energy = np.mean(np.abs(pk_ref_target)**2)
-#             self.alpha_avg2[jtheta, jf] = 1 - ref_energy/inc_energy
-#             bar.next()
-#         bar.finish()
-
-####################### alpha_from_array2 - original (single angle) ########################
-# def alpha_from_array2(self, desired_theta = 0, target_range = 3, plot = False):
-#         '''
-#         Method to calculate the absorption coefficient straight from 3D array data.
-#         Inputs:
-#             desired_theta: a target angle of incidence for which you desire information
-#                 (has to be between 0deg and 90deg)
-#         '''
+# ######### Find target angles for calculations ###########################
 #         # Get theta and phi in a flat list
 #         theta = self.grid_theta.flatten()
 #         phi = self.grid_phi.flatten()
@@ -1018,36 +988,56 @@ def alpha_vs_angle(desired_theta, air, controls, resistivity, thick1, thick2 = 0
 #         # Get the list of indexes for angles you want
 #         thetainc_des_list, thetaref_des_list = desired_theta_list(theta_inc_id, theta_ref_id,
 #             theta, desired_theta = desired_theta, target_range = target_range)
-#         # Initialize
-#         self.alpha_avg2 = np.zeros(len(self.controls.k0))
-#         # Loop over frequency
-#         bar = ChargingBar('Calculating absorption (avg...)',\
+#         # Get the incident and reflected directions
+#         dirs_inc = dirs[theta_inc_id[0]] # hemisphere
+#         dirs_ref = dirs[theta_ref_id[0]] # hemisphere
+#         dirs_inc_target = dirs_inc[thetainc_des_list] # at target angles along phi
+#         dirs_ref_target = dirs_ref[thetaref_des_list] # at target angles along phi
+#         dirs_target = np.concatenate((dirs_inc_target, dirs_ref_target))
+#         ################# Reconstruction pts ############################
+#         grid = Receiver()
+#         grid.planar_array(x_len=Lx, y_len=Ly, zr=0.0, n_x = n_x, n_y = n_x)
+#         if n_x > 1 or n_y > 1:
+#             self.grid_sel = grid.coord
+#         else:
+#             self.grid_sel = np.array([0,0,0])
+#         ################ Initialize variables ####################################
+#         self.Zs_sel = np.zeros(len(self.controls.k0), dtype=complex)
+#         self.p_s_sel = np.zeros((len(self.grid_sel), len(self.controls.k0)), dtype=complex)
+#         self.uz_s_sel = np.zeros((len(self.grid_sel), len(self.controls.k0)), dtype=complex)
+#         # loop over frequency dommain
+#         bar = ChargingBar('Calculating impedance and absorption (selective backpropagation)',\
 #             max=len(self.controls.k0), suffix='%(percent)d%%')
 #         for jf, k0 in enumerate(self.controls.k0):
+#             # Wave number vector
+#             k_vec = k0 * dirs_target
+#             # Form H matrix
+#             h_mtx = np.exp(1j*self.grid_sel @ k_vec.T)
+#             # complex amplitudes of selected waves
 #             pk = self.grid_pk[jf].flatten()
 #             pk_inc = pk[theta_inc_id[0]] # hemisphere
 #             pk_ref = pk[theta_ref_id[0]] # hemisphere
 #             pk_inc_target = pk_inc[thetainc_des_list] # at target angles along phi
 #             pk_ref_target = pk_ref[thetaref_des_list] # at target angles along phi
-#             inc_energy = np.mean(np.abs(pk_inc_target)**2)
-#             ref_energy = np.mean(np.abs(pk_ref_target)**2)
-#             self.alpha_avg2[jf] = 1 - ref_energy/inc_energy
+#             x = np.concatenate((pk_inc_target, pk_ref_target))
+#             # pressure and particle velocity at surface
+#             p_surf_mtx = h_mtx @ x
+#             uz_surf_mtx = ((np.divide(k_vec[:,2], k0)) * h_mtx) @ x
+#             self.p_s_sel[:,jf] =  p_surf_mtx
+#             self.uz_s_sel[:,jf] =  uz_surf_mtx
+#             if avgZs:
+#                 Zs_pt = np.divide(p_surf_mtx, uz_surf_mtx)
+#                 self.Zs_sel[jf] = np.mean(Zs_pt)
+#             else:
+#                 self.Zs_sel[jf] = np.mean(p_surf_mtx) / (np.mean(uz_surf_mtx)) 
 #             bar.next()
 #         bar.finish()
-#         if plot:
-#             # Get the incident and reflected directions (coordinates to plot)
-#             incident_dir, reflected_dir = get_inc_ref_dirs(dirs, theta_inc_id, theta_ref_id)
-#             fig = plt.figure()
-#             ax = fig.gca(projection='3d')
-#             ax.scatter(incident_dir[thetainc_des_list,0], incident_dir[thetainc_des_list,1], incident_dir[thetainc_des_list,2],
-#                 color='blue', alpha=1)
-#             ax.scatter(reflected_dir[thetaref_des_list,0], reflected_dir[thetaref_des_list,1], reflected_dir[thetaref_des_list,2],
-#                 color='red', alpha=1)
-#             ax.scatter(dirs[:,0], dirs[:,1], dirs[:,2], 
-#                 color='silver', alpha=0.2)
-#             ax.set_xlabel('X axis')
-#             ax.set_ylabel('Y axis')
-#             ax.set_zlabel('Z axis')
-#             ax.set_zlim((-1, 1))
-#             plt.show()
-#####################################################################################################################
+#         # try:
+#         #     theta = self.material.theta
+#         # except:
+#         #     theta = 0
+#         self.alpha_sel = 1 - (np.abs(np.divide((self.Zs_sel  * np.cos(desired_theta) - 1),\
+#             (self.Zs_sel * np.cos(desired_theta) + 1))))**2
+#         # self.alpha = 1 - (np.abs(np.divide((self.Zs - 1),\
+#         #     (self.Zs + 1))))**2
+#         return self.alpha_sel

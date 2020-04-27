@@ -28,29 +28,32 @@ class NLRInfSph(object):
         self.controls = controls
         self.material = material
         ## material
-        self.Zp = material.Zp
-        self.kp = material.kp
-        # self.thick = material.thickness
-        self.cp = np.divide(2*np.pi*self.controls.freq, self.kp)
-        self.rhop = np.divide(self.Zp * self.kp, 2*np.pi*self.controls.freq)
-        self.m = np.divide(self.air.rho0, self.rhop)
-        self.n = np.divide(self.kp, self.controls.k0)
-        self.thickness = material.thickness
+        try:
+            self.Zp = material.Zp
+            self.kp = material.kp
+            # self.thick = material.thickness
+            self.cp = np.divide(2*np.pi*self.controls.freq, self.kp)
+            self.rhop = np.divide(self.Zp * self.kp, 2*np.pi*self.controls.freq)
+            self.m = np.divide(self.air.rho0, self.rhop)
+            self.n = np.divide(self.kp, self.controls.k0)
+            self.thickness = material.thickness
+            self.beta = (self.air.rho0 * self.air.c0) / material.Zs  # normalized surface admitance
+        except:
+            self.Zp = []
+            self.kp = []
+            # self.thick = material.thickness
+            self.cp = []
+            self.rhop = []
+            self.m = []
+            self.n = []
+            self.thickness = []
+            self.beta = []  # normalized surface admitance
         ## sources / receivers
         self.sources = sources
         self.receivers = receivers
         ## quantities
         self.pres_s = []
         self.uz_s = []
-
-        # self.air = air
-        # self.controls = controls
-        # self.material = material
-        # self.sources = sources
-        # self.receivers = receivers
-        self.beta = (self.air.rho0 * self.air.c0) / material.Zs  # normalized surface admitance
-        # self.pres_s = []
-        # self.uz_s = []
         self.singularities_r = []
         self.singularities_i = []
 
@@ -263,7 +266,7 @@ class NLRInfSph(object):
         ax.set_xlim((-vsam_size/2, vsam_size/2))
         ax.set_ylim((-vsam_size/2, vsam_size/2))
         # ax.set_zlim((0, 1.2*np.amax(np.linalg.norm(self.sources.coord))))
-        ax.set_zlim((0, 3))
+        ax.set_zlim((0, 1))
         ax.set_zticks((0, 1.2*np.amax(np.linalg.norm(self.sources.coord))))
         ax.view_init(elev=5, azim=-55)
         # ax.invert_zaxis()

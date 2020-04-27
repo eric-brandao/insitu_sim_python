@@ -78,11 +78,11 @@ class PWDifField(object):
             for jf, k0 in enumerate(self.controls.k0):
                 if randomize:
                     # amp = np.sqrt(np.random.randn(ns)**2 + np.random.randn(ns)**2)
-                    amp = np.sqrt(np.random.normal(0,1,ns)**2 + np.random.normal(0,1,ns)**2)
+                    amp = np.random.uniform(low = 0.002, high = 20, size = ns)#np.sqrt(np.random.normal(0,1,ns)**2 + np.random.normal(0,1,ns)**2)
                     # amp = amp/np.amax(amp)
-                    phase = np.random.rand(ns)
+                    phase = np.random.uniform(low = 0, high = 2*np.pi, size = ns)
                     q = amp * np.exp(1j*phase)
-                    q = np.ones(ns)
+                    #q = np.ones(ns)
                 k_veci = k0 * self.sources.coord
                 k_vecr = k0 * self.sources.coord
                 k_vecr[:,2] = -k_vecr[:,2]
