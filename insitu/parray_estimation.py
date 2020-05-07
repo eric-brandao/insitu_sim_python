@@ -439,7 +439,7 @@ class PArrayDeduction(object):
         # self.alpha = np.zeros(len(self.controls.k0))
         self.p_s = np.zeros((len(self.grid), len(self.controls.k0)), dtype=complex)
         self.uz_s = np.zeros((len(self.grid), len(self.controls.k0)), dtype=complex)
-        bar = ChargingBar('Calculating absorption (avg w/o interp...) for angle: ',\
+        bar = ChargingBar('Calculating zs (backpropagation whole sphere) for angle: ',\
             max=len(self.controls.k0), suffix='%(percent)d%%')
         for jf, k0 in enumerate(self.controls.k0):
             # Wave number vector

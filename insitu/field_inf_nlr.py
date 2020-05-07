@@ -178,13 +178,14 @@ class NLRInfSph(object):
                 bar.finish()
             self.uz_s.append(uz_rec)
 
-    def p_mult(self, upper_int_limit = 10):
+    def p_mult(self, upper_int_limit = 10, randomize = False, amp_min = 0.0002, amp_max = 20):
         '''
         This method calculates the sound pressure spectrum for a distribution of sources at all receivers.
         It considers that the integration can be done once by considering a sumation of the contributions of
         all sound sources in the integrand.
         Inputs:
             upper_int_limit (default 20) - upper integral limit for truncation
+            randomize (default False) - boolean - wether each sound source has a random amplitude
         Outputs:
             pres_s - this is an array of objects. Inside each object there is a
             (N_rec x N_freq) matrix. Each line of the matrix is a spectrum of a sound
@@ -205,9 +206,20 @@ class NLRInfSph(object):
             # setup progressbar
             print('Calculate sound pressure for receiver {}'.format(jrec+1))
             bar = ChargingBar('Processing sound pressure (NLR)', max=len(self.controls.k0), suffix='%(percent)d%%')
+            # seed randomizition
+            np.random.seed(0)
+            self.q = np.zeros((len(self.controls.freq), len(self.sources.coord)), dtype = complex)
             for jf, k0 in enumerate(self.controls.k0):
+                # randomization of pressure
+                if randomize:
+                    amp = np.random.uniform(low = amp_min, high = amp_max, size = len(self.sources.coord))
+                    phase = np.random.uniform(low = 0, high = 2*np.pi, size = len(self.sources.coord))
+                    q = amp * np.exp(1j*phase)
+                    self.q[jf,:] = q
+                else:
+                    q = np.ones(len(self.sources.coord))
                 # integrand
-                fs = lambda s: np.sum((2*np.exp(-k0*(np.sqrt(s**2-1+0j))*(hs+zr)))*\
+                fs = lambda s: np.sum(q*(2*np.exp(-k0*(np.sqrt(s**2-1+0j))*(hs+zr)))*\
                     k0*s*sp.jv(0,k0*s*r))/\
                     ((np.sqrt(s**2-1+0j))+self.m[jf]*(np.sqrt(s**2-self.n[jf]**2+0j))*\
                     np.tanh(k0*self.thickness*(np.sqrt(s**2-self.n[jf]**2+0j))))
@@ -225,7 +237,7 @@ class NLRInfSph(object):
                 # Iq_real = qp(fs_r, [0.0, upper_int_limit])
                 # Iq_imag = qp(fs_i, [0.0, upper_int_limit])
                 I_nlr = Iq_real[0] + 1j * Iq_imag[0]
-                pres_rec[jrec, jf] = np.sum(np.exp(-1j * k0 * r1) / r1 - np.exp(-1j * k0 * r2) / r2) + I_nlr
+                pres_rec[jrec, jf] = (np.sum(q * (np.exp(-1j * k0 * r1) / r1 - np.exp(-1j * k0 * r2) / r2)) + I_nlr)
                 bar.next()
             bar.finish()
         self.pres_s.append(pres_rec)

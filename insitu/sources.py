@@ -53,7 +53,7 @@ class Source():
     #     '''
     #     pass
 
-    def set_ssph_sources(self, radius = 1.0, ns = 100, random = False, plot=False):
+    def set_ssph_sources(self, radius = 1.0, ns = 100, angle_max=np.pi/2, random = False, plot=False):
         '''
         This method is used to generate an array of sound sources over a surface of a sphere
         Inputs:
@@ -71,7 +71,7 @@ class Source():
         # print('theta: {}'.format(np.sort(np.unique(np.rad2deg(theta)))))
         # print('phi: {}'.format(np.sort(np.unique(np.rad2deg(phi)))))
         # theta_id = np.where(theta > -np.pi/2 and theta < np.pi/2)
-        theta_id = np.where(np.logical_and(theta > np.deg2rad(0), theta < np.pi/2))
+        theta_id = np.where(np.logical_and(theta > np.deg2rad(0), theta < angle_max))
         self.coord = radius * directions[theta_id[0]]
         # print(theta_id)
         # phiv = np.linspace(start = 0, stop = 2*np.pi, num = int(np.sqrt(ns)))

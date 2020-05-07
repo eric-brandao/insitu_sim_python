@@ -168,6 +168,65 @@ class LocallyReactiveInfSph(object):
         # self.uz = np.array(uz, dtype = np.csingle)
         # return self.uz
 
+    def p_mult(self, upper_int_limit = 10, randomize = False, amp_min = 0.0002, amp_max = 20):
+        '''
+        This method calculates the sound pressure spectrum for a distribution of sources at all receivers.
+        It considers that the integration can be done once by considering a sumation of the contributions of
+        all sound sources in the integrand.
+        Inputs:
+            upper_int_limit (default 20) - upper integral limit for truncation
+            randomize (default False) - boolean - wether each sound source has a random amplitude
+            amp_min (default 0.0002 Pa or 20 dB) - minimum amplitude of sound sources
+            amp_max (default 20 Pa or 120 dB) - maximum amplitude of sound sources
+        Outputs:
+            pres_s - this is an array of objects. Inside each object there is a
+            (N_rec x N_freq) matrix. Each line of the matrix is a spectrum of a sound
+            pressure for a receiver. Each column is a set of sound pressures measured
+            by the receivers for a given frequency
+        '''
+        # get array of source heights
+        hs = self.sources.coord[:,2]
+        # initialize
+        pres_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = complex)
+        # loop over receivers
+        for jrec, r_coord in enumerate(self.receivers.coord):
+            # get arrays of distances
+            r = ((self.sources.coord[:,0] - r_coord[0])**2 + (self.sources.coord[:,1] - r_coord[1])**2)**0.5 # horizontal distance source-receiver
+            zr = r_coord[2]  # receiver height
+            r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5
+            r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
+            # setup progressbar
+            print('Calculate sound pressure for receiver {}'.format(jrec+1))
+            bar = ChargingBar('Processing sound pressure (NLR)', max=len(self.controls.k0), suffix='%(percent)d%%')
+            # seed randomizition
+            np.random.seed(0)
+            # self.q = np.zeros((len(self.controls.freq), len(self.sources.coord)), dtype = complex)
+            for jf, k0 in enumerate(self.controls.k0):
+                # randomization of pressure
+                if randomize:
+                    amp = np.random.uniform(low = amp_min, high = amp_max, size = len(self.sources.coord))
+                    phase = np.random.uniform(low = 0, high = 2*np.pi, size = len(self.sources.coord))
+                    qs = amp * np.exp(1j*phase)
+                    # self.q[jf,:] = q
+                else:
+                    qs = np.ones(len(self.sources.coord))
+                # integrand
+                fq = lambda q: (np.exp(-q * k0 * self.beta[jf])) *\
+                    np.sum(qs * ((np.exp(-1j * k0 * (r**2 + (hs + zr - 1j*q)**2)**0.5)) /\
+                    ((r**2 + (hs + zr - 1j*q)**2) ** 0.5)))
+                fs_r = lambda q: np.real(fq(q))
+                fs_i = lambda q: np.imag(fq(q))
+                # Integrate
+                Iq_real = integrate.quad(fs_r, 0.0, upper_int_limit)
+                Iq_imag = integrate.quad(fs_i, 0.0, upper_int_limit)
+                Iq = Iq_real[0] + 1j * Iq_imag[0]
+                # Pressure
+                pres_rec[jrec, jf] = (np.sum(qs * (np.exp(-1j * k0 * r1) / r1 + np.exp(-1j * k0 * r2) / r2)) -\
+                    2 * k0 * self.beta[jf] * Iq)
+                bar.next()
+            bar.finish()
+        self.pres_s.append(pres_rec)
+
     # def ur_loc(self):
     #     # setup progressbar
     #     bar = ChargingBar('Processing particle velocity r-dir (q-term)', max=len(self.k0), suffix='%(percent)d%%')
