@@ -64,7 +64,7 @@ class FreeField(object):
                     (np.exp(-1j * self.controls.k0 * r2)) / r2
             self.pres_s.append(pres_rec)
 
-    def planewave_ff(self, theta = 0, phi = 0):
+    def planewave_ff(self, theta = 0, phi = 0, Ap = 1, calc_ev = False, kx_f = 2, ky_f = 2, Ae = 1):
         '''
         Method used to calculate the free field response due to a plane wave
         Inputs:
@@ -79,12 +79,55 @@ class FreeField(object):
             for jrec, r_coord in enumerate(self.receivers.coord):
                 # r = np.linalg.norm(r_coord) # distance source-receiver
                 for jf, k0 in enumerate(self.controls.k0):
+                    # Propagating wave number
                     kx = k0 * np.cos(phi) * np.sin(theta)
                     ky = k0 * np.sin(phi) * np.sin(theta)
                     kz = k0 * np.cos(theta)
                     k_vec = np.array([kx, ky, kz])
-                    pres_rec[jrec, jf] = np.exp(1j * np.dot(k_vec, r_coord))
+                    # Evanescent wave number
+                    kxe = k0 * kx_f
+                    kye = k0 * ky_f
+                    kze = (kxe**2 + kye**2 - k0**2)**0.5
+                    p_ev = (np.exp(-kze * r_coord[2])) * (np.exp(1j * (kxe * r_coord[0] + kye * r_coord[1])))
+                    if calc_ev:
+                        pres_rec[jrec, jf] = Ap * np.exp(1j * np.dot(k_vec, r_coord)) + Ae * p_ev
+                    else:
+                        pres_rec[jrec, jf] = Ap * np.exp(1j * np.dot(k_vec, r_coord))
             self.pres_s.append(pres_rec)
+
+    def pw_ev_grid_ff(self, theta_p = 0, phi_p = 0, Ap=1, kx_f = 2, ky_f = 2, Ae = 1, freq = 1000):
+        '''
+        Method used to calculate the free field response due to a propagating plane wave 
+        and an evanescent wave (at a grid)
+        Inputs:
+            theta_p - the elevation angle of the propagating plane wave
+            phi_p - the azimuth angle of the propagating plane wave
+        '''
+        id_f = np.where(self.controls.freq <= freq)
+        id_f = id_f[0][-1]
+        # K vector of propagating wave
+        k0 = self.controls.k0[id_f]
+        kx = k0 * np.cos(phi_p) * np.sin(theta_p)
+        ky = k0 * np.sin(phi_p) * np.sin(theta_p)
+        kz = k0 * np.cos(theta_p)
+        k_vec = np.array([kx, ky, kz])
+        # K vector of evanescent wave
+        kxe = k0 * kx_f
+        kye = k0 * ky_f
+        # ky = k0 * np.sin(phi_e) * np.sin(theta_e)
+        kze = (kxe**2 + kye**2 - k0**2)**0.5
+        # k_ev = np.array([kxe, 0, kze])
+        # Loop the receivers
+        self.p_grid = np.zeros(self.receivers.x_grid.shape, dtype = complex)
+        for jx in np.arange(self.receivers.x_grid.shape[0]):
+            for jy in np.arange(self.receivers.x_grid.shape[1]):
+                r_coord = np.array([self.receivers.x_grid[jx, jy],
+                    0.0,
+                    self.receivers.z_grid[jx, jy]])
+                p_prop = Ap * np.exp(1j * np.dot(k_vec, r_coord))
+                p_ev = Ae * (np.exp(-kze * r_coord[2])) *\
+                    (np.exp(1j * (kxe * r_coord[0] + kye * r_coord[1])))
+                self.p_grid[jx, jy] = p_prop + p_ev
 
     def planewave_diffuse(self, randomize = True, seed = 0):
         '''
@@ -178,4 +221,23 @@ class FreeField(object):
         # ax.set_zticks((0, 1.2))
         ax.view_init(elev=30, azim=-50)
         # ax.invert_zaxis()
-        plt.show() # show plot
+        # plt.show() # show plot
+
+    def plot_cmap(self, freq = 1000, name = '', save = False, path='', fname=''):
+        '''
+        plot color map from plane_xz
+        '''
+        # id_f = np.where(self.controls.freq <= freq)
+        # id_f = id_f[0][-1]
+        color_par = np.real((self.p_grid))
+        fig = plt.figure()
+        p=plt.contourf(self.receivers.x_grid, self.receivers.z_grid,
+            color_par)
+        fig.colorbar(p)
+        plt.xlabel('x [m]')
+        plt.ylabel('z [m]')
+        plt.title('|p(f)| at ' + str(freq) + 'Hz - '+ name)
+        if save:
+            filename = path + fname
+            plt.savefig(fname = filename, format='png')
+

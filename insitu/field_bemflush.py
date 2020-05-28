@@ -287,7 +287,7 @@ class BEMFlush(object):
                 r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5
                 r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
                 print('Calculate particle vel. (z-dir) for source {} and receiver {}'.format(js+1, jrec+1))
-                bar = ChargingBar('Processing particle velocity z-dir (q-term)',
+                bar = ChargingBar('Processing particle velocity z-dir',
                     max=len(self.controls.k0), suffix='%(percent)d%%')
                 for jf, k0 in enumerate(self.controls.k0):
                     uz_scat = insitu_cpp._bemflush_uzscat(r_coord, self.node_x, self.node_y,

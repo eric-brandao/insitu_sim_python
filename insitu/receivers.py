@@ -56,6 +56,12 @@ class Receiver():
             n_y - the number of receivers in the y direction
             zr - distance from the closest microphone layer to the sample
         '''
+        # size of the array in x and y directions
+        self.x_len = x_len
+        self.y_len = y_len
+        # spacing between the microphones in x and y directions
+        self.ax = self.x_len/n_x
+        self.ay = self.y_len/n_y
         # x and y coordinates of the grid
         xc = np.linspace(-x_len/2, x_len/2, n_x)
         yc = np.linspace(-y_len/2, y_len/2, n_y)
@@ -66,6 +72,28 @@ class Receiver():
         self.coord[:, 0] = xv.flatten()
         self.coord[:, 1] = yv.flatten()
         self.coord[:, 2] = zr
+
+    def planar_xz(self, x_len = 1.0, n_x = 10, z_len = 1.0, n_z = 10, yr = 0.0):
+        '''
+        This method initializes a planar array of receivers (z/xy plane). It will overwrite
+        self.coord to be a matrix where each line gives a 3D coordinate for each receiver
+        Inputs:
+            x_len - the length of the x direction (array goes from -x_len/2 to +x_len/2).
+            n_x - the number of receivers in the x direction
+            y_len - the length of the y direction (array goes from -x_len/2 to +x_len/2).
+            n_y - the number of receivers in the y direction
+            zr - distance from the closest microphone layer to the sample
+        '''
+        # x and y coordinates of the grid
+        xc = np.linspace(-x_len/2, x_len/2, n_x)
+        zc = np.linspace(0, z_len, n_z)
+        # meshgrid
+        self.x_grid, self.z_grid = np.meshgrid(xc, zc)
+        # initialize receiver list in memory
+        self.coord = np.zeros((n_x * n_z, 3), dtype = np.float32)
+        self.coord[:, 0] = self.x_grid.flatten()
+        self.coord[:, 1] = yr
+        self.coord[:, 2] = self.z_grid.flatten()
 
     def double_planar_array(self, x_len = 1.0, n_x = 8, y_len = 1.0, n_y = 8, zr = 0.01, dz = 0.01):
         '''
@@ -80,6 +108,12 @@ class Receiver():
             zr - distance from the closest microphone layer to the sample
             dz - separation distance between the two layers
         '''
+        # size of the array in x and y directions
+        self.x_len = x_len
+        self.y_len = y_len
+        # spacing between the microphones in x and y directions
+        self.ax = self.x_len/n_x
+        self.ay = self.y_len/n_y
         # x and y coordinates of the grid
         xc = np.linspace(-x_len/2, x_len/2, n_x)
         yc = np.linspace(-y_len/2, y_len/2, n_y)
@@ -107,6 +141,12 @@ class Receiver():
             n_z - the number of receivers in the y direction
             zr - distance from the closest receiver to the sample's surface
         '''
+        # size of the array in x and y directions
+        self.x_len = x_len
+        self.y_len = y_len
+        # spacing between the microphones in x and y directions
+        self.ax = self.x_len/n_x
+        self.ay = self.y_len/n_y
         # x and y coordinates of the grid
         xc = np.linspace(-x_len/2, x_len/2, n_x)
         yc = np.linspace(-y_len/2, y_len/2, n_y)
@@ -134,7 +174,12 @@ class Receiver():
             z_len - the length of the z direction (array goes from zr to zr+z_len).
             n_z - the number of receivers in the y direction
             zr - distance from the closest receiver to the sample's surface
-        '''
+        '''# size of the array in x and y directions
+        self.x_len = x_len
+        self.y_len = y_len
+        # spacing between the microphones in x and y directions
+        self.ax = self.x_len/(n_total**(1/3))
+        self.ay = self.y_len/(n_total**(1/3))
         # x and y coordinates of the grid
         np.random.seed(seed)
         xc = -x_len/2 + x_len * np.random.rand(n_total)#np.linspace(-x_len/2, x_len/2, n_x)

@@ -9,20 +9,30 @@ import sys
 from progress.bar import Bar, IncrementalBar, FillingCirclesBar, ChargingBar
 # from insitu.field_calc import LocallyReactive
 
+import pickle
+
+
 class ImpedanceDeductionQterm(object):
     '''
     Impedance deduction class receives two signals (measurement objects)
     '''
-    def __init__(self, sim_field, source_num = 0):
+    def __init__(self, sim_field=[], source_num = 0):
         '''
         Init - we first retrive general data, then we process some receiver data
         '''
-        self.air = sim_field.air
-        self.controls = sim_field.controls
-        self.material = sim_field.material
-        self.sources = sim_field.sources
-        self.receivers = sim_field.receivers
-        # self.pres_s = sim_field.pres_s[source_num] #FixMe
+        try:
+            self.air = sim_field.air
+            self.controls = sim_field.controls
+            self.material = sim_field.material
+            self.sources = sim_field.sources
+            self.receivers = sim_field.receivers
+            # self.pres_s = sim_field.pres_s[source_num] #FixMe
+        except:
+            self.air = sim_field
+            self.controls = sim_field
+            self.material = sim_field
+            self.sources = sim_field
+            self.receivers = sim_field
         try:
             self.pres_s = sim_field.pres_s[source_num] #FixMe
         except:
@@ -224,7 +234,9 @@ class ImpedanceDeductionQterm(object):
         # determine the farthest microphone
         Zm = self.pres_s[0] / self.uz_s[0]
         zr = self.receivers.coord[0,2]
-
+        # Determine angle of incidence relative to sample center
+        sr = ((self.sources.coord[0][0])**2 + (self.sources.coord[0][1])**2)**0.5
+        theta = np.arctan2(sr,h_s)
         # allocate memory for the estimated impedance
         self.Zs_q_pu = np.zeros(len(k0), dtype = complex)
         # setup progressbar
@@ -265,7 +277,7 @@ class ImpedanceDeductionQterm(object):
             self.Zs_q_pu[jf] = Zg
             bar.next()
         bar.finish()
-        self.Vp_q_pu = (self.Zs_q_pu - 1) / (self.Zs_q_pu + 1)
+        self.Vp_q_pu = (self.Zs_q_pu*np.cos(theta) - 1) / (self.Zs_q_pu*np.cos(theta) + 1)
         self.alpha_q_pu = 1 - (np.abs(self.Vp_q_pu)) ** 2
         # return self.Vp_q_pp, self.Zs_q_pp, self.alpha_q_pp
 
@@ -290,6 +302,27 @@ class ImpedanceDeductionQterm(object):
         self.Vp_ea_pp = np.divide(self.Zs_ea_pp - 1, self.Zs_ea_pp + 1)
         self.alpha_ea_pp = 1 - (np.abs(self.Vp_ea_pp)) ** 2
         # print(self.alpha_ea_pp)
+
+    def save(self, filename = 'qterm_zest', path = '/home/eric/research/insitu_arrays/results/deduction/pu_pp/'):
+        '''
+        This method is used to save the simulation object
+        '''
+        filename = filename# + '_Lx_' + str(self.Lx) + 'm_Ly_' + str(self.Ly) + 'm'
+        self.path_filename = path + filename + '.pkl'
+        f = open(self.path_filename, 'wb')
+        pickle.dump(self.__dict__, f, 2)
+        f.close()
+
+    def load(self, filename = 'qterm_zest', path = '/home/eric/research/insitu_arrays/results/deduction/pu_pp/'):
+        '''
+        This method is used to load a simulation object. You build a empty object
+        of the class and load a saved one. It will overwrite the empty one.
+        '''
+        lpath_filename = path + filename + '.pkl'
+        f = open(lpath_filename, 'rb')
+        tmp_dict = pickle.load(f)
+        f.close()
+        self.__dict__.update(tmp_dict)
 
 def p_integral(k0, Zg, hs, r, zr):
     '''

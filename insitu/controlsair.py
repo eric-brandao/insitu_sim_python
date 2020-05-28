@@ -87,6 +87,7 @@ class AirProperties():
             / (10 * np.log10(np.exp(1)))
         # return self.m
 
+
 class AlgControls():
     def __init__(self, c0, freq_init = 100.0, freq_end = 10000.0, freq_step = 10, freq_vec = []):
         '''
@@ -107,9 +108,36 @@ class AlgControls():
             self.freq_init = np.array(freq_vec[0])
             self.freq_end = np.array(freq_vec[-1])
             self.freq = freq_vec
+        self.c0 = c0
         self.w = 2.0 * np.pi * self.freq
-        self.k0 = self.w / c0
+        self.k0 = self.w / self.c0
 
+    def octave_spk(self, tol = 0.1, n_freq_per_band = 3):
+        '''
+        method to create a log spaced frequency vector which has the same number
+        of frequencies per third octave band
+        '''
+        freq_13 = np.array([16, 20, 25, 31.5, 40, 50, 63, 80, 100, 125, 160,
+            200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600,
+            2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000,
+            12500, 16000, 20000])
+        # find the third octave spectrum contained in the limits
+        id_f = np.where(np.logical_and(freq_13>=self.freq_init, freq_13<=self.freq_end))
+        freq_13_target = freq_13[id_f[0]]
+        # Limits of the third octave bands
+        fd = 2**(1/(2 * 3))
+        fupper = freq_13_target * fd
+        flower = freq_13_target / fd
+        # loop trough all targeted bands and create a log spaced frequency spectrum
+        self.freq = np.zeros(n_freq_per_band*len(freq_13_target))
+        for jf, freq in enumerate(freq_13_target):
+            fstart = flower[jf] + tol
+            fend = fupper[jf] - tol
+            self.freq[int(jf*n_freq_per_band):int(jf*n_freq_per_band+(n_freq_per_band))] =\
+                np.logspace(np.log2(fstart), np.log2(fend),
+                num=n_freq_per_band, endpoint=True, base=2)
+        self.w = 2.0 * np.pi * self.freq
+        self.k0 = self.w / self.c0
 ### Function to read the .toml file
 def load_cfg(cfgfile):
     '''
@@ -182,11 +210,15 @@ def compare_alpha(*alphas, title = 'absorption comparison', freq_max=4000, save 
     for alpha_dict in alphas:
         alpha_color = alpha_dict['color']
         alpha_lw = alpha_dict['linewidth']
+        try:
+            alpha_lt = alpha_dict['linetype']
+        except:
+            alpha_lt = '-'
         freq_leg = list(alpha_dict.keys())[0]
         alpha_leg = list(alpha_dict.keys())[1]
         freq = alpha_dict[freq_leg]
         alpha = alpha_dict[alpha_leg]
-        plt.semilogx(freq, alpha, color = alpha_color, label = alpha_leg, linewidth = alpha_lw)
+        plt.semilogx(freq, alpha, alpha_lt, color = alpha_color, label = alpha_leg, linewidth = alpha_lw)
     plt.grid(linestyle = '--', which='both')
     plt.xscale('log')
     plt.legend(loc = 'best')
@@ -210,12 +242,16 @@ def compare_zs(*zs, title = 'surface impedance comparison', freq_max=4000, save 
     for zs_dict in zs:
         zs_color = zs_dict['color']
         zs_lw = zs_dict['linewidth']
+        try:
+            zs_lt = zs_dict['linetype']
+        except:
+            zs_lt = '-'
         freq_leg = list(zs_dict.keys())[0]
         zs_leg = list(zs_dict.keys())[1]
         freq = zs_dict[freq_leg]
         zs = zs_dict[zs_leg]
-        axs[0].semilogx(freq, np.real(zs), zs_color, linewidth = zs_lw)
-        axs[1].semilogx(freq, np.imag(zs), zs_color, label = zs_leg, linewidth = zs_lw)
+        axs[0].semilogx(freq, np.real(zs), zs_color, linewidth = zs_lw, linestyle = zs_lt)
+        axs[1].semilogx(freq, np.imag(zs), zs_color, label = zs_leg, linewidth = zs_lw, linestyle = zs_lt)
         # plt.semilogx(freq, alpha, alpha_color, label = alpha_leg, linewidth = alpha_lw)
     axs[0].grid(linestyle = '--', which='both')
     axs[0].set(ylabel = 'Re{Zs} [-]')

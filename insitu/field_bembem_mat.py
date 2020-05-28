@@ -37,7 +37,8 @@ class BEMmat():
         source = source_struct['coord'][0,0]
         self.sources = Source()
         self.sources.coord = np.array([source['xs'].item(), source['ys'].item(), source['zs'].item()])
-        r, theta, phi = cart2sph(self.sources.coord[0], self.sources.coord[1], self.sources.coord[2])
+        self.sources.coord = np.reshape(self.sources.coord, (1,3))
+        r, theta, phi = cart2sph(self.sources.coord[0,0], self.sources.coord[0,1], self.sources.coord[0,2])
         # Get the material data
         material = mat_contents['material'][0,0]
         self.material = PorousAbsorber(self.air, self.controls)
