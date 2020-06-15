@@ -302,6 +302,57 @@ class BEMFlush(object):
                 bar.finish()
             self.uz_s.append(uz_rec)
 
+    def add_noise(self, snr = 30, uncorr = True):
+        '''
+        Method used to artificially add gaussian noise to the measued data
+        '''
+        signal = self.pres_s[0]
+        try:
+            signal_u = self.uz_s[0]
+        except:
+            signal_u = np.zeros(1)
+        if uncorr:
+            signalPower_lin = (np.abs(signal)/np.sqrt(2))**2
+            signalPower_dB = 10 * np.log10(signalPower_lin)
+            noisePower_dB = signalPower_dB - snr
+            noisePower_lin = 10 ** (noisePower_dB/10)
+        else:
+            signalPower_lin = (np.abs(np.mean(signal, axis=0))/np.sqrt(2))**2
+            signalPower_dB = 10 * np.log10(signalPower_lin)
+            noisePower_dB = signalPower_dB - snr
+            noisePower_lin = 10 ** (noisePower_dB/10)
+            if signal_u.any() != 0:
+                signalPower_lin_u = (np.abs(np.mean(signal_u, axis=0))/np.sqrt(2))**2
+                signalPower_dB_u = 10 * np.log10(signalPower_lin_u)
+                noisePower_dB_u = signalPower_dB_u - snr
+                noisePower_lin_u = 10 ** (noisePower_dB_u/10)
+        noise = np.random.normal(0, np.sqrt(noisePower_lin), size = signal.shape) +\
+                1j*np.random.normal(0, np.sqrt(noisePower_lin), size = signal.shape)
+        # noise = 2*np.sqrt(noisePower_lin)*\
+        #     (np.random.randn(signal.shape[0], signal.shape[1]) + 1j*np.random.randn(signal.shape[0], signal.shape[1]))
+        self.pres_s[0] = signal + noise
+        if signal_u.any() != 0:
+            print('Adding noise to particle velocity')
+            noise_u = np.random.normal(0, np.sqrt(noisePower_lin_u), size = signal_u.shape) +\
+                1j*np.random.normal(0, np.sqrt(noisePower_lin_u), size = signal_u.shape)
+            self.uz_s[0] = signal_u + noise_u   
+
+        # for js, s_coord in enumerate(self.sources.coord):
+        #     # hs = s_coord[2] # source height
+        #     pres_rec = self.pres_s[js]
+        #     # N = (pres_rec).shape
+        #     # print(N)
+        #     for jrec, r_coord in enumerate(self.receivers.coord):
+        #         for jf, k0 in enumerate(self.controls.k0):
+        #             # Here, the signal power is 2 (1 for real and imaginary component)
+        #             signal = pres_rec[jrec, jf]
+        #             signalPower_lin = np.abs(signal)**2
+        #             signalPower_dB = 10 * np.log10(signalPower_lin)
+        #             noisePower_dB = signalPower_dB - snr
+        #             noisePower_lin = 10 ** (noisePower_dB/10)
+        #             noise = np.sqrt(noisePower_lin/2)*(np.random.randn(1) + 1j*np.random.randn(1))
+        #             self.pres_s[js][jrec][jf] = signal + noise
+
     def plot_scene(self, vsam_size = 2, mesh = True):
         '''
         a simple plot of the scene using matplotlib - not redered
@@ -364,7 +415,7 @@ class BEMFlush(object):
         # ax.invert_zaxis()
         plt.show() # show plot
 
-    def plot_pres(self):
+    def plot_pres(self,):
         '''
         Method to plot the spectrum of the sound pressure
         '''

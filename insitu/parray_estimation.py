@@ -154,7 +154,7 @@ class PArrayDeduction(object):
             # print('reg par: {}'.format(lambd_value))
             if method == 'scipy':
                 from scipy.sparse.linalg import lsqr, lsmr
-                x = lsqr(h_mtx, self.pres_s[:,jf], damp=np.sqrt(lambd_value))
+                x = lsqr(h_mtx, self.pres_s[:,jf], damp=lambd_value)
                 self.pk[:,jf] = x[0]
             elif method == 'direct':
                 Hm = np.matrix(h_mtx)
@@ -752,6 +752,8 @@ class PArrayDeduction(object):
             linear scale.
             save (bool) - Whether to save or not the figure. PDF file with simple standard name
         '''
+        plt.rcParams.update({'font.size': 16})
+        plt.rcParams.update({'font.family': 'serif'})
         if self.flag_oct_interp:
             id_f = np.where(self.freq_oct <= freq)
         else:
@@ -772,13 +774,14 @@ class PArrayDeduction(object):
         p=plt.contourf(np.rad2deg(self.grid_phi),
             90-np.rad2deg(self.grid_theta), color_par)
         fig.colorbar(p)
-        plt.xlabel('phi (azimuth) [deg]')
-        plt.ylabel('theta (elevation) [deg]')
+        plt.xlabel(r'$\phi$ (azimuth) [deg]')
+        plt.ylabel(r'$\theta$ (elevation) [deg]')
         if self.flag_oct_interp:
             plt.title('|P(k)| at ' + str(self.freq_oct[id_f]) + 'Hz - '+ name)
         else:
             plt.title('|P(k)| at ' + str(self.controls.freq[id_f]) + 'Hz - '+ name)
         # plt.show()
+        plt.tight_layout()
         if save:
             filename = path + fname + '_' + str(int(freq)) + 'Hz'
             plt.savefig(fname = filename, format='png')
@@ -810,9 +813,9 @@ class PArrayDeduction(object):
         fig = plt.figure()
         fig.canvas.set_window_title('Wave number spk of evanescent waves')
         if db:
-            color_par = 20*np.log10(np.abs(pk_ev_grid))#20*np.log10(np.abs(pk_ev_grid)/np.amax(np.abs(pk_ev_grid)))
-            # id_outofrange = np.where(color_par < -dinrange)
-            # color_par[id_outofrange] = -dinrange
+            color_par = 20*np.log10(np.abs(pk_ev_grid)/np.amax(np.abs(pk_ev_grid)))
+            id_outofrange = np.where(color_par < -dinrange)
+            color_par[id_outofrange] = -dinrange
         else:
             color_par = np.abs(pk_ev_grid)#/np.amax(np.abs(pk_ev_grid))
         p=plt.contourf(kx, ky, color_par)

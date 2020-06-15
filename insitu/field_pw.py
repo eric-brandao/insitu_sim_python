@@ -49,12 +49,6 @@ class PWField(object):
                 k_vecr = np.array([kx, ky, -kz])
                 pres_rec[jrec, jf] = np.exp(1j * np.dot(k_veci, r_coord)) +\
                     self.material.Vp[jf] * np.exp(1j * np.dot(k_vecr, r_coord))
-                # pres_rec[jrec, jf] = (np.exp(1j * k_vec[2] * r_coord[2]) +\
-                #     self.material.Vp[jf] * np.exp(-1j * k_vec[2] * r_coord[2]))*\
-                #     (np.exp(1j * k_vec[0] * r_coord[0]))*\
-                #     (np.exp(1j * k_vec[1] * r_coord[1]))
-                # pres_rec[jrec, jf] = np.exp(1j * np.dot(k_vec, r_coord)) +\
-                #     np.exp(-1j * np.dot(k_vec, r_coord))
         self.pres_s.append(pres_rec)
 
     def uz_fps(self,):
@@ -111,6 +105,28 @@ class PWField(object):
                     uz_rec[jrec, jf] += (kz/k0) * (np.exp(1j * np.dot(k_veci, r_coord)) -\
                     material_m.Vp[jf] * np.exp(1j * np.dot(k_vecr, r_coord)))
         self.uz_s.append(uz_rec)
+
+    def pev_fps(self, kx_e = [0], ky_e = [0], Ae = [0]):
+        '''
+        Method calculates the pressure field due to a propagating incident, a progating reflected
+        and a set of evanescent plane waves specified by the vectors kx_e, ky_e and Ae
+        '''
+        # Loop the receivers
+        self.pres_s = []
+        pres_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = complex)
+        for jrec, r_coord in enumerate(self.receivers.coord):
+            # r = np.linalg.norm(r_coord) # distance source-receiver
+            for jf, k0 in enumerate(self.controls.k0):
+                # Calculate propagating wave-numbers
+                kx, ky, kz = sph2cart(k0, np.pi/2-self.theta, self.phi)
+                k_veci_p = np.array([kx, ky, kz])
+                k_vecr_p = np.array([kx, ky, -kz])
+                # Evanescent wave-numbers
+                kz_e = (kx_e**2 + ky_e**2 - k0**2)**0.5
+                p_ev = np.sum(Ae * (np.exp(-kz_e * r_coord[2])) * (np.exp(1j * (kx_e * r_coord[0] + ky_e * r_coord[1]))))
+                pres_rec[jrec, jf] = np.exp(1j * np.dot(k_veci_p, r_coord)) +\
+                    self.material.Vp[jf] * np.exp(1j * np.dot(k_vecr_p, r_coord)) + p_ev
+        self.pres_s.append(pres_rec)
 
     def plot_scene(self, vsam_size = 2):
         '''

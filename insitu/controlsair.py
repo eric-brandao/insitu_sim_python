@@ -157,7 +157,7 @@ def plot_spk(freq, spk_in_sources, ref = 1.0, legendon = True, title='Spectrum')
     for js, spk_mtx in enumerate(spk_in_sources):
         # print('outer loop: {}'.format(js+1))
         # print(spk_mtx.shape)
-        for jrec, spk in enumerate(spk_mtx):
+        for jrec, spk in enumerate(spk_mtx[0:5,:]):
             # print('inner loop: {}'.format(js+1))
             leg = 'source ' + str(js+1) + ' receiver ' + str(jrec+1)
             axs[0].semilogx(freq, 20 * np.log10(np.abs(spk) / ref), label = leg)
@@ -205,6 +205,20 @@ def compare_alpha(*alphas, title = 'absorption comparison', freq_max=4000, save 
     '''
     This function is used to compare the absorption coefficients of several estimations
     '''
+    SMALL_SIZE = 14
+    BIGGER_SIZE = 16
+    #plt.rcParams.update({'font.size': 10})
+    plt.rcParams.update({'font.family': 'serif'})
+    plt.rc('legend', fontsize=SMALL_SIZE)
+    #plt.rc('title', fontsize=SMALL_SIZE)
+    plt.rc('font', size=BIGGER_SIZE)          # controls default text sizes
+    plt.rc('axes', titlesize=BIGGER_SIZE)     # fontsize of the axes title
+    plt.rc('axes', labelsize=BIGGER_SIZE)    # fontsize of the x and y labels
+    plt.rc('xtick', labelsize=BIGGER_SIZE)    # fontsize of the tick labels
+    plt.rc('ytick', labelsize=BIGGER_SIZE)    # fontsize of the tick labels
+    plt.rc('figure', titlesize=BIGGER_SIZE)
+
+
     plt.figure()
     plt.title(title)
     for alpha_dict in alphas:
@@ -228,9 +242,11 @@ def compare_alpha(*alphas, title = 'absorption comparison', freq_max=4000, save 
     plt.ylabel(r'$\alpha$ [-]')
     plt.ylim((-0.2, 1.2))
     plt.xlim((80, freq_max))
+    plt.tight_layout()
     if save:
         filename = path + fname
         plt.savefig(fname = filename, format='pdf')
+    
     # plt.show()
 
 ### Function to compare impedances
@@ -238,6 +254,18 @@ def compare_zs(*zs, title = 'surface impedance comparison', freq_max=4000, save 
     '''
     This function is used to compare the absorption coefficients of several estimations
     '''
+    SMALL_SIZE = 14
+    BIGGER_SIZE = 16
+    #plt.rcParams.update({'font.size': 10})
+    plt.rcParams.update({'font.family': 'serif'})
+    plt.rc('legend', fontsize=SMALL_SIZE)
+    #plt.rc('title', fontsize=SMALL_SIZE)
+    plt.rc('font', size=BIGGER_SIZE)          # controls default text sizes
+    plt.rc('axes', titlesize=BIGGER_SIZE)     # fontsize of the axes title
+    plt.rc('axes', labelsize=BIGGER_SIZE)    # fontsize of the x and y labels
+    plt.rc('xtick', labelsize=BIGGER_SIZE)    # fontsize of the tick labels
+    plt.rc('ytick', labelsize=BIGGER_SIZE)    # fontsize of the tick labels
+    plt.rc('figure', titlesize=BIGGER_SIZE)
     fig, axs = plt.subplots(2,1)
     for zs_dict in zs:
         zs_color = zs_dict['color']
@@ -263,7 +291,7 @@ def compare_zs(*zs, title = 'surface impedance comparison', freq_max=4000, save 
     axs[1].set(xlabel = 'Frequency [Hz]')
     axs[1].set(ylabel = 'Im{Zs} [-]')
     axs[1].set(ylim = (-20.0, 5.0))
-    axs[1].legend(loc = 'lower right')
+    # axs[1].legend(loc = 'lower right')
     plt.setp(axs[1], xticks=[50, 100, 500, 1000, 2000, 4000, 8000, 10000], 
         xticklabels=['50', '100', '500', '1k', '2k', '4k', '8k', '10k'])
     # plt.xticks([50, 100, 500, 1000, 4000, 6000, 10000],
@@ -272,6 +300,8 @@ def compare_zs(*zs, title = 'surface impedance comparison', freq_max=4000, save 
     # plt.xlim((0.8 * freq[0], freq_max))
     plt.setp(axs[0], xlim = (0.8 * freq[0], freq_max))
     plt.setp(axs[1], xlim = (0.8 * freq[0], freq_max))
+    plt.setp(axs[1], ylim = (-30, 5))
+    plt.tight_layout()
     if save:
         filename = path + fname
         plt.savefig(fname = filename, format='pdf')
