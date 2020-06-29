@@ -326,6 +326,7 @@ class BEMFlush(object):
                 signalPower_dB_u = 10 * np.log10(signalPower_lin_u)
                 noisePower_dB_u = signalPower_dB_u - snr
                 noisePower_lin_u = 10 ** (noisePower_dB_u/10)
+        np.random.seed(0)
         noise = np.random.normal(0, np.sqrt(noisePower_lin), size = signal.shape) +\
                 1j*np.random.normal(0, np.sqrt(noisePower_lin), size = signal.shape)
         # noise = 2*np.sqrt(noisePower_lin)*\

@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import scipy.io as scio
 from scipy import linalg # for svd
 from scipy import optimize
+import warnings
 
 def curvature(lambd, sig, beta, xi):
     '''
@@ -106,13 +107,6 @@ def l_corner(rho,eta,reg_param,u,sig,bm):
             rho_c = np.sqrt(rho_c ** 2 + np.linalg.norm(b0)**2)
     return reg_c
 
-# reg_param[int(np.amin([curv_id+1, len(curv)])])
-
-    # reg_c = fminbnd('lcfun',...
-    # reg_param(min(gi+1,length(g))),reg_param(max(gi-1,1)),...
-    # optimset('Display','off'),s,beta,xi); % Minimizer.
-    
-
 def csvd(A):
     '''
     computes the svd based on the size of A.
@@ -172,13 +166,52 @@ def l_cuve(u, sig, bm, plotit = False):
         plt.loglog(rho, eta)
         plt.xlabel('Residual norm ||Ax - b||')
         plt.ylabel('Solution norm ||x||')
+        plt.tight_layout()
         plt.show()
     # Compute the corner of the L-curve (optimal regularization parameter)
     lam_opt = l_corner(rho,eta,reg_param,u,sig,bm)
     return lam_opt
-    # print('eta {}'.format(eta[0]))
-    # print('xi: {}'.format(xi))
-    # print('xi shape {}'.format(xi.shape))
-    # print('s shape {}'.format(s.shape))
+
+def tikhonov(u,s,v,b,lambd_value):
+    '''
+    TIKHONOV Tikhonov regularization.
+    Computes the Tikhonov regularized solution x_lambda, given the SVD or
+    GSVD as computed via csvd or cgsvd, respectively.  The SVD is used,
+    i.e. if U, s, and V are specified, then standard-form regularization
+    is applied:
+    min { || A x - b ||^2 + lambda^2 || x - x_0 ||^2 } .
+    Valid for underdetermined systems.
+    Based on the matlab routine by: Per Christian Hansen, DTU Compute, April 14, 2003.
+    Reference: A. N. Tikhonov & V. Y. Arsenin, "Solutions of Ill-Posed
+    Problems", Wiley, 1977.
+    '''
+    # warn that lambda should be bigger than 0
+    if lambd_value < 0:
+        warnings.warn("Illegal regularization parameter lambda. I'll set it to 1.0")
+        lambd_value = 1.0
+    # m = u.shape[0]
+    # n = v.shape[0]
+    p = len(s)
+    # ps = 1
+    beta = u[:,0:p].T @ b
+    zeta = s * beta
+    # ll = length(lambda); x_lambda = zeros(n,ll);
+    # rho = zeros(ll,1); eta = zeros(ll,1);
+    # The standard-form case.
+    x_lambda = v[:,0:p] @ np.divide(zeta,s**2 + lambd_value**2)
+    return x_lambda
+
+
+# np.random.seed(0)
+# H = np.random.randn(7, 10)
+# p = np.random.randn(7)
+# u, sig, v = csvd(H)
+# lambd_value = l_cuve(u, sig, p, plotit=False)
+# tikhonov(u, sig, v, p, lambd_value)
+# H = np.array([[1, 7, 10],[2.3, 5.4, 13.2]])
+# p = np.array([1.4, 8.54])
+# u, sig, v = csvd(H)
+# x_lambda = tikhonov(u, sig, v, p, 0.3)
+# print(x_lambda)
 
     

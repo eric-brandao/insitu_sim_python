@@ -1,6 +1,6 @@
 import numpy as np
 #import toml
-from controlsair import load_cfg
+from controlsair import load_cfg, sph2cart
 # import insitu_cpp
 
 
@@ -34,16 +34,24 @@ class Receiver():
         self.coord = np.append(self.coord, [self.coord[0,0], self.coord[0,1], self.coord[0,2]+z_dist])
         self.coord = np.reshape(self.coord, (2,3))
 
-    def line_array(self, line_len = 1.0, n_rec = 10):
+    def line_array(self, startat = 0.001, line_len = 1.0, n_rec = 10, direction = 'z'):
         '''
         This method initializes a line array of receivers. It will overwrite
         self.coord to be a matrix where each line gives a 3D coordinate for each receiver
         Inputs:
-            line_len - the length of the line. The first sensor will be at coordinates given by
-            the class constructor. Receivers will span in z-direction
+            start - location to start the array
+            line_len - the length of the line.
             n_rec - the number of receivers in the line array
+            direction - direction of the line (x, y or z for simplicity)
         '''
-        pass
+        self.coord = np.zeros((n_rec,3))
+        line = np.linspace(start = startat, stop = line_len+startat, num = n_rec)
+        if direction == 'x':
+            self.coord[:,0] = line
+        elif direction == 'y':
+            self.coord[:,1] = line
+        else:
+            self.coord[:,2] = line
 
     def planar_array(self, x_len = 1.0, n_x = 10, y_len = 1.0, n_y = 10, zr = 0.1):
         '''
@@ -72,6 +80,24 @@ class Receiver():
         self.coord[:, 0] = xv.flatten()
         self.coord[:, 1] = yv.flatten()
         self.coord[:, 2] = zr
+
+    def arc(self, radii = 20.0, n_recs = 36):
+        '''
+        This method initializes a receiver arc. It will overwrite
+        self.coord to be a matrix where each line gives a 3D coordinate for each receiver
+        Inputs:
+            radii - radius of the receiver
+            n_recs - number of receivers in the arc
+        '''
+        # x and y coordinates of the grid
+        thetas = np.linspace(0, np.pi, n_recs)
+        # initialize receiver list in memory
+        self.coord = np.zeros((n_recs, 3), dtype = np.float32)
+        # self.coord[:, 0] = radii * np.sin(thetas)
+        # self.coord[:, 1] = 0
+        # self.coord[:, 2] = radii * np.cos(thetas)
+        self.coord[:, 0], self.coord[:, 1], self.coord[:, 2] =\
+            sph2cart(radii, thetas, 0)
 
     def planar_xz(self, x_len = 1.0, n_x = 10, z_len = 1.0, n_z = 10, yr = 0.0):
         '''

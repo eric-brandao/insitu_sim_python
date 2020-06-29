@@ -1,26 +1,39 @@
 import numpy as np
 import matplotlib.pyplot as plt
 # from matplotlib import cm
-import toml
 # from insitu.controlsair import load_cfg
 import scipy.integrate as integrate
 import scipy as spy
+from sklearn.linear_model import Ridge
 import time
+from tqdm import tqdm
 import sys
 from progress.bar import Bar, IncrementalBar, FillingCirclesBar, ChargingBar
 #from tqdm._tqdm_notebook import tqdm
-from tqdm import tqdm
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 unused import
 import cvxpy as cp
 from scipy import linalg # for svd
 from scipy.sparse.linalg import lsqr, lsmr
-from lcurve_functions import csvd, l_cuve
+from lcurve_functions import csvd, l_cuve, tikhonov
 import pickle
 from receivers import Receiver
 from material import PorousAbsorber
-from controlsair import cart2sph, sph2cart, update_progress, compare_alpha, compare_zs
+from controlsair import cart2sph, sph2cart, cart2sph, update_progress, compare_alpha, compare_zs
 from rayinidir import RayInitialDirections
-from parray_estimation import octave_freq, octave_avg
+from parray_estimation import octave_freq, octave_avg, get_hemispheres, get_inc_ref_dirs
+
+SMALL_SIZE = 11
+BIGGER_SIZE = 13
+#plt.rcParams.update({'font.size': 10})
+plt.rcParams.update({'font.family': 'serif'})
+plt.rc('legend', fontsize=SMALL_SIZE)
+#plt.rc('title', fontsize=SMALL_SIZE)
+plt.rc('font', size=BIGGER_SIZE)          # controls default text sizes
+plt.rc('axes', titlesize=BIGGER_SIZE)     # fontsize of the axes title
+plt.rc('axes', labelsize=BIGGER_SIZE)    # fontsize of the x and y labels
+plt.rc('xtick', labelsize=BIGGER_SIZE)    # fontsize of the tick labels
+plt.rc('ytick', labelsize=BIGGER_SIZE)    # fontsize of the tick labels
+plt.rc('figure', titlesize=BIGGER_SIZE)
 
 class Decomposition(object):
     '''
@@ -39,7 +52,7 @@ class Decomposition(object):
         self.pres_s = p_mtx
         self.flag_oct_interp = False
 
-    def wavenum_dir(self, n_waves = 642, plot = False):
+    def wavenum_dir(self, n_waves = 642, plot = False, halfsphere = False):
         '''
         This method is used to create wave number directions uniformily distributed over the surface of a sphere.
         The directions of propagation that later will bevome wave-number vectors.
@@ -51,11 +64,17 @@ class Decomposition(object):
         '''
         directions = RayInitialDirections()
         self.dir, self.n_waves = directions.isotropic_rays(Nrays = int(n_waves))
+        if halfsphere:
+            r, theta, phi = cart2sph(self.dir[:,0],self.dir[:,1],self.dir[:,2])
+            theta_inc_id, theta_ref_id = get_hemispheres(theta)
+            incident_dir, reflected_dir = get_inc_ref_dirs(self.dir, theta_inc_id, theta_ref_id)
+            self.dir = reflected_dir
+            self.n_waves = len(self.dir)
         print('The number of created waves is: {}'.format(self.n_waves))
         if plot:
             directions.plot_points()
 
-    def wavenum_direv(self, n_waves = 642, plot = False, freq=1000):
+    def wavenum_direv(self, n_waves = 20, plot = False, freq=1000):
         '''
         This method is used to create wave number directions that will be used to decompose the evanescent part 
         of the wave field. This part will be the kx and ky componentes. They only depend on the array size and 
@@ -133,7 +152,7 @@ class Decomposition(object):
                 self.pk[:,jf] = x[0]
             elif method == 'direct':
                 Hm = np.matrix(h_mtx)
-                self.pk[:,jf] = Hm.getH() @ np.linalg.inv(Hm @ Hm.getH() + lambd_value*np.identity(len(pm))) @ pm
+                self.pk[:,jf] = Hm.getH() @ np.linalg.inv(Hm @ Hm.getH() + (lambd_value**2)*np.identity(len(pm))) @ pm
             #### Performing the Tikhonov inversion with cvxpy #########################
             else:
                 H = h_mtx.astype(complex)
@@ -142,6 +161,7 @@ class Decomposition(object):
                 lambd.value = lambd_value[0]
                 # Create the problem and solve
                 problem = cp.Problem(cp.Minimize(objective_fn(H, pm, x, lambd)))
+                # problem.is_dcp(dpp = True)
                 # problem.solve()
                 problem.solve(solver=cp.SCS, verbose=False) # Fast but gives some warnings
                 # problem.solve(solver=cp.ECOS, abstol=1e-3) # slow
@@ -185,7 +205,7 @@ class Decomposition(object):
             # update_progress(jf/len(self.controls.k0))
             # First, we form the propagating wave-numbers ans sensing matrix
             k_vec = k0 * self.dir
-            h_p = np.exp(1j*self.receivers.coord @ k_vec.T)
+            h_p = np.exp(-1j*self.receivers.coord @ k_vec.T)
             # Then, we have to form the remaining evanescent wave-numbers and evanescent sensing matrix
             kx_e, ky_e, self.n_evan = filter_evan(k0, self.kx_e, self.ky_e, plot=False)
             # print('Number of evanescent is {}'.format(self.n_evan))
@@ -211,29 +231,52 @@ class Decomposition(object):
                 x = lsqr(h_mtx, self.pres_s[:,jf], damp=lambd_value)
                 self.pk[:,jf] = x[0][0:self.n_waves]
                 self.pk_ev.append(x[0][self.n_waves:])
-            # elif method == 'direct':
-            #     Hm = np.matrix(h_mtx)
-            #     self.pk[:,jf] = Hm.getH() @ np.linalg.inv(Hm @ Hm.getH() + lambd_value*np.identity(len(pm))) @ pm
-            # # print('x values: {}'.format(x[0]))
+                print(x[0].shape)
+            elif method == 'direct':
+                Hm = np.matrix(h_mtx)
+                x = Hm.getH() @ np.linalg.inv(Hm @ Hm.getH() + (lambd_value**2)*np.identity(len(pm))) @ pm
+                # print(x.shape)
+                self.pk[:,jf] = x[0:self.n_waves]
+                self.pk_ev.append(x[self.n_waves:])
+            elif method == 'Ridge':
+                # Form a real H2 matrix and p2 measurement
+                H2 = np.vstack((np.hstack((h_mtx.real, -h_mtx.imag)),
+                    np.hstack((h_mtx.imag, h_mtx.real))))
+                p2 = np.vstack((pm.real,pm.imag)).flatten()
+                # form Ridge regressor using the regularization from L-curve
+                regressor = Ridge(alpha=lambd_value, fit_intercept = False, solver = 'svd')
+                x2 = regressor.fit(H2, p2).coef_
+                x = x2[:h_mtx.shape[1]]+1j*x2[h_mtx.shape[1]:]
+                # print(x.shape)
+                # separate propagating from evanescent
+                self.pk[:,jf] = x[0:self.n_waves]
+                self.pk_ev.append(x[self.n_waves:])
+            elif method == 'tikhonov':
+                u, sig, v = csvd(h_mtx)
+                x = tikhonov(u, sig, v, pm, lambd_value)
+                self.pk[:,jf] = x[0:self.n_waves]
+                self.pk_ev.append(x[self.n_waves:])
+                # print(x.shape)
             # #### Performing the Tikhonov inversion with cvxpy #########################
-            # else:
-            #     H = h_mtx.astype(complex)
-            #     x = cp.Variable(h_mtx.shape[1], complex = True)
-            #     lambd = cp.Parameter(nonneg=True)
-            #     lambd.value = lambd_value[0]
-            #     # Create the problem and solve
-            #     problem = cp.Problem(cp.Minimize(objective_fn(H, pm, x, lambd)))
-            #     # problem.solve()
-            #     problem.solve(solver=cp.SCS, verbose=False) # Fast but gives some warnings
-            #     # problem.solve(solver=cp.ECOS, abstol=1e-3) # slow
-            #     # problem.solve(solver=cp.ECOS_BB) # slow
-            #     # problem.solve(solver=cp.NAG) # not installed
-            #     # problem.solve(solver=cp.CPLEX) # not installed
-            #     # problem.solve(solver=cp.CBC)  # not installed
-            #     # problem.solve(solver=cp.CVXOPT) # not installed
-            #     # problem.solve(solver=cp.MOSEK) # not installed
-            #     # problem.solve(solver=cp.OSQP) # did not work
-            #     self.pk[:,jf] = x.value
+            else:
+                H = h_mtx.astype(complex)
+                x = cp.Variable(h_mtx.shape[1], complex = True)
+                lambd = cp.Parameter(nonneg=True)
+                lambd.value = lambd_value[0]
+                # Create the problem and solve
+                problem = cp.Problem(cp.Minimize(objective_fn(H, pm, x, lambd)))
+                # problem.solve()
+                problem.solve(solver=cp.SCS, verbose=False) # Fast but gives some warnings
+                # problem.solve(solver=cp.ECOS, abstol=1e-3) # slow
+                # problem.solve(solver=cp.ECOS_BB) # slow
+                # problem.solve(solver=cp.NAG) # not installed
+                # problem.solve(solver=cp.CPLEX) # not installed
+                # problem.solve(solver=cp.CBC)  # not installed
+                # problem.solve(solver=cp.CVXOPT) # not installed
+                # problem.solve(solver=cp.MOSEK) # not installed
+                # problem.solve(solver=cp.OSQP) # did not work
+                self.pk[:,jf] = x.value[0:self.n_waves]
+                self.pk_ev.append(x.value[self.n_waves:])
             bar.next()
             # bar.update(1)
         bar.finish()
@@ -338,6 +381,30 @@ class Decomposition(object):
         for jdir in np.arange(0, self.n_waves):
             self.pk_oct[jdir,:] = octave_avg(self.controls.freq, self.pk[jdir, :], self.freq_oct, flower, fupper)
 
+    def reconstruct_pu(self, receivers):
+        '''
+        reconstruct sound pressure and particle velocity at a receiver object
+        '''
+        self.p_recon = np.zeros((receivers.coord.shape[0], len(self.controls.k0)), dtype=complex)
+        self.uz_recon = np.zeros((receivers.coord.shape[0], len(self.controls.k0)), dtype=complex)
+        bar = tqdm(total = len(self.controls.k0), desc = 'Reconstructing sound field...')
+        for jf, k0 in enumerate(self.controls.k0):
+            # First, we form the sensing matrix
+            k_p = -k0 * self.dir
+            # h_p = np.exp(-1j*receivers.coord @ k_p.T)
+            kz_e = np.sqrt(k0**2 - self.kx_ef[jf]**2 - self.ky_ef[jf]**2+0j)
+            k_ev = np.array([self.kx_ef[jf], self.ky_ef[jf], kz_e]).T
+            k_vec = np.vstack((k_p, k_ev))
+            # h_ev = np.exp(1j*receivers.coord @ k_ev.T)
+            # h_mtx = np.hstack((h_p, h_ev))
+            h_mtx = np.exp(1j*receivers.coord @ k_vec.T)
+            # pressure and particle velocity at surface
+            self.p_recon[:,jf] = h_mtx @ np.concatenate((self.pk[:,jf],self.pk_ev[jf]))
+            self.uz_recon[:,jf] = -((np.divide(k_vec[:,2], k0)) * h_mtx) @ np.concatenate((self.pk[:,jf], self.pk_ev[jf]))
+            # self.p_s[:,jf] =  p_surf_mtx
+            #  =  uz_surf_mtx
+            bar.update(1)
+
     def plot_condnum(self, save = False, path = '', fname = ''):
         '''
         Method to plot the condition number
@@ -425,7 +492,7 @@ class Decomposition(object):
         ax.set_ylabel('Y axis')
         ax.set_zlabel('Z axis')
         plt.title('|P(k)| at ' + str(self.controls.freq[id_f]) + 'Hz - ' + name)
-        # plt.show()
+        plt.tight_layout()
         if save:
             filename = 'data/colormaps/cmat_' + str(int(freq)) + 'Hz_' + name
             plt.savefig(fname = filename, format='pdf')
@@ -457,114 +524,42 @@ class Decomposition(object):
             if phase:
                 color_par = np.rad2deg(np.angle(self.grid_pk[id_f]))
             else:
-                color_par = np.abs(self.grid_pk[id_f])/np.amax(np.abs(self.grid_pk[id_f]))
+                # color_par = np.abs(self.grid_pk[id_f])/np.amax(np.abs(self.grid_pk[id_f]))
+                color_par = np.abs(self.grid_pk[id_f])
         p=plt.contourf(np.rad2deg(self.grid_phi),
             90-np.rad2deg(self.grid_theta), color_par)
         fig.colorbar(p)
-        plt.xlabel('phi (azimuth) [deg]')
-        plt.ylabel('theta (elevation) [deg]')
+        plt.xlabel(r'$\phi$ (azimuth) [deg]')
+        plt.ylabel(r'$\theta$ (elevation) [deg]')
         if self.flag_oct_interp:
             plt.title('|P(k)| at ' + str(self.freq_oct[id_f]) + 'Hz - '+ name)
         else:
             plt.title('|P(k)| at ' + str(self.controls.freq[id_f]) + 'Hz - '+ name)
-        # plt.show()
+        plt.tight_layout()
         if save:
             filename = path + fname + '_' + str(int(freq)) + 'Hz'
             plt.savefig(fname = filename, format='png')
 
-    def plot_pk_evmap(self, freq = 1000, n_evani = 50, db = False, dinrange = 12, save = False, name='', path = '', fname=''):
+    def plot_pk_evmap(self, freq = 1000, db = False, dinrange = 12, save = False, name='', path = '', fname='', contourplot = True, plot_kxky = False):
         '''
         Method to plot the magnitude of the spatial fourier transform of the evanescent components
         The map of interpolated to a kx and ky wave numbers.
         It is a normalized version of the magnitude, either between 0 and 1 or between -dinrange and 0.
         inputs:
-            freq - Which frequency you want to see. If the calculated spectrum does not contain it
+            freq (float) - Which frequency you want to see. If the calculated spectrum does not contain it
                 we plot the closest frequency before the asked one.
             dB (bool) - Whether to plot in linear scale (default) or decibel scale.
-            dinrange - You can specify a dinamic range for the decibel scale. It will not affect the
+            dinrange (float) - You can specify a dinamic range for the decibel scale. It will not affect the
             linear scale.
-            save (bool) - Whether to save or not the figure. PDF file with simple standard name
-        '''
-        id_f = np.where(self.controls.freq <= freq)
-        id_f = id_f[0][-1]
-        k0 = 2*np.pi*self.controls.freq[id_f]/340#self.controls.c0
-        # First, let us interpolate to have a nice colormap
-        new_kx = np.linspace(self.kx_e[0], self.kx_e[-1], n_evani)
-        new_ky = np.linspace(self.ky_e[0], self.ky_e[-1], n_evani)
-        kx, ky = np.meshgrid(new_kx, new_ky)
-        k_radius = (kx**2+ky**2)**0.5
-        kxf = np.ma.masked_where(k_radius<=k0, kx, copy=True)
-        kyf = np.ma.masked_where(k_radius<=k0, ky, copy=True)
-        # kx = kx[k_radius > k0]
-        # ky = ky[k_radius > k0]
-        ### map
-        # fig = plt.figure()
-        # fig.canvas.set_window_title('Filtered evanescent waves')
-        # plt.plot(kxf[~kxf.mask].flatten(), 
-        #     kyf[~kyf.mask].flatten(), 'o')
-        # plt.plot(k0*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
-        #     k0*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'r')
-        # plt.xlabel('kx')
-        # plt.ylabel('ky')
-        # plt.show()
-        # # interpolate
-        # from scipy.interpolate import griddata
-        # pk_ev_grid = griddata(np.transpose(np.array([self.kx_ef[id_f], self.ky_ef[id_f]])), self.pk_ev[id_f],
-        #     (kxf.data, kyf.data),
-        #     method='cubic', fill_value=np.finfo(float).eps, rescale=False)
-        # # # plot
-        # fig = plt.figure()
-        # fig.canvas.set_window_title('Wave number spk of evanescent waves')
-        # plt.plot(k0*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
-        #     k0*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'r')
-        # if db:
-        #     color_par = 20*np.log10(np.abs(pk_ev_grid)/np.amax(np.abs(pk_ev_grid)))
-        #     id_outofrange = np.where(color_par < -dinrange)
-        #     color_par[id_outofrange] = -dinrange
-        # else:
-        #     color_par = np.abs(pk_ev_grid)#/np.amax(np.abs(pk_ev_grid))
-        # # p=plt.contourf(kx, ky, color_par)
-        # p=plt.contourf(np.ma.masked_where(kx > k_radius, kx), np.ma.masked_where(ky > k_radius, ky), color_par)
-        # fig.colorbar(p)
-        # plt.xlabel(r'kx [m$^{-1}$]')
-        # plt.ylabel(r'ky [m$^{-1}$]')
-        # plt.title('Evanescent |P(k)| at {} Hz (k0 = {:.2f})'.format(self.controls.freq[id_f], k0) + name)
-        # # plt.show()
-        # if save:
-        #     filename = path + fname + '_' + str(int(freq)) + 'Hz'
-        #     plt.savefig(fname = filename, format='png')
-        ########################### Scatter ###############################################
-        if db:
-            color_par = 20*np.log10(np.abs(self.pk_ev[id_f])/np.amax(np.abs(self.pk_ev[id_f])))
-            id_outofrange = np.where(color_par < -dinrange)
-            color_par[id_outofrange] = -dinrange
-        else:
-            color_par = np.abs(self.pk_ev[id_f])#/np.amax(np.abs(pk_ev_grid))
-        fig = plt.figure()
-        fig.canvas.set_window_title('Wave number spk of evanescent waves - scatter plot')
-        p=plt.scatter(self.kx_ef[id_f], self.ky_ef[id_f], c = color_par)
-        fig.colorbar(p)
-        plt.xlabel(r'kx [m$^{-1}$]')
-        plt.ylabel(r'ky [m$^{-1}$]')
-        plt.title('Evanescent |P(k)| at {} Hz (k0 = {:.2f})'.format(self.controls.freq[id_f], k0) + name)
-
-    def plot_pk_evmap2(self, freq = 1000, n_evani = 50, db = False, dinrange = 12, save = False, name='', path = '', fname=''):
-        '''
-        Method to plot the magnitude of the spatial fourier transform of the evanescent components
-        The map of interpolated to a kx and ky wave numbers.
-        It is a normalized version of the magnitude, either between 0 and 1 or between -dinrange and 0.
-        inputs:
-            freq - Which frequency you want to see. If the calculated spectrum does not contain it
-                we plot the closest frequency before the asked one.
-            dB (bool) - Whether to plot in linear scale (default) or decibel scale.
-            dinrange - You can specify a dinamic range for the decibel scale. It will not affect the
-            linear scale.
-            save (bool) - Whether to save or not the figure. PDF file with simple standard name
+            save (bool) - Whether to save or not the figure (png file)
+            path (str) - path to save fig
+            fname (str) - name file of the figure
+            plot_kxky (bool) - whether to plot or not the kx and ky points that are part of the evanescent map.
         '''
         import matplotlib.tri as tri
         id_f = np.where(self.controls.freq <= freq)
         id_f = id_f[0][-1]
-        k0 = 2*np.pi*self.controls.freq[id_f]/340#self.controls.c0
+        k0 = self.controls.k0[id_f]
         if db:
             color_par = 20*np.log10(np.abs(self.pk_ev[id_f])/np.amax(np.abs(self.pk_ev[id_f])))
             id_outofrange = np.where(color_par < -dinrange)
@@ -572,72 +567,32 @@ class Decomposition(object):
         else:
             color_par = np.abs(self.pk_ev[id_f])#/np.amax(np.abs(pk_ev_grid))
         ############### Countourf ##########################
+        # Create the Triangulation; no triangles so Delaunay triangulation created.
+        x = self.kx_ef[id_f]
+        y = self.ky_ef[id_f]
+        triang = tri.Triangulation(x, y)
+        # Mask off unwanted triangles.
+        triang.set_mask(np.hypot(x[triang.triangles].mean(axis=1),
+            y[triang.triangles].mean(axis=1)) < k0)
         fig = plt.figure()
         fig.canvas.set_window_title('Filtered evanescent waves')
         plt.plot(k0*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
             k0*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'r')
-        
-        p = plt.tricontourf(self.kx_ef[id_f], self.ky_ef[id_f], color_par,
-            levels=dinrange)
+        if contourplot:
+            p = plt.tricontourf(triang, color_par,
+                levels=dinrange)
+        else:
+            p=plt.scatter(self.kx_ef[id_f], self.ky_ef[id_f], c = color_par)
         fig.colorbar(p)
-        plt.scatter(self.kx_ef[id_f], self.ky_ef[id_f], c = 'grey', alpha = 0.5)
-        plt.xlabel('kx')
-        plt.ylabel('ky')
-        # First, let us interpolate to have a nice 
-        # from scipy import interpolate
-        # f = interpolate.interp2d(self.kx_ef[id_f], self.ky_ef[id_f], np.abs(self.pk_ev[id_f]), kind='cubic')
-        
-        # new_kx = np.linspace(self.kx_e[0], self.kx_e[-1], n_evani)
-        # new_ky = np.linspace(self.ky_e[0], self.ky_e[-1], n_evani)
-        # kx, ky = np.meshgrid(new_kx, new_ky)
-        # k_radius = (kx**2+ky**2)**0.5
-        # kxf = np.ma.masked_where(k_radius<=k0, kx, copy=True)
-        # kyf = np.ma.masked_where(k_radius<=k0, ky, copy=True)
-        # # kx = kx[k_radius > k0]
-        # # ky = ky[k_radius > k0]
-        # ### map
-        # fig = plt.figure()
-        # fig.canvas.set_window_title('Filtered evanescent waves')
-        # plt.plot(kxf[~kxf.mask].flatten(), 
-        #     kyf[~kyf.mask].flatten(), 'o')
-        # plt.plot(k0*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
-        #     k0*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'r')
-        # plt.xlabel('kx')
-        # plt.ylabel('ky')
-        # plt.show()
-        # # interpolate
-        # pk_ev_interp = f(kxf[~kxf.mask].flatten(), kyf[~kyf.mask].flatten())
-
-        # fig = plt.figure()
-        # fig.canvas.set_window_title('Wave number spk of evanescent waves')
-        # plt.plot(k0*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
-        #     k0*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'r')
-        # if db:
-        #     color_par = 20*np.log10(np.abs(pk_ev_interp)/np.amax(np.abs(pk_ev_interp)))
-        #     id_outofrange = np.where(color_par < -dinrange)
-        #     color_par[id_outofrange] = -dinrange
-        # else:
-        #     color_par = np.abs(pk_ev_interp)#/np.amax(np.abs(pk_ev_grid))
-        # # p=plt.contourf(kx, ky, color_par)
-        # p=plt.contourf(kxf, kyf, color_par)
-        # fig.colorbar(p)
-        # plt.xlabel(r'kx [m$^{-1}$]')
-        # plt.ylabel(r'ky [m$^{-1}$]')
-        # plt.title('Evanescent |P(k)| at {} Hz (k0 = {:.2f})'.format(self.controls.freq[id_f], k0) + name)
-        ########################### Scatter ###############################################
-        # if db:
-        #     color_par = 20*np.log10(np.abs(pk_ev_interp)/np.amax(np.abs(pk_ev_interp)))
-        #     id_outofrange = np.where(color_par < -dinrange)
-        #     color_par[id_outofrange] = -dinrange
-        # else:
-        #     color_par = np.abs(pk_ev_interp)#/np.amax(np.abs(pk_ev_grid))
-        # fig = plt.figure()
-        # fig.canvas.set_window_title('Wave number spk of evanescent waves - scatter plot')
-        # p=plt.scatter(kxf[~kxf.mask].flatten(), kyf[~kyf.mask].flatten(), c = color_par)
-        # fig.colorbar(p)
-        # plt.xlabel(r'kx [m$^{-1}$]')
-        # plt.ylabel(r'ky [m$^{-1}$]')
-        # plt.title('Evanescent |P(k)| at {} Hz (k0 = {:.2f})'.format(self.controls.freq[id_f], k0) + name)
+        if plot_kxky:
+            plt.scatter(self.kx_ef[id_f], self.ky_ef[id_f], c = 'grey', alpha = 0.4)
+        plt.xlabel('kx rad/m')
+        plt.ylabel('ky rad/m')
+        plt.title("|P(k)| (evanescent) at {0:.1f} Hz (k = {1:.2f} rad/m)".format(self.controls.freq[id_f],k0))
+        plt.tight_layout()
+        if save:
+            filename = path + fname + '_' + str(int(freq)) + 'Hz'
+            plt.savefig(fname = filename, format='png')
 
     def save(self, filename = 'array_zest', path = '/home/eric/dev/insitu/data/zs_recovery/'):
         '''

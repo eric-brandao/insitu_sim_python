@@ -5,6 +5,7 @@ import toml
 # from insitu.controlsair import load_cfg
 import scipy.integrate as integrate
 import scipy as spy
+from sklearn.linear_model import Ridge
 import time
 import sys
 from progress.bar import Bar, IncrementalBar, FillingCirclesBar, ChargingBar
@@ -160,6 +161,15 @@ class PArrayDeduction(object):
                 Hm = np.matrix(h_mtx)
                 self.pk[:,jf] = Hm.getH() @ np.linalg.inv(Hm @ Hm.getH() + lambd_value*np.identity(len(pm))) @ pm
             # print('x values: {}'.format(x[0]))
+            elif method == 'Ridge':
+                # Form a real H2 matrix and p2 measurement
+                H2 = np.vstack((np.hstack((h_mtx.real, -h_mtx.imag)),
+                    np.hstack((h_mtx.imag, h_mtx.real))))
+                p2 = np.vstack((pm.real,pm.imag)).flatten()
+                # form Ridge regressor using the regularization from L-curve
+                regressor = Ridge(alpha=lambd_value, fit_intercept = False)
+                x2 = regressor.fit(H2, p2).coef_
+                self.pk[:,jf] = x2[:h_mtx.shape[1]]+1j*x2[h_mtx.shape[1]:]
             #### Performing the Tikhonov inversion with cvxpy #########################
             else:
                 H = h_mtx.astype(complex)
