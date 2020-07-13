@@ -90,7 +90,7 @@ def l_corner(rho,eta,reg_param,u,sig,bm):
     # reg_c = optimize.fmin(curvature, 0.0, args = (sig, beta, xi), full_output=False, disp=False)
     # Minimize 1
     curv_id = np.argmin(curv)
-    x1 = reg_param[int(np.amin([curv_id+1, len(curv)]))]
+    x1 = reg_param[int(np.amin([curv_id+1, len(curv)-1]))]
     x2 = reg_param[int(np.amax([curv_id-1, 0]))]
     reg_c = optimize.fminbound(curvature, x1, x2, args = (sig, beta, xi), full_output=False, disp=False)
     kappa_max = - curvature(reg_c, sig, beta, xi) # Maximum curvature.
@@ -162,14 +162,16 @@ def l_cuve(u, sig, bm, plotit = False):
     if (Nm > Nu and beta2 > 0):
         rho = np.sqrt(rho ** 2 + beta2)
     # want to plot the L curve?
-    if plotit:
-        plt.loglog(rho, eta)
-        plt.xlabel('Residual norm ||Ax - b||')
-        plt.ylabel('Solution norm ||x||')
-        plt.tight_layout()
-        plt.show()
     # Compute the corner of the L-curve (optimal regularization parameter)
     lam_opt = l_corner(rho,eta,reg_param,u,sig,bm)
+    if plotit:
+        plt.loglog(rho, eta, label='Reg. par: ' + "%.2f" % lam_opt)
+        plt.xlabel(r'Residual norm $||Ax - b||_2$')
+        plt.ylabel(r'Solution norm $||x||_2$')
+        plt.legend(loc = 'best')
+        plt.grid(linestyle = '--', which='both')
+        plt.tight_layout()
+        plt.show()
     return lam_opt
 
 def tikhonov(u,s,v,b,lambd_value):

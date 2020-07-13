@@ -13,6 +13,7 @@ from progress.bar import Bar, IncrementalBar, FillingCirclesBar, ChargingBar
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 unused import
 import cvxpy as cp
 from scipy import linalg # for svd
+from scipy import signal
 from scipy.sparse.linalg import lsqr, lsmr
 from lcurve_functions import csvd, l_cuve, tikhonov
 import pickle
@@ -93,6 +94,7 @@ class Decomposition(object):
         #     stop = np.pi/self.receivers.ax+2*np.pi/self.receivers.x_len, step = 2*np.pi/self.receivers.x_len)
         # ky = np.arange(start = -np.pi/self.receivers.ay,
         #     stop = np.pi/self.receivers.ay+2*np.pi/self.receivers.y_len, step = 2*np.pi/self.receivers.y_len)
+        self.n_evan = n_waves
         #### With linspace and n_waves
         kx = np.linspace(start = -np.pi/self.receivers.ax,
             stop = np.pi/self.receivers.ax, num = n_waves)
@@ -127,15 +129,15 @@ class Decomposition(object):
         '''
         # Bars
         self.decomp_type = 'Tikhonov (transparent array)'
-        bar = ChargingBar('Calculating Tikhonov inversion...', max=len(self.controls.k0), suffix='%(percent)d%%')
-        # bar = tqdm(total = len(self.controls.k0), desc = 'Calculating Tikhonov inversion...')
+        # bar = ChargingBar('Calculating Tikhonov inversion...', max=len(self.controls.k0), suffix='%(percent)d%%')
+        bar = tqdm(total = len(self.controls.k0), desc = 'Calculating Tikhonov inversion...')
         # Initialize p(k) as a matrix of n_waves x n_freq
         self.pk = np.zeros((self.n_waves, len(self.controls.k0)), dtype=complex)
         self.cond_num = np.zeros(len(self.controls.k0))
         # loop over frequencies
         for jf, k0 in enumerate(self.controls.k0):
             # update_progress(jf/len(self.controls.k0))
-            k_vec = k0 * self.dir
+            k_vec = -k0 * self.dir
             # Form H matrix
             h_mtx = np.exp(1j*self.receivers.coord @ k_vec.T)
             self.cond_num[jf] = np.linalg.cond(h_mtx)
@@ -143,9 +145,9 @@ class Decomposition(object):
             pm = self.pres_s[:,jf].astype(complex)
             # finding the optimal lambda value if the parameter comes empty.
             # if not we use the user supplied value.
-            if not lambd_value:
-                u, sig, v = csvd(h_mtx)
-                lambd_value = l_cuve(u, sig, pm, plotit=False)
+            # if not lambd_value:
+            u, sig, v = csvd(h_mtx)
+            lambd_value = l_cuve(u, sig, pm, plotit=True)
             ## Choosing the method to find the P(k)
             if method == 'scipy':
                 x = lsqr(h_mtx, self.pres_s[:,jf], damp=lambd_value)
@@ -153,6 +155,17 @@ class Decomposition(object):
             elif method == 'direct':
                 Hm = np.matrix(h_mtx)
                 self.pk[:,jf] = Hm.getH() @ np.linalg.inv(Hm @ Hm.getH() + (lambd_value**2)*np.identity(len(pm))) @ pm
+            elif method == 'Ridge':
+                # Form a real H2 matrix and p2 measurement
+                H2 = np.vstack((np.hstack((h_mtx.real, -h_mtx.imag)),
+                    np.hstack((h_mtx.imag, h_mtx.real))))
+                p2 = np.vstack((pm.real,pm.imag)).flatten()
+                # form Ridge regressor using the regularization from L-curve
+                regressor = Ridge(alpha=lambd_value, fit_intercept = False, solver = 'svd')
+                x2 = regressor.fit(H2, p2).coef_
+                self.pk[:,jf] = x2[:h_mtx.shape[1]]+1j*x2[h_mtx.shape[1]:]
+                # # separate propagating from evanescent
+                # self.pk[:,jf] = x[0:self.n_waves]
             #### Performing the Tikhonov inversion with cvxpy #########################
             else:
                 H = h_mtx.astype(complex)
@@ -173,13 +186,13 @@ class Decomposition(object):
                 # problem.solve(solver=cp.MOSEK) # not installed
                 # problem.solve(solver=cp.OSQP) # did not work
                 self.pk[:,jf] = x.value
-            bar.next()
-            # bar.update(1)
-        bar.finish()
-        # bar.close()
+            # bar.next()
+            bar.update(1)
+        # bar.finish()
+        bar.close()
         return self.pk
 
-    def pk_tikhonov_ev(self, lambd_value = [], method = 'scipy'):
+    def pk_tikhonov_ev(self, method = 'scipy', include_evan = False):
         '''
         Method to estimate wave number spectrum based on the Tikhonov matrix inversion technique.
         This version includes the evanescent waves
@@ -194,77 +207,87 @@ class Decomposition(object):
         '''
         self.decomp_type = 'Tikhonov (transparent array) w/ evanescent waves'
         # loop over frequencies
-        bar = ChargingBar('Calculating Tikhonov inversion (with evanescent waves)...', max=len(self.controls.k0), suffix='%(percent)d%%')
-        # bar = tqdm(total = len(self.controls.k0), desc = 'Calculating Tikhonov inversion...')
+        # bar = ChargingBar('Calculating Tikhonov inversion (with evanescent waves)...', max=len(self.controls.k0), suffix='%(percent)d%%')
+        if include_evan:
+            bar = tqdm(total = len(self.controls.k0), desc = 'Calculating Tikhonov inversion (with evanescent waves)...')
+        else:
+            bar = tqdm(total = len(self.controls.k0), desc = 'Calculating Tikhonov inversion (without evanescent waves)...')
         self.cond_num = np.zeros(len(self.controls.k0))
         self.pk = np.zeros((self.n_waves, len(self.controls.k0)), dtype=complex)
         self.kx_ef = [] # Filtered version
         self.ky_ef = [] # Filtered version
         self.pk_ev = []
         for jf, k0 in enumerate(self.controls.k0):
+            # print('freq {} Hz'.format(self.controls.freq[jf]))
             # update_progress(jf/len(self.controls.k0))
             # First, we form the propagating wave-numbers ans sensing matrix
-            k_vec = k0 * self.dir
-            h_p = np.exp(-1j*self.receivers.coord @ k_vec.T)
-            # Then, we have to form the remaining evanescent wave-numbers and evanescent sensing matrix
-            kx_e, ky_e, self.n_evan = filter_evan(k0, self.kx_e, self.ky_e, plot=False)
-            # print('Number of evanescent is {}'.format(self.n_evan))
-            kz_e = np.sqrt(k0**2 - kx_e**2 - ky_e**2+0j)
-            k_ev = np.array([kx_e, ky_e, kz_e]).T
-            h_ev = np.exp(1j*self.receivers.coord @ k_ev.T)
-            self.kx_ef.append(kx_e)
-            self.ky_ef.append(ky_e)
-            # Form H matrix
-            h_mtx = np.hstack((h_p, h_ev))
+            k_vec = -k0 * self.dir
+            h_p = np.exp(1j*self.receivers.coord @ k_vec.T)
+            if include_evan:
+                # Then, we have to form the remaining evanescent wave-numbers and evanescent sensing matrix
+                kx_e, ky_e, n_e = filter_evan(k0, self.kx_e, self.ky_e, plot=False)
+                # print('Number of evanescent is {}'.format(self.n_evan))
+                kz_e = np.sqrt(k0**2 - kx_e**2 - ky_e**2+0j)
+                k_ev = np.array([kx_e, ky_e, kz_e]).T
+                # Fkz_ev = np.sqrt(k0/np.abs(k_ev[:,2]))
+                # h_ev = Fkz_ev * np.exp(1j*self.receivers.coord @ k_ev.T)
+                h_ev = np.exp(1j*self.receivers.coord @ k_ev.T)
+                self.kx_ef.append(kx_e)
+                self.ky_ef.append(ky_e)
+                # Form H matrix
+                h_mtx = np.hstack((h_p, h_ev))
+            else:
+                h_mtx = h_p
             self.cond_num[jf] = np.linalg.cond(h_mtx)
             # measured data
             pm = self.pres_s[:,jf].astype(complex)
             # finding the optimal lambda value if the parameter comes empty.
             # if not we use the user supplied value.
-            if not lambd_value:
-                u, sig, v = csvd(h_mtx)
-                lambd_value = l_cuve(u, sig, pm, plotit=False)
+            # if not lambd_value:
+            u, sig, v = csvd(h_mtx)
+            lambd_value = l_cuve(u, sig, pm, plotit=False)
             # ## Choosing the method to find the P(k)
             # # print('reg par: {}'.format(lambd_value))
             if method == 'scipy':
                 from scipy.sparse.linalg import lsqr, lsmr
-                x = lsqr(h_mtx, self.pres_s[:,jf], damp=lambd_value)
-                self.pk[:,jf] = x[0][0:self.n_waves]
-                self.pk_ev.append(x[0][self.n_waves:])
-                print(x[0].shape)
+                x = lsqr(h_mtx, self.pres_s[:,jf], damp=lambd_value)[0]
+                # self.pk[:,jf] = x[0][0:self.n_waves]
+                # self.pk_ev.append(x[0][self.n_waves:])
             elif method == 'direct':
                 Hm = np.matrix(h_mtx)
                 x = Hm.getH() @ np.linalg.inv(Hm @ Hm.getH() + (lambd_value**2)*np.identity(len(pm))) @ pm
                 # print(x.shape)
-                self.pk[:,jf] = x[0:self.n_waves]
-                self.pk_ev.append(x[self.n_waves:])
+                # self.pk[:,jf] = x[0:self.n_waves]
+                # self.pk_ev.append(x[self.n_waves:])
             elif method == 'Ridge':
                 # Form a real H2 matrix and p2 measurement
                 H2 = np.vstack((np.hstack((h_mtx.real, -h_mtx.imag)),
                     np.hstack((h_mtx.imag, h_mtx.real))))
                 p2 = np.vstack((pm.real,pm.imag)).flatten()
+                # u, sig, v = csvd(H2)
+                # lambd_value = l_cuve(u, sig, p2, plotit=False)
                 # form Ridge regressor using the regularization from L-curve
                 regressor = Ridge(alpha=lambd_value, fit_intercept = False, solver = 'svd')
                 x2 = regressor.fit(H2, p2).coef_
                 x = x2[:h_mtx.shape[1]]+1j*x2[h_mtx.shape[1]:]
                 # print(x.shape)
                 # separate propagating from evanescent
-                self.pk[:,jf] = x[0:self.n_waves]
-                self.pk_ev.append(x[self.n_waves:])
+                # self.pk[:,jf] = x[0:self.n_waves]
+                # self.pk_ev.append(x[self.n_waves:])
             elif method == 'tikhonov':
                 u, sig, v = csvd(h_mtx)
                 x = tikhonov(u, sig, v, pm, lambd_value)
-                self.pk[:,jf] = x[0:self.n_waves]
-                self.pk_ev.append(x[self.n_waves:])
+                # self.pk[:,jf] = x[0:self.n_waves]
+                # self.pk_ev.append(x[self.n_waves:])
                 # print(x.shape)
             # #### Performing the Tikhonov inversion with cvxpy #########################
             else:
                 H = h_mtx.astype(complex)
-                x = cp.Variable(h_mtx.shape[1], complex = True)
+                x_cvx = cp.Variable(h_mtx.shape[1], complex = True)
                 lambd = cp.Parameter(nonneg=True)
                 lambd.value = lambd_value[0]
                 # Create the problem and solve
-                problem = cp.Problem(cp.Minimize(objective_fn(H, pm, x, lambd)))
+                problem = cp.Problem(cp.Minimize(objective_fn(H, pm, x_cvx, lambd)))
                 # problem.solve()
                 problem.solve(solver=cp.SCS, verbose=False) # Fast but gives some warnings
                 # problem.solve(solver=cp.ECOS, abstol=1e-3) # slow
@@ -275,42 +298,75 @@ class Decomposition(object):
                 # problem.solve(solver=cp.CVXOPT) # not installed
                 # problem.solve(solver=cp.MOSEK) # not installed
                 # problem.solve(solver=cp.OSQP) # did not work
-                self.pk[:,jf] = x.value[0:self.n_waves]
-                self.pk_ev.append(x.value[self.n_waves:])
-            bar.next()
-            # bar.update(1)
-        bar.finish()
-        # bar.close()
+                # self.pk[:,jf] = x.value[0:self.n_waves]
+                # self.pk_ev.append(x.value[self.n_waves:])
+                x = x_cvx.value
+            self.pk[:,jf] = x[0:self.n_waves]
+            if include_evan:
+                self.pk_ev.append(x[self.n_waves:])
+            # bar.next()
+            bar.update(1)
+        # bar.finish()
+        bar.close()
         # sys.stdout.write("]\n")
         # return self.pk
 
-    def pk_constrained(self, epsilon = 0.1):
+    def pk_constrained(self, snr=30, headroom = 0, include_evan = False):
         '''
         Method to estimate wave number spectrum based on constrained optimization matrix inversion technique.
         Inputs:
             epsilon - upper bound of noise floor vector
         '''
         # loop over frequencies
-        bar = ChargingBar('Calculating bounded optmin...', max=len(self.controls.k0), suffix='%(percent)d%%')
+        if include_evan:
+            bar = tqdm(total = len(self.controls.k0), desc = 'Calculating Constrained Optim. (with evanescent waves)...')
+        else:
+            bar = tqdm(total = len(self.controls.k0), desc = 'Calculating Constrained Optim. (without evanescent waves)...')
         self.pk = np.zeros((self.n_waves, len(self.controls.k0)), dtype=np.csingle)
         # print(self.pk.shape)
+        self.kx_ef = [] # Filtered version
+        self.ky_ef = [] # Filtered version
+        self.pk_ev = []
         for jf, k0 in enumerate(self.controls.k0):
-            k_vec = k0 * self.dir
+            k_vec = -k0 * self.dir
+            h_p = np.exp(1j*self.receivers.coord @ k_vec.T)
+            if include_evan:
+                # Then, we have to form the remaining evanescent wave-numbers and evanescent sensing matrix
+                kx_e, ky_e, n_e = filter_evan(k0, self.kx_e, self.ky_e, plot=False)
+                # print('Number of evanescent is {}'.format(self.n_evan))
+                kz_e = np.sqrt(k0**2 - kx_e**2 - ky_e**2+0j)
+                k_ev = np.array([kx_e, ky_e, kz_e]).T
+                # Fkz_ev = np.sqrt(k0/np.abs(k_ev[:,2]))
+                # h_ev = Fkz_ev * np.exp(1j*self.receivers.coord @ k_ev.T)
+                h_ev = np.exp(1j*self.receivers.coord @ k_ev.T)
+                self.kx_ef.append(kx_e)
+                self.ky_ef.append(ky_e)
+                # Form H matrix
+                h_mtx = np.hstack((h_p, h_ev))
+            else:
+                h_mtx = h_p
             # Form H matrix
-            h_mtx = np.exp(1j*self.receivers.coord @ k_vec.T)
+            # h_mtx = np.exp(1j*self.receivers.coord @ k_vec.T)
             H = h_mtx.astype(complex) # cvxpy does not accept floats, apparently
             # measured data
             pm = self.pres_s[:,jf].astype(complex)
             #### Performing the Tikhonov inversion with cvxpy #########################
-            x = cp.Variable(h_mtx.shape[1], complex = True) # create x variable
+            x_cvx = cp.Variable(h_mtx.shape[1], complex = True) # create x variable
             # Create the problem
-            problem = cp.Problem(cp.Minimize(cp.norm2(x)**2),
-                [cp.pnorm(cp.matmul(H, x) - pm, p=2) <= epsilon])
+            epsilon = 10**(-(snr-headroom)/10)
+            problem = cp.Problem(cp.Minimize(cp.norm2(x_cvx)**2),
+                [cp.pnorm(pm - cp.matmul(H, x_cvx), p=2) <= epsilon])
             problem.solve(solver=cp.SCS, verbose=False)
-            self.pk[:,jf] = x.value
-            bar.next()
-        bar.finish()
-        return self.pk
+            # problem.solve(verbose=False)
+            x = x_cvx.value
+            self.pk[:,jf] = x[0:self.n_waves]
+            if include_evan:
+                self.pk_ev.append(x[self.n_waves:])
+            # bar.next()
+            bar.update(1)
+        # bar.finish()
+        bar.close()
+        # return self.pk
 
     def pk_cs(self, lambd_value = [], method = 'scipy'):
         '''
@@ -381,6 +437,133 @@ class Decomposition(object):
         for jdir in np.arange(0, self.n_waves):
             self.pk_oct[jdir,:] = octave_avg(self.controls.freq, self.pk[jdir, :], self.freq_oct, flower, fupper)
 
+    def tukey_win(self, start_cut = 1, end_cut = 2):
+        '''
+        A method to apply a Tukey window to the evanescent part of the
+        wavenumber spectrum
+        '''
+        kx = np.linspace(start = -np.pi/self.receivers.ax,
+            stop = np.pi/self.receivers.ax, num = self.n_evan)
+        ky = np.linspace(start = -np.pi/self.receivers.ay,
+            stop = np.pi/self.receivers.ay, num = self.n_evan)
+        bar = tqdm(total = len(self.controls.k0), desc = 'Applying window to evanescent waves')
+        for jf, k0 in enumerate(self.controls.k0):
+            # print('maximum kx is {0:.2f} bigger than k0 = {1:.1f}'.format(end_cut*k0, k0))
+            # Create 1D zeros at the end of transition band
+            nzeros_kx = len(np.where(np.abs(kx) > end_cut*k0)[0])
+            nzeros_ky = len(np.where(np.abs(ky) > end_cut*k0)[0])
+            # Create 1D Tukey windows
+            nwin_kx = len(kx)-nzeros_kx
+            n1s_kx = len(kx[np.abs(kx)<= start_cut*k0])
+            tukey_kx = signal.tukey(nwin_kx, alpha = (nwin_kx-n1s_kx)/nwin_kx)
+                # alpha=-len(kx[kx<= start_cut*k0]))#len(kx[kx<= start_cut*k0])/(end_cut * len(kx)))
+            nwin_ky = len(ky)-nzeros_ky
+            n1s_ky = len(ky[np.abs(ky)<= start_cut*k0])
+            tukey_ky = signal.tukey(nwin_ky, alpha = (nwin_ky-n1s_ky)/nwin_ky)
+            tukey_kx = np.concatenate((np.zeros(int(np.floor(nzeros_kx/2))),
+                tukey_kx, np.zeros(int(np.ceil(nzeros_kx/2)))))
+            tukey_ky = np.concatenate((np.zeros(int(np.floor(nzeros_ky/2))),
+                tukey_ky, np.zeros(int(np.ceil(nzeros_ky/2)))))
+            # create 2D window
+            tukey_kx2, tukey_ky2 = np.meshgrid(tukey_kx,tukey_ky)
+            tukey_kxy = tukey_kx2*tukey_ky2 #np.sqrt(tukey_kx2**2 + tukey_ky2**2)
+            tukey_kxy_f = tukey_kxy.flatten()
+            # Exclude the radiation circle
+            ke_norm = (self.kx_e**2 + self.ky_e**2)**0.5
+            tukey_2dwin = tukey_kxy_f[ke_norm > k0]
+            # Apply the window
+            self.pk_ev[jf] = tukey_2dwin * self.pk_ev[jf]
+            ### debug plot
+            # color_par = np.abs(self.pk_ev[jf])
+            # import matplotlib.tri as tri
+            # x = self.kx_ef[jf]
+            # y = self.ky_ef[jf]
+            # triang = tri.Triangulation(x, y)
+            # triang.set_mask(np.hypot(x[triang.triangles].mean(axis=1),
+            # y[triang.triangles].mean(axis=1)) < k0)
+            # fig = plt.figure()
+            # fig.canvas.set_window_title('Tukey window')
+            # p = plt.tricontourf(triang, color_par, levels = 40)
+            # fig.colorbar(p)
+            # # plt.plot(kx, tukey_kx, '--b', label = 'win on kx', linewidth = 3)
+            # # plt.plot(ky, tukey_ky, '-r', label = 'win on ky')
+            # # plt.plot(k0*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
+            # #     k0*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'r')
+            # plt.xlabel('kx')
+            # plt.ylabel('win')
+            # # plt.legend()
+            # plt.show()
+            bar.update(1)
+        bar.close()
+
+    def tukey_win2(self, percentage = 50, start_cut = 1.0):
+        '''
+        A method to apply a Tukey window to the evanescent part of the
+        wavenumber spectrum
+        '''
+        kx = np.linspace(start = -np.pi/self.receivers.ax,
+            stop = np.pi/self.receivers.ax, num = self.n_evan)
+        ky = np.linspace(start = -np.pi/self.receivers.ay,
+            stop = np.pi/self.receivers.ay, num = self.n_evan)
+        bar = tqdm(total = len(self.controls.k0), desc = 'Applying window to evanescent waves')
+        for jf, k0 in enumerate(self.controls.k0):
+            # print('maximum kx is {0:.2f} bigger than k0 = {1:.1f}'.format(end_cut*k0, k0))
+            # delta_kxk0 = np.amax(kx) - k0
+            # # Number of points out of the radiation circle
+            # nout_kx = len(np.where(np.abs(kx) > k0)[0])
+            # nout_ky = len(np.where(np.abs(ky) > k0)[0])
+            # Number of zeros at the end of transition band
+            nzeros_kx = int((percentage/100)*len(kx))#int((percentage/100)*nout_kx)
+            nzeros_ky = int((percentage/100)*len(ky))#int((percentage/100)*nout_ky)
+            # Create 1D Tukey windows
+            nwin_kx = len(kx)-nzeros_kx
+            n1s_kx = len(kx[np.abs(kx)<= start_cut*k0])
+            if n1s_kx >= nwin_kx:
+                n1s_kx = int(0.9*nwin_kx)
+            tukey_kx = signal.tukey(nwin_kx, alpha = (nwin_kx-n1s_kx)/nwin_kx)
+                # alpha=-len(kx[kx<= start_cut*k0]))#len(kx[kx<= start_cut*k0])/(end_cut * len(kx)))
+            nwin_ky = len(ky)-nzeros_ky
+            n1s_ky = len(ky[np.abs(ky)<= start_cut*k0])
+            if n1s_ky >= nwin_ky:
+                n1s_ky = int(0.9*nwin_ky)
+            tukey_ky = signal.tukey(nwin_ky, alpha = (nwin_ky-n1s_ky)/nwin_ky)
+            tukey_kx = np.concatenate((np.zeros(int(np.floor(nzeros_kx/2))),
+                tukey_kx, np.zeros(int(np.ceil(nzeros_kx/2)))))
+            tukey_ky = np.concatenate((np.zeros(int(np.floor(nzeros_ky/2))),
+                tukey_ky, np.zeros(int(np.ceil(nzeros_ky/2)))))
+            # create 2D window
+            tukey_kx2, tukey_ky2 = np.meshgrid(tukey_kx,tukey_ky)
+            tukey_kxy = tukey_kx2*tukey_ky2 #np.sqrt(tukey_kx2**2 + tukey_ky2**2)
+            tukey_kxy_f = tukey_kxy.flatten()
+            # Exclude the radiation circle
+            ke_norm = (self.kx_e**2 + self.ky_e**2)**0.5
+            tukey_2dwin = tukey_kxy_f[ke_norm > k0]
+            # Apply the window
+            self.pk_ev[jf] = tukey_2dwin * self.pk_ev[jf]
+            ### debug plot
+            color_par = np.abs(self.pk_ev[jf])
+            import matplotlib.tri as tri
+            x = self.kx_ef[jf]
+            y = self.ky_ef[jf]
+            triang = tri.Triangulation(x, y)
+            triang.set_mask(np.hypot(x[triang.triangles].mean(axis=1),
+            y[triang.triangles].mean(axis=1)) < k0)
+            fig = plt.figure()
+            fig.canvas.set_window_title('Tukey window')
+            p = plt.tricontourf(triang, color_par, levels = 40)
+            fig.colorbar(p)
+            # plt.plot(kx, tukey_kx, '--b', label = 'win on kx', linewidth = 3)
+            # plt.plot(ky, tukey_ky, '-r', label = 'win on ky')
+            # plt.plot(k0*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
+            #     k0*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'r')
+            plt.xlabel('kx')
+            plt.ylabel('win')
+            plt.title('start at {0:.1f}, k0 = {1:.1f}'.format(start_cut*k0, k0))
+            plt.legend()
+            plt.show()
+            bar.update(1)
+        bar.close()
+
     def reconstruct_pu(self, receivers):
         '''
         reconstruct sound pressure and particle velocity at a receiver object
@@ -392,18 +575,24 @@ class Decomposition(object):
             # First, we form the sensing matrix
             k_p = -k0 * self.dir
             # h_p = np.exp(-1j*receivers.coord @ k_p.T)
-            kz_e = np.sqrt(k0**2 - self.kx_ef[jf]**2 - self.ky_ef[jf]**2+0j)
-            k_ev = np.array([self.kx_ef[jf], self.ky_ef[jf], kz_e]).T
-            k_vec = np.vstack((k_p, k_ev))
-            # h_ev = np.exp(1j*receivers.coord @ k_ev.T)
-            # h_mtx = np.hstack((h_p, h_ev))
-            h_mtx = np.exp(1j*receivers.coord @ k_vec.T)
-            # pressure and particle velocity at surface
-            self.p_recon[:,jf] = h_mtx @ np.concatenate((self.pk[:,jf],self.pk_ev[jf]))
-            self.uz_recon[:,jf] = -((np.divide(k_vec[:,2], k0)) * h_mtx) @ np.concatenate((self.pk[:,jf], self.pk_ev[jf]))
+            try:
+                kz_e = np.sqrt(k0**2 - self.kx_ef[jf]**2 - self.ky_ef[jf]**2+0j)
+                k_ev = np.array([self.kx_ef[jf], self.ky_ef[jf], kz_e]).T
+                k_vec = np.vstack((k_p, k_ev))
+                # h_ev = np.exp(1j*receivers.coord @ k_ev.T)
+                # h_mtx = np.hstack((h_p, h_ev))
+                h_mtx = np.exp(1j*receivers.coord @ k_vec.T)
+                # pressure and particle velocity at surface
+                self.p_recon[:,jf] = h_mtx @ np.concatenate((self.pk[:,jf],self.pk_ev[jf]))
+                self.uz_recon[:,jf] = -((np.divide(k_vec[:,2], k0)) * h_mtx) @ np.concatenate((self.pk[:,jf], self.pk_ev[jf]))
+            except:
+                h_mtx = np.exp(1j*receivers.coord @ k_p.T)
+                self.p_recon[:,jf] = h_mtx @ self.pk[:,jf]
+                self.uz_recon[:,jf] = -((np.divide(k_p[:,2], k0)) * h_mtx) @ self.pk[:,jf]
             # self.p_s[:,jf] =  p_surf_mtx
             #  =  uz_surf_mtx
             bar.update(1)
+        bar.close()
 
     def plot_condnum(self, save = False, path = '', fname = ''):
         '''
@@ -444,8 +633,10 @@ class Decomposition(object):
         # interpolate
         from scipy.interpolate import griddata
         self.grid_pk = []
-        bar = ChargingBar('Interpolating the grid for P(k)',\
-            max=len(self.controls.k0), suffix='%(percent)d%%')
+        # bar = ChargingBar('Interpolating the grid for P(k)',\
+        #     max=len(self.controls.k0), suffix='%(percent)d%%')
+        bar = tqdm(total = len(self.controls.k0), desc = 'Interpolating the grid for P(k)')
+
         if self.flag_oct_interp:
             for jf, f_oct in enumerate(self.freq_oct):
                 # update_progress(jf/len(self.freq_oct))
@@ -456,10 +647,12 @@ class Decomposition(object):
             for jf, k0 in enumerate(self.controls.k0):
                 # update_progress(jf/len(self.controls.k0))
                 ###### Cubic with griddata #################################
-                self.grid_pk.append(griddata(thetaphi_pts, self.pk[:,jf],
+                self.grid_pk.append(griddata(thetaphi_pts, np.abs(self.pk[:,jf]),
                     (self.grid_phi, self.grid_theta), method='cubic', fill_value=np.finfo(float).eps, rescale=False))
-                bar.next()
-            bar.finish()
+                bar.update(1)
+            #     bar.next()
+            # bar.finish()
+        bar.close()
 
     def plot_pk_sphere(self, freq = 1000, db = False, dinrange = 40, save = False, name=''):
         '''
@@ -586,9 +779,9 @@ class Decomposition(object):
         fig.colorbar(p)
         if plot_kxky:
             plt.scatter(self.kx_ef[id_f], self.ky_ef[id_f], c = 'grey', alpha = 0.4)
-        plt.xlabel('kx rad/m')
-        plt.ylabel('ky rad/m')
-        plt.title("|P(k)| (evanescent) at {0:.1f} Hz (k = {1:.2f} rad/m)".format(self.controls.freq[id_f],k0))
+        plt.xlabel(r'$k_x$ rad/m')
+        plt.ylabel(r'$k_y$ rad/m')
+        plt.title("|P(k)| (evanescent) at {0:.1f} Hz (k = {1:.2f} rad/m) {2}".format(self.controls.freq[id_f],k0, name))
         plt.tight_layout()
         if save:
             filename = path + fname + '_' + str(int(freq)) + 'Hz'

@@ -122,6 +122,37 @@ class PistonOnBaffle(object):
                     (Ir[0] + 1j*Ii[0])
                 bar.update(1)
 
+    def add_noise(self, snr = 30, uncorr = True):
+        '''
+        Method used to artificially add gaussian noise to the measued data
+        '''
+        signal = self.pres_s
+        # try:
+        #     signal_u = self.uz_s
+        # except:
+        #     signal_u = np.zeros(1)
+        # Estimate signal power
+        signalPower_lin = (np.abs(np.mean(signal, axis=0))/np.sqrt(2))**2
+        signalPower_dB = 10 * np.log10(signalPower_lin)
+        # Estimate noise power
+        noisePower_dB = signalPower_dB - snr
+        noisePower_lin = 10 ** (noisePower_dB/10)
+        # if signal_u.any() != 0:
+        #     signalPower_lin_u = (np.abs(np.mean(signal_u, axis=0))/np.sqrt(2))**2
+        #     signalPower_dB_u = 10 * np.log10(signalPower_lin_u)
+        #     noisePower_dB_u = signalPower_dB_u - snr
+        #     noisePower_lin_u = 10 ** (noisePower_dB_u/10)
+        # Add noise
+        np.random.seed(0)
+        noise = np.random.normal(0, np.sqrt(noisePower_lin), size = signal.shape) +\
+            1j*np.random.normal(0, np.sqrt(noisePower_lin), size = signal.shape)
+        self.pres_s = signal + noise
+        # if signal_u.any() != 0:
+        #     print('Adding noise to particle velocity')
+        #     noise_u = np.random.normal(0, np.sqrt(noisePower_lin_u), size = signal_u.shape) +\
+        #         1j*np.random.normal(0, np.sqrt(noisePower_lin_u), size = signal_u.shape)
+        #     self.uz_s[0] = signal_u + noise_u
+
     def plot_scene(self, vsam_size = 1):
         '''
         a simple plot of the scene using matplotlib - not redered
