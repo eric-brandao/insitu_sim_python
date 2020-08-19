@@ -222,7 +222,10 @@ class RayInitialDirections():
         ax = fig.gca(projection='3d')
         ax.scatter(self.vinit[:,0], self.vinit[:,1], self.vinit[:,2],
             color='blue')
-        ax.set_xlabel('X axis')
-        ax.set_ylabel('Y axis')
-        ax.set_zlabel('Z axis')
+        ax.set_xlabel(r'$k_x$')
+        ax.set_ylabel(r'$k_y$')
+        ax.set_zlabel(r'$k_z$')
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_zticks([])
         plt.show()

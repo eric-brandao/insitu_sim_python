@@ -399,9 +399,9 @@ class BEMFlush(object):
             ax.scatter(s_coord[0], s_coord[1], s_coord[2],
                 color='red',  marker = "o", s=200)
         # plot receiver
-        for r_coord in self.receivers.coord:
-            ax.scatter(r_coord[0], r_coord[1], r_coord[2],
-                color='blue',  marker = "o")
+        # for r_coord in self.receivers.coord:
+        #     ax.scatter(r_coord[0], r_coord[1], r_coord[2],
+        #         color='blue',  marker = "o", alpha = 0.35)
         ax.set_xlabel('X axis')
         # plt.xticks([], [])
         ax.set_ylabel('Y axis')
@@ -411,8 +411,13 @@ class BEMFlush(object):
         ax.set_xlim((-vsam_size/2, vsam_size/2))
         ax.set_ylim((-vsam_size/2, vsam_size/2))
         ax.set_zlim((0, 1.2*np.amax(np.linalg.norm(self.sources.coord))))
-        ax.set_zticks((0, 1.2*np.amax(np.linalg.norm(self.sources.coord))))
-        ax.view_init(elev=30, azim=-50)
+        # ax.set_zlim((0, 0.3))
+        # ax.set_zticks((0, 1.2*np.amax(np.linalg.norm(self.sources.coord))))
+        ax.set_zticks((0, 0.1, 0.2, 0.3))
+        ax.set_xticks((-1, -0.5, 0.0, 0.5, 1.0))
+        ax.set_yticks((-1, -0.5, 0.0, 0.5, 1.0))
+
+        ax.view_init(elev=10, azim=0)
         # ax.invert_zaxis()
         plt.show() # show plot
 

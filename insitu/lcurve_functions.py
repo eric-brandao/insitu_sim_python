@@ -165,7 +165,7 @@ def l_cuve(u, sig, bm, plotit = False):
     # Compute the corner of the L-curve (optimal regularization parameter)
     lam_opt = l_corner(rho,eta,reg_param,u,sig,bm)
     if plotit:
-        plt.loglog(rho, eta, label='Reg. par: ' + "%.2f" % lam_opt)
+        plt.loglog(rho, eta, label='Reg. par: ' + "%.6f" % lam_opt)
         plt.xlabel(r'Residual norm $||Ax - b||_2$')
         plt.ylabel(r'Solution norm $||x||_2$')
         plt.legend(loc = 'best')

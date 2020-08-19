@@ -137,7 +137,7 @@ class Decomposition(object):
         # loop over frequencies
         for jf, k0 in enumerate(self.controls.k0):
             # update_progress(jf/len(self.controls.k0))
-            k_vec = -k0 * self.dir
+            k_vec = k0 * self.dir
             # Form H matrix
             h_mtx = np.exp(1j*self.receivers.coord @ k_vec.T)
             self.cond_num[jf] = np.linalg.cond(h_mtx)
@@ -147,7 +147,7 @@ class Decomposition(object):
             # if not we use the user supplied value.
             # if not lambd_value:
             u, sig, v = csvd(h_mtx)
-            lambd_value = l_cuve(u, sig, pm, plotit=True)
+            lambd_value = l_cuve(u, sig, pm, plotit=False)
             ## Choosing the method to find the P(k)
             if method == 'scipy':
                 x = lsqr(h_mtx, self.pres_s[:,jf], damp=lambd_value)
@@ -221,7 +221,7 @@ class Decomposition(object):
             # print('freq {} Hz'.format(self.controls.freq[jf]))
             # update_progress(jf/len(self.controls.k0))
             # First, we form the propagating wave-numbers ans sensing matrix
-            k_vec = -k0 * self.dir
+            k_vec = k0 * self.dir
             h_p = np.exp(1j*self.receivers.coord @ k_vec.T)
             if include_evan:
                 # Then, we have to form the remaining evanescent wave-numbers and evanescent sensing matrix
@@ -573,7 +573,7 @@ class Decomposition(object):
         bar = tqdm(total = len(self.controls.k0), desc = 'Reconstructing sound field...')
         for jf, k0 in enumerate(self.controls.k0):
             # First, we form the sensing matrix
-            k_p = -k0 * self.dir
+            k_p = k0 * self.dir
             # h_p = np.exp(-1j*receivers.coord @ k_p.T)
             try:
                 kz_e = np.sqrt(k0**2 - self.kx_ef[jf]**2 - self.ky_ef[jf]**2+0j)
@@ -625,10 +625,12 @@ class Decomposition(object):
         # Create a grid to interpolate on
         nphi = int(2*(npts+1))
         ntheta = int(npts+1)
-        sorted_phi = np.sort(phi)
-        new_phi = np.linspace(sorted_phi[0], sorted_phi[-1], nphi)
-        sorted_theta = np.sort(theta)
-        new_theta = np.linspace(sorted_theta[0], sorted_theta[-1], ntheta)#(0, np.pi, nn)
+        # sorted_phi = np.sort(phi)
+        # new_phi = np.linspace(sorted_phi[0], sorted_phi[-1], nphi)
+        # sorted_theta = np.sort(theta)
+        # new_theta = np.linspace(sorted_theta[0], sorted_theta[-1], ntheta)#(0, np.pi, nn)
+        new_phi = np.linspace(-np.pi, np.pi, nphi)
+        new_theta = np.linspace(-np.pi/2, np.pi/2, ntheta)#(0, np.pi, nn)
         self.grid_phi, self.grid_theta = np.meshgrid(new_phi, new_theta)
         # interpolate
         from scipy.interpolate import griddata
@@ -690,7 +692,8 @@ class Decomposition(object):
             filename = 'data/colormaps/cmat_' + str(int(freq)) + 'Hz_' + name
             plt.savefig(fname = filename, format='pdf')
 
-    def plot_pk_map(self, freq = 1000, db = False, dinrange = 40, phase = False, save = False, name='', path = '', fname=''):
+    def plot_pk_map(self, freq = 1000, db = False, dinrange = 40, phase = False,
+        save = False, name='', path = '', fname='', color_code = 'viridis'):
         '''
         Method to plot the magnitude of the spatial fourier transform on a map of interpolated theta and phi.
         It is a normalized version of the magnitude, either between 0 and 1 or between -dinrange and 0.
@@ -711,23 +714,30 @@ class Decomposition(object):
         fig.canvas.set_window_title('Interpolated map of |P(k)| for freq {} Hz'.format(self.controls.freq[id_f]))
         if db:
             color_par = 20*np.log10(np.abs(self.grid_pk[id_f])/np.amax(np.abs(self.grid_pk[id_f])))
-            id_outofrange = np.where(color_par < -dinrange)
-            color_par[id_outofrange] = -dinrange
+            color_range = np.linspace(-dinrange, 0, dinrange+1)
         else:
-            if phase:
-                color_par = np.rad2deg(np.angle(self.grid_pk[id_f]))
-            else:
-                # color_par = np.abs(self.grid_pk[id_f])/np.amax(np.abs(self.grid_pk[id_f]))
-                color_par = np.abs(self.grid_pk[id_f])
-        p=plt.contourf(np.rad2deg(self.grid_phi),
-            90-np.rad2deg(self.grid_theta), color_par)
+            color_par = np.abs(self.grid_pk[id_f])/np.amax(np.abs(self.grid_pk[id_f]))
+            color_range = np.linspace(0, 1, 21)
+        
+        # if db:
+        #     color_par = 20*np.log10(np.abs(self.grid_pk[id_f])/np.amax(np.abs(self.grid_pk[id_f])))
+        #     id_outofrange = np.where(color_par < -dinrange)
+        #     color_par[id_outofrange] = -dinrange
+        # else:
+        #     if phase:
+        #         color_par = np.rad2deg(np.angle(self.grid_pk[id_f]))
+        #     else:
+        #         # color_par = np.abs(self.grid_pk[id_f])/np.amax(np.abs(self.grid_pk[id_f]))
+        #         color_par = np.abs(self.grid_pk[id_f])
+        p=plt.contourf(np.rad2deg(self.grid_phi), 90-np.rad2deg(self.grid_theta), color_par,
+            color_range, extend='both', cmap = color_code)
         fig.colorbar(p)
         plt.xlabel(r'$\phi$ (azimuth) [deg]')
         plt.ylabel(r'$\theta$ (elevation) [deg]')
         if self.flag_oct_interp:
             plt.title('|P(k)| at ' + str(self.freq_oct[id_f]) + 'Hz - '+ name)
         else:
-            plt.title('|P(k)| at ' + str(self.controls.freq[id_f]) + 'Hz - '+ name)
+            plt.title('|P(k)| at ' + str(self.controls.freq[id_f]) + 'Hz - P decomp. '+ name)
         plt.tight_layout()
         if save:
             filename = path + fname + '_' + str(int(freq)) + 'Hz'

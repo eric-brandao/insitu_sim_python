@@ -45,10 +45,12 @@ class PWField(object):
                 # ky = k0 * np.sin(self.phi) * np.sin(self.theta)
                 # kz = k0 * np.cos(self.theta)
                 kx, ky, kz = sph2cart(k0, np.pi/2-self.theta, self.phi)
-                k_veci = np.array([kx, ky, kz])
-                k_vecr = np.array([kx, ky, -kz])
-                pres_rec[jrec, jf] = np.exp(1j * np.dot(k_veci, r_coord)) +\
-                    self.material.Vp[jf] * np.exp(1j * np.dot(k_vecr, r_coord))
+                k_veci = np.array([-kx, -ky, -kz])
+                k_vecr = np.array([-kx, -ky, kz])
+                # print('Incident wave: ({})'.format(k_veci/k0))
+                # print('Reflected wave: ({})'.format(k_vecr/k0))
+                pres_rec[jrec, jf] = np.exp(-1j * np.dot(k_veci, r_coord)) +\
+                    self.material.Vp[jf] * np.exp(-1j * np.dot(k_vecr, r_coord))
         self.pres_s.append(pres_rec)
 
     def uz_fps(self,):
@@ -62,10 +64,10 @@ class PWField(object):
                 # ky = k0 * np.sin(self.phi) * np.sin(self.theta)
                 # kz = k0 * np.cos(self.theta)
                 kx, ky, kz = sph2cart(k0, np.pi/2-self.theta, self.phi)
-                k_veci = np.array([kx, ky, kz])
-                k_vecr = np.array([kx, ky, -kz])
-                uz_rec[jrec, jf] = (kz/k0) * (np.exp(1j * np.dot(k_veci, r_coord)) -\
-                    self.material.Vp[jf] * np.exp(1j * np.dot(k_vecr, r_coord)))
+                k_veci = np.array([kx, ky, -kz])
+                k_vecr = np.array([kx, ky, kz])
+                uz_rec[jrec, jf] = (-kz/k0) * (np.exp(-1j * np.dot(k_veci, r_coord)) -\
+                    self.material.Vp[jf] * np.exp(-1j * np.dot(k_vecr, r_coord)))
                 # uz_rec[jrec, jf] = (kz/k0) *(np.exp(1j * k_vec[2] * r_coord[2]) -\
                 #     self.material.Vp[jf] * np.exp(-1j * k_vec[2] * r_coord[2]))*\
                 #     (np.exp(1j * k_vec[0] * r_coord[0]))*\
@@ -150,34 +152,34 @@ class PWField(object):
         collection.set_facecolor('grey')
         ax.add_collection3d(collection)
         # plot the plane wave
-        for jel, el in enumerate(self.theta):
-            nx = np.cos(self.phi[jel]) * np.sin(self.theta[jel])
-            ny = np.sin(self.phi[jel]) * np.sin(self.theta[jel])
-            nz = np.cos(self.theta[jel])
-            normal = np.array([nx, ny, nz])
-            center = 0.7 * normal
-            basex = np.array([nx, ny, nz+0.3])
-            basey = np.array([nx, ny+0.3, nz])
-            y = np.cross(normal, basex)
-            u = y/np.linalg.norm(y)
-            z = np.cross(normal, basey)
-            v = z/np.linalg.norm(z)
-            area = 0.05
-            radius = np.sqrt(area/2)
-            v1 = center + radius * u
-            v2 = center + radius * v
-            v3 = center - radius * u
-            v4 = center - radius * v
-            vertices = np.array([v1, v2, v3, v4])
-            verts = [list(zip(vertices[:,0],
-                vertices[:,1], vertices[:,2]))]
-            # patch plot
-            collection = Poly3DCollection(verts,
-                linewidths=1, alpha=0.3, edgecolor = 'red', zorder=1, linewidth=3)
-            collection.set_facecolor('silver')
-            ax.add_collection3d(collection)
-            ax.quiver(center[0], center[1], center[2],
-                -normal[0], -normal[1], -normal[2], length=0.1, normalize=True, color='red')
+        # for jel, el in enumerate(self.theta):
+        #     nx = np.cos(self.phi[jel]) * np.sin(self.theta[jel])
+        #     ny = np.sin(self.phi[jel]) * np.sin(self.theta[jel])
+        #     nz = np.cos(self.theta[jel])
+        #     normal = np.array([nx, ny, nz])
+        #     center = 0.7 * normal
+        #     basex = np.array([nx, ny, nz+0.3])
+        #     basey = np.array([nx, ny+0.3, nz])
+        #     y = np.cross(normal, basex)
+        #     u = y/np.linalg.norm(y)
+        #     z = np.cross(normal, basey)
+        #     v = z/np.linalg.norm(z)
+        #     area = 0.05
+        #     radius = np.sqrt(area/2)
+        #     v1 = center + radius * u
+        #     v2 = center + radius * v
+        #     v3 = center - radius * u
+        #     v4 = center - radius * v
+        #     vertices = np.array([v1, v2, v3, v4])
+        #     verts = [list(zip(vertices[:,0],
+        #         vertices[:,1], vertices[:,2]))]
+        #     # patch plot
+        #     collection = Poly3DCollection(verts,
+        #         linewidths=1, alpha=0.3, edgecolor = 'red', zorder=1, linewidth=3)
+        #     collection.set_facecolor('silver')
+        #     ax.add_collection3d(collection)
+        #     ax.quiver(center[0], center[1], center[2],
+        #         -normal[0], -normal[1], -normal[2], length=0.1, normalize=True, color='red')
         # for s_coord in self.sources:
         #     ax.scatter(s_coord[0], s_coord[1], s_coord[2],
                 # color='red',  marker = "o", s=50)
