@@ -103,8 +103,8 @@ class DecompositionEv(object):
         self.zp = -factor * np.amax([self.receivers.ax, self.receivers.ay])
         print('freq: {}'.format(self.controls.freq))
         print('zp: {}, rel to lam {}'.format(self.zp, self.zp/(2*np.pi/self.controls.k0)))
-        self.zm = factor * (z0 + np.amax([self.receivers.ax, self.receivers.ay]))
-
+        # self.zm = factor * (z0 + np.amax([self.receivers.ax, self.receivers.ay]))
+        self.zm = z0 + factor * np.amax([self.receivers.ax, self.receivers.ay]) # Try
         bar = tqdm(total = len(self.controls.k0),
             desc = 'Calculating Tikhonov inversion (with evanescent waves)...')
         self.cond_num = np.zeros(len(self.controls.k0))
@@ -418,7 +418,7 @@ class DecompositionEv(object):
         # Figure
         fig = plt.figure(figsize=(8, 8))
         # fig = plt.figure()
-        fig.canvas.set_window_title('2D plot of wavenumber spectrum')
+        fig.canvas.set_window_title('2D plot of wavenumber spectrum - PE')
         # Incident
         plt.subplot(2, 1, 1)
         plt.title('Incident field')

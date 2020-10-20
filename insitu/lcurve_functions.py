@@ -66,6 +66,12 @@ def l_corner(rho,eta,reg_param,u,sig,bm):
     A is of Nm x Nu, where Nm are the number of measurements and Nu the number of unknowns
     Adapted from Per Christian Hansen, DTU Compute, October 27, 2010.
     '''
+    # print('checking rho {}, shape {}'.format(rho[5], rho.shape))
+    # print('checking eta {}, shape {}'.format(eta[5], eta.shape))
+    # print('checking u {}, shape {}'.format(u[5,5], u.shape))
+    # print('checking sig {}, shape {}'.format(sig[5], sig.shape))
+    # print('checking reg_param {}, shape {}'.format(reg_param[5], reg_param.shape))
+    # print('checking bm {}, shape {}'.format(bm[5], bm.shape))
     # Set threshold for skipping very small singular values in the
     # analysis of a discrete L-curve.
     s_thr = np.finfo(float).eps # Neglect singular values less than s_thr.
@@ -78,9 +84,12 @@ def l_corner(rho,eta,reg_param,u,sig,bm):
         print('I will fail. Too few data points for L-curve analysis')
     Nm, Nu = u.shape
     p = sig.shape
+    # up here is fine
     # if (nargout > 0), locate = 1; else locate = 0; end
-    beta = (np.conjugate(u)) @ bm
+    beta = (np.conj(u)) @ bm #FixMe - This operation is doing something weird
+    # print(beta[5])
     beta = np.reshape(beta[0:int(p[0])], beta.shape[0])
+    
     b0 = (bm - (beta.T @ u).T)#u @ beta
     # s = sig
     xi = np.divide(beta[0:int(p[0])], sig)
@@ -90,9 +99,16 @@ def l_corner(rho,eta,reg_param,u,sig,bm):
     # reg_c = optimize.fmin(curvature, 0.0, args = (sig, beta, xi), full_output=False, disp=False)
     # Minimize 1
     curv_id = np.argmin(curv)
+    # print('curv_id {}'.format(curv_id))
     x1 = reg_param[int(np.amin([curv_id+1, len(curv)-1]))]
     x2 = reg_param[int(np.amax([curv_id-1, 0]))]
-    reg_c = optimize.fminbound(curvature, x1, x2, args = (sig, beta, xi), full_output=False, disp=False)
+    # x1 = reg_param[int(np.amin([curv_id+1, len(curv)]))]
+    # x2 = reg_param[int(np.amax([curv_id-1, 0]))]
+    # print('x1 is {} and x2 is {}'.format(x1,x2))
+    tolerance = np.amin([x1/50, x2/50, 1e-5])
+    reg_c = optimize.fminbound(curvature, x1, x2, args = (sig, beta, xi), xtol=tolerance,
+        full_output=False, disp=False)
+    # reg_c = optimize.brentq(curvature, x1, x2, args = (sig, beta, xi), full_output=False, disp=False)
     kappa_max = - curvature(reg_c, sig, beta, xi) # Maximum curvature.
     if kappa_max < 0:
         lr = len(rho)
@@ -115,10 +131,12 @@ def csvd(A):
     Adapted from Per Christian Hansen, DTU Compute, October 27, 2010.
     '''
     Nm, Nu = A.shape
+    # A = np.matrix(A)
     if Nm >= Nu: # more measurements than unknowns
-        u, sig, v = linalg.svd(A, full_matrices=False)
+        u, sig, v = np.linalg.svd(A, full_matrices=False)
     else:
-        v, sig, u = linalg.svd(np.conjugate(A.T), full_matrices=False)
+        v, sig, u = np.linalg.svd(np.conjugate(A.T), full_matrices=False)
+        # print('checking u {}, shape {}'.format(u[5,5], u.shape))
     return u, sig, v
 
 def l_cuve(u, sig, bm, plotit = False):

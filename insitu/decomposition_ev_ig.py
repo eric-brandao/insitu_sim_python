@@ -9,6 +9,7 @@ from scipy.interpolate import griddata
 from sklearn.linear_model import Ridge
 import time
 from tqdm import tqdm
+#from tqdm.autonotebook import tqdm
 import sys
 from progress.bar import Bar, IncrementalBar, FillingCirclesBar, ChargingBar
 #from tqdm._tqdm_notebook import tqdm
@@ -93,13 +94,18 @@ class DecompositionEv2(object):
         self.zp = -factor * np.amax([self.receivers.ax, self.receivers.ay])
         print('freq: {}'.format(self.controls.freq))
         print('zp: {}, rel to lam {}'.format(self.zp, self.zp/(2*np.pi/self.controls.k0)))
-        self.zm = factor * (z0 + np.amax([self.receivers.ax, self.receivers.ay]))
-        # self.zm = z0 + factor * np.amax([self.receivers.ax, self.receivers.ay]) # Try
+        # self.zm = factor * (z0 + np.amax([self.receivers.ax, self.receivers.ay]))
+        self.zm = z0 + factor * np.amax([self.receivers.ax, self.receivers.ay]) # Try
         # Generate kx and ky for evanescent wave grid
         self.kx = np.linspace(start = -np.pi/self.receivers.ax,
             stop = np.pi/self.receivers.ax, num = 3*int(self.n_prop**0.5))
         self.ky = np.linspace(start = -np.pi/self.receivers.ay,
             stop = np.pi/self.receivers.ay, num = 3*int(self.n_prop**0.5))
+        
+        # self.kx = np.linspace(start = -50,
+        #     stop = 50, num = 3*int(self.n_prop**0.5))
+        # self.ky = np.linspace(start = -50,
+        #     stop = 50, num = 3*int(self.n_prop**0.5))
         kx_grid, ky_grid = np.meshgrid(self.kx,self.ky)
         kx_e = kx_grid.flatten()
         ky_e = ky_grid.flatten()
@@ -138,10 +144,24 @@ class DecompositionEv2(object):
             # measured data
             pm = self.pres_s[:,jf].astype(complex)
             # 6 - finding the optimal regularization parameter.
+            # s_time = time.time()
             u, sig, v = csvd(h_mtx)
+            # e_time = time.time()
+            # print('Time SVD: {}'.format(e_time-s_time))
+
+            # s_time = time.time()
             lambd_value = l_cuve(u, sig, pm, plotit=plot_l)
+            # e_time = time.time()
+            # print('Time L curve: {}'.format(e_time-s_time))
+            
+            # s_time = time.time()
             Hm = np.matrix(h_mtx)
             x = Hm.getH() @ np.linalg.inv(Hm @ Hm.getH() + (lambd_value**2)*np.identity(len(pm))) @ pm
+            # e_time = time.time()
+            # print('Time MTX: {}'.format(e_time-s_time))
+            # x = (v * sig/(sig**2+lambd_value**2) @ np.conj(u)) @ pm
+            # e_time = time.time()
+            # print('Time MTX: {}'.format(e_time-s_time))
             self.pk.append(x)#[0:self.n_waves]
             bar.update(1)
         bar.close()
@@ -188,6 +208,81 @@ class DecompositionEv2(object):
             bar.update(1)
         bar.close()
 
+    def plot_pkmap_v2(self, freq = 1000, db = False, dinrange = 20,
+        save = False, name='name', color_code = 'viridis'):
+        '''
+        Method to plot the magnitude of the spatial fourier transform as two 2D maps of
+        evanescent and propagating waves. The map is first interpolated into a regular grid
+        It is a normalized version of the magnitude, either between 0 and 1 or between -dinrange and 0.
+        inputs:
+            freq - Which frequency you want to see. If the calculated spectrum does not contain it
+                we plot the closest frequency before the asked one.
+            dB (bool) - Whether to plot in linear scale (default) or decibel scale.
+            dinrange - You can specify a dinamic range for the decibel scale. It will not affect the
+            linear scale.
+            save (bool) - Whether to save or not the figure. PDF file with simple standard name
+            color_code - can be anything that matplotlib supports. Some recomendations given below:
+                'viridis' (default) - Perceptually Uniform Sequential
+                'Greys' - White (cold) to black (hot)
+                'seismic' - Blue (cold) to red (hot) with a white in the middle
+        '''
+        id_f = np.where(self.controls.freq <= freq)
+        # id_f = np.where(self.freq_oct <= freq)
+        id_f = id_f[0][-1]
+        # Quatinties from simulation
+        k0 = self.controls.k0[id_f]
+        pk = np.squeeze(np.asarray(self.pk[id_f]))
+        pk_i = pk[:int(len(pk)/2)] # incident
+        pk_r = pk[int(len(pk)/2):] # reflected
+        # Original kx and ky
+        kx_grid, ky_grid = np.meshgrid(self.kx,self.ky)
+        kx_e = kx_grid.flatten()
+        ky_e = ky_grid.flatten()
+        kx_eig, ky_eig, n_e = filter_evan(k0, kx_e, ky_e, plot=False)
+        kxy = np.vstack((k0 * np.array([self.pdir[:,0], self.pdir[:,1]]).T,
+            np.array([kx_eig, ky_eig]).T))
+        # Interpolate
+        pk_i_grid = griddata(kxy, np.abs(pk_i), (kx_grid, ky_grid),
+            method='cubic', fill_value=np.finfo(float).eps, rescale=False)
+        pk_r_grid = griddata(kxy, np.abs(pk_r), (kx_grid, ky_grid),
+            method='cubic', fill_value=np.finfo(float).eps, rescale=False)
+        # Calculate colors
+        if db:
+            color_par_i = 20*np.log10(np.abs(pk_i_grid)/np.amax(np.abs(pk)))
+            color_par_r = 20*np.log10(np.abs(pk_r_grid)/np.amax(np.abs(pk)))
+            color_range = np.linspace(-dinrange, 0, dinrange+1)
+        else:
+            color_par_i = np.abs(pk_i_grid)/np.amax(np.abs(pk))
+            color_par_r = np.abs(pk_r_grid)/np.amax(np.abs(pk))
+            color_range = np.linspace(0, 1, 21)
+        # Figure
+        fig = plt.figure(figsize=(8, 8))
+        # fig = plt.figure()
+        fig.canvas.set_window_title('2D plot of wavenumber spectrum - PEIG')
+        # Incident
+        plt.subplot(2, 1, 1)
+        plt.title('Incident field')
+        plt.plot(self.controls.k0[id_f]*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
+            self.controls.k0[id_f]*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'r')
+        p = plt.contourf(kx_grid, ky_grid, color_par_i,
+            color_range, extend='both', cmap = color_code)
+        fig.colorbar(p)
+        plt.ylabel(r'$k_y$ [rad/m]')
+        # Reflected
+        plt.subplot(2, 1, 2)
+        plt.title('Reflected field')
+        plt.plot(self.controls.k0[id_f]*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
+                self.controls.k0[id_f]*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'r')
+        p = plt.contourf(kx_grid, ky_grid, color_par_r,
+            color_range, extend='both', cmap = color_code)
+        fig.colorbar(p)
+        plt.xlabel(r'$k_x$ [rad/m]')
+        plt.ylabel(r'$k_y$ [rad/m]')
+        plt.tight_layout()
+        if save:
+            filename = 'data/colormaps/cmat_' + str(int(freq)) + 'Hz_' + name
+            plt.savefig(fname = filename, format='pdf')
+
     def plot_pkmap_prop(self, freq = 1000, db = False, dinrange = 20,
         save = False, name='name', color_code = 'viridis'):
         '''
@@ -216,27 +311,43 @@ class DecompositionEv2(object):
         pk_i = pk[:self.n_prop] # incident
         pk_r = pk[int(len(pk)/2):int(len(pk)/2)+self.n_prop] # reflected
         pk_p = np.hstack((pk_i, pk_r))
-        # We must select only the propagating wave components
-        # kx_grid, ky_grid = np.meshgrid(self.kx, self.ky)
-        # kx_e = kx_grid.flatten()
-        # ky_e = ky_grid.flatten()
-        # ke_norm = (kx_e**2 + ky_e**2)**0.5
-        # kx_p = kx_e[ke_norm <= k0]
-        # ky_p = ky_e[ke_norm <= k0]
-        # kz_p = np.sqrt(k0**2 - (kx_p**2+ky_p**2))
+        # # The directions
+        # directions = np.vstack((-k0 * np.array([self.pdir[:,0], self.pdir[:,1], self.pdir[:,2]]).T,
+        #     -k0 * np.array([self.pdir[:,0], self.pdir[:,1], -self.pdir[:,2]]).T))
+        # # Transform uninterpolated data to spherical coords
+        # r, theta, phi = cart2sph(directions[:,0], directions[:,1], directions[:,2])
+        # # thetaphi = np.transpose(np.array([phi, theta]))
+        # # Calculate colors
+        # if db:
+        #     color_par = 20*np.log10(np.abs(pk_p)/np.amax(np.abs(pk_p)))
+        #     color_range = np.linspace(-dinrange, 0, dinrange+1)
+        # else:
+        #     color_par = np.abs(pk_p)/np.amax(np.abs(pk_p))
+        #     color_range = np.linspace(0, 1, 21)
+        # # Create triangulazition
+        # triang = tri.Triangulation(np.rad2deg(phi), np.rad2deg(theta))
+        # # Figure
+        # fig = plt.figure()
+        # fig.canvas.set_window_title('Interpolated map of |P(k)| for freq {} Hz'.format(self.controls.freq[id_f]))
+        # plt.title('|P(k)| at ' + str(self.controls.freq[id_f]) + 'Hz - PEIG decomp. '+ name)
+        # p = plt.tricontourf(triang, color_par, color_range, extend='both', cmap = color_code)
+        # fig.colorbar(p)
+        # plt.xlabel(r'$\phi$ (azimuth) [deg]')
+        # plt.ylabel(r'$\theta$ (elevation) [deg]')
+        # plt.tight_layout()
+        # if save:
+        #     filename = 'data/colormaps/cmat_' + str(int(freq)) + 'Hz_' + name
+        #     plt.savefig(fname = filename, format='pdf')
+
         # The directions
         directions = np.vstack((-k0 * np.array([self.pdir[:,0], self.pdir[:,1], self.pdir[:,2]]).T,
             -k0 * np.array([self.pdir[:,0], self.pdir[:,1], -self.pdir[:,2]]).T))
-        # Pk - propgating
-        # pk_ip = pk_i[ke_norm <= k0]
-        # pk_rp = pk_r[ke_norm <= k0]
-        # pk_p = np.hstack((pk_ip, pk_rp))
         # Transform uninterpolated data to spherical coords
         r, theta, phi = cart2sph(directions[:,0], directions[:,1], directions[:,2])
         thetaphi = np.transpose(np.array([phi, theta]))
         # Create the new grid to iterpolate
-        new_phi = np.linspace(-np.pi, np.pi, 100)
-        new_theta = np.linspace(-np.pi/2, np.pi/2,  100)#(0, np.pi, nn)
+        new_phi = np.linspace(np.deg2rad(-170), np.deg2rad(170), 2*int(np.sqrt(2*self.n_prop))+1)
+        new_theta = np.linspace(-np.pi/2, np.pi/2,  int(np.sqrt(2*self.n_prop)))#(0, np.pi, nn)
         grid_phi, grid_theta = np.meshgrid(new_phi, new_theta)
         # Interpolate
         pk_grid = griddata(thetaphi, np.abs(pk_p), (grid_phi, grid_theta),
@@ -251,7 +362,7 @@ class DecompositionEv2(object):
         # Figure
         fig = plt.figure()
         fig.canvas.set_window_title('Interpolated map of |P(k)| for freq {} Hz'.format(self.controls.freq[id_f]))
-        plt.title('|P(k)| at ' + str(self.controls.freq[id_f]) + 'Hz - PE decomp. '+ name)
+        plt.title('|P(k)| at ' + str(self.controls.freq[id_f]) + 'Hz - PEIG decomp. '+ name)
         p = plt.contourf(np.rad2deg(grid_phi), np.rad2deg(grid_theta)+90, color_par,
             color_range, extend='both', cmap = color_code)
         fig.colorbar(p)
@@ -261,6 +372,27 @@ class DecompositionEv2(object):
         if save:
             filename = 'data/colormaps/cmat_' + str(int(freq)) + 'Hz_' + name
             plt.savefig(fname = filename, format='pdf')
+
+    def save(self, filename = 'array_zest', path = '/home/eric/dev/insitu/data/zs_recovery/'):
+        '''
+        This method is used to save the simulation object
+        '''
+        filename = filename# + '_Lx_' + str(self.Lx) + 'm_Ly_' + str(self.Ly) + 'm'
+        self.path_filename = path + filename + '.pkl'
+        f = open(self.path_filename, 'wb')
+        pickle.dump(self.__dict__, f, 2)
+        f.close()
+
+    def load(self, filename = 'array_zest', path = '/home/eric/dev/insitu/data/zs_recovery/'):
+        '''
+        This method is used to load a simulation object. You build a empty object
+        of the class and load a saved one. It will overwrite the empty one.
+        '''
+        lpath_filename = path + filename + '.pkl'
+        f = open(lpath_filename, 'rb')
+        tmp_dict = pickle.load(f)
+        f.close()
+        self.__dict__.update(tmp_dict)
 
 class ZsArrayEvIg(DecompositionEv2):
     '''
@@ -302,3 +434,47 @@ class ZsArrayEvIg(DecompositionEv2):
         return self.alpha
 
 
+####################################################
+# The directions
+        # directions_i = -k0 * np.array([self.pdir[:,0], self.pdir[:,1], self.pdir[:,2]]).T
+        # directions_r = -k0 * np.array([self.pdir[:,0], self.pdir[:,1], -self.pdir[:,2]]).T
+        # # Transform uninterpolated data to spherical coords
+        # r, theta, phi = cart2sph(directions_i[:,0], directions_i[:,1], directions_i[:,2])
+        # thetaphi_i = np.transpose(np.array([phi, theta]))
+        # r, theta, phi = cart2sph(directions_r[:,0], directions_r[:,1], directions_r[:,2])
+        # thetaphi_r = np.transpose(np.array([phi, theta]))
+        # # Create the new grid to iterpolate
+        # new_phi = np.linspace(-np.pi, np.pi, 2*int(np.sqrt(2*self.n_prop))+1)
+        # new_theta = np.linspace(-np.pi/2, 0,  int(np.sqrt(2*self.n_prop)))#(0, np.pi, nn)
+        # grid_phi_i, grid_theta_i = np.meshgrid(new_phi, new_theta)
+        # new_theta = np.linspace(0, np.pi/2,  int(np.sqrt(2*self.n_prop)))#(0, np.pi, nn)
+        # grid_phi_r, grid_theta_r = np.meshgrid(new_phi, new_theta)
+        # # Interpolate
+        # pk_grid_i = griddata(thetaphi_i, np.abs(pk_i), (grid_phi_i, grid_theta_i),
+        #     method='cubic', fill_value=np.finfo(float).eps, rescale=False)
+        # pk_grid_r = griddata(thetaphi_r, np.abs(pk_r), (grid_phi_r, grid_theta_r),
+        #     method='cubic', fill_value=np.finfo(float).eps, rescale=False)
+        # # Calculate colors
+        # if db:
+        #     color_par_i = 20*np.log10(np.abs(pk_grid_i)/np.amax(np.abs(pk_p)))
+        #     color_par_r = 20*np.log10(np.abs(pk_grid_r)/np.amax(np.abs(pk_p)))
+        #     color_range = np.linspace(-dinrange, 0, dinrange+1)
+        # else:
+        #     color_par_i = np.abs(pk_grid_i)/np.amax(np.abs(pk_grid_i))
+        #     color_par_r = np.abs(pk_grid_r)/np.amax(np.abs(pk_grid_r))
+        #     color_range = np.linspace(0, 1, 21)
+        # # Figure
+        # fig = plt.figure()
+        # fig.canvas.set_window_title('Interpolated map of |P(k)| for freq {} Hz'.format(self.controls.freq[id_f]))
+        # plt.title('|P(k)| at ' + str(self.controls.freq[id_f]) + 'Hz - PEIG decomp. '+ name)
+        # p = plt.contourf(np.rad2deg(grid_phi_i), np.rad2deg(grid_theta_i)+90, color_par_i,
+        #     color_range, extend='both', cmap = color_code)
+        # p = plt.contourf(np.rad2deg(grid_phi_r), np.rad2deg(grid_theta_r)+90, color_par_r,
+        #     color_range, extend='both', cmap = color_code)
+        # fig.colorbar(p)
+        # plt.xlabel(r'$\phi$ (azimuth) [deg]')
+        # plt.ylabel(r'$\theta$ (elevation) [deg]')
+        # plt.tight_layout()
+        # if save:
+        #     filename = 'data/colormaps/cmat_' + str(int(freq)) + 'Hz_' + name
+        #     plt.savefig(fname = filename, format='pdf')

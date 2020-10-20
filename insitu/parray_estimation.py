@@ -148,9 +148,9 @@ class PArrayDeduction(object):
             pm = self.pres_s[:,jf].astype(complex)
             # finding the optimal lambda value if the parameter comes empty.
             # if not we use the user supplied value.
-            if not lambd_value:
-                u, sig, v = csvd(h_mtx)
-                lambd_value = l_cuve(u, sig, pm, plotit=False)
+            # if not lambd_value:
+            u, sig, v = csvd(h_mtx)
+            lambd_value = l_cuve(u, sig, pm, plotit=False)
             ## Choosing the method to find the P(k)
             # print('reg par: {}'.format(lambd_value))
             if method == 'scipy':
@@ -159,7 +159,7 @@ class PArrayDeduction(object):
                 self.pk[:,jf] = x[0]
             elif method == 'direct':
                 Hm = np.matrix(h_mtx)
-                self.pk[:,jf] = Hm.getH() @ np.linalg.inv(Hm @ Hm.getH() + lambd_value*np.identity(len(pm))) @ pm
+                self.pk[:,jf] = Hm.getH() @ np.linalg.inv(Hm @ Hm.getH() + (lambd_value**2)*np.identity(len(pm))) @ pm
             # print('x values: {}'.format(x[0]))
             elif method == 'Ridge':
                 # Form a real H2 matrix and p2 measurement

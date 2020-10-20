@@ -99,7 +99,7 @@ class Receiver():
         self.coord[:, 0], self.coord[:, 1], self.coord[:, 2] =\
             sph2cart(radii, thetas, 0)
 
-    def planar_xz(self, x_len = 1.0, n_x = 10, z_len = 1.0, n_z = 10, yr = 0.0):
+    def planar_xz(self, x_len = 1.0, n_x = 10, z0 = 0 ,z_len = 1.0, n_z = 10, yr = 0.0):
         '''
         This method initializes a planar array of receivers (z/xy plane). It will overwrite
         self.coord to be a matrix where each line gives a 3D coordinate for each receiver
@@ -112,7 +112,7 @@ class Receiver():
         '''
         # x and y coordinates of the grid
         xc = np.linspace(-x_len/2, x_len/2, n_x)
-        zc = np.linspace(0, z_len, n_z)
+        zc = np.linspace(z0, z_len, n_z)
         # meshgrid
         self.x_grid, self.z_grid = np.meshgrid(xc, zc)
         # initialize receiver list in memory

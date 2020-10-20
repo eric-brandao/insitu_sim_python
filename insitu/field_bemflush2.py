@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.tri as tri
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 # from insitu.controlsair import load_cfg
@@ -18,101 +17,13 @@ import insitu_cpp
 from controlsair import plot_spk
 
 class BEMFlush(object):
-    """ Calculates the sound field above a finite locally reactive squared sample.
-
-    It is used to calculate the sound pressure and particle velocity using
-    the BEM formulation for an absorbent sample flush mounted  on a hard baffle
-    (exact for spherical waves on locally reactive and finite samples)
-
-    Attributes
-    ----------
-    beta : numpy array
-        material normalized surface admitance
-    Nzeta : numpy ndarray
-        functions for quadrature integration (loaded from picke)
-    Nweights : numpy ndarray
-        wights for quadrature integration (loaded from picke)
-    el_center : (Nelx2) numpy array
-        coordinates of element's center (Nel is the number of elements)
-    jacobian : float
-        the Jacobian of the mesh
-    node_x : (Nelx4) numpy array
-        x-coordinates of element's vertices
-    node_y : (Nelx4) numpy array
-        y-coordinates of element's vertices
-    p_surface : (NelxNfreq) numpy array
-        The sound pressure at the center of each element on the mesh (Nfreq = len(freq)).
-        Solved by the BEM C++ module.
-    gij_f : list of (NelxNfreq) numpy arrays
-        The BEM matrix for each frequency step.
-    pres_s - list of receiver pressure spectrums for each source.
-        Each element of the list has a (N_rec x N_freq) matrix for a given source.
-        Each line of the matrix is a spectrum of a sound pressure for a receiver.
-        Each column is a set of sound pressure at all receivers for a frequency.
-    uz_s - list of receiver velocity spectrums (z-dir) for each source.
-        Each element of the list has a (N_rec x N_freq) matrix for a given source.
-
-    Methods
-    ----------
-    generate_mesh(Lx = 1.0, Ly = 1.0, Nel_per_wavelenth = 6)
-        Generate the mesh for simulation
-
-    def psurf()
-        Calculates the surface pressure of the BEM mesh
-
-    assemble_gij()
-        Assemble the BEM matrix.
-
-    psurf2()
-        Calculates p_surface using assembled gij_f matrixes.
-
-    p_fps()
-        Calculates the total sound pressure spectrum at the receivers coordinates.
-
-    uz_fps()
-        Calculates the total particle velocity spectrum (z-dir) at the receivers coordinates.
-
-    add_noise(snr = 30, uncorr = False)
-        Add gaussian noise to the simulated data.
-
-    plot_scene(vsam_size = 2, mesh = True)
-        Plot of the scene using matplotlib - not redered
-
-    plot_pres()
-        Plot the spectrum of the sound pressure for all receivers
-
-    plot_uz()
-        Plot the spectrum of the particle velocity in zdir for all receivers
-
-    plot_colormap(freq = 1000):
-        Plots a color map of the pressure field.
-
-    save(filename = 'my_bemflush', path = '/home/eric/dev/insitu/data/bem_simulations/')
-        To save the simulation object as pickle
-
-    load(filename = 'my_qterm', path = '/home/eric/dev/insitu/data/bem_simulations/')
-        Load a simulation object.
-    """
-
+    '''
+    A class to calculate the sound pressure and particle velocity
+    using the BEM for a flush sample on a baffle (exact for spherical waves on locally reactive and
+    finite samples)
+    The inputs are the objects: air, controls, material, sources, receivers
+    '''
     def __init__(self, air = [], controls = [], material = [], sources = [], receivers = []):
-        """
-
-        Parameters
-        ----------
-        air : object (AirProperties)
-            The relevant properties of the air: c0 (sound speed) and rho0 (air density)
-        controls : object (AlgControls)
-            Controls of the simulation (frequency spam)
-        material : object (PorousAbsorber)
-            Contains the material properties (surface impedance)
-        sources : object (Source)
-            The sound sources in the field
-        receivers : object (Receiver)
-            The receivers in the field
-
-        The objects are stored as attributes in the class (easier to retrieve).
-        """
-
         self.air = air
         self.controls = controls
         self.material = material
@@ -125,28 +36,16 @@ class BEMFlush(object):
         self.pres_s = []
         self.uz_s = []
         # Load Gauss points and weights
-        with open('/home/eric/dev/insitu/data/' + 'gauss_data' + '.pkl', 'rb') as input:
+        with open('/content/drive/My Drive/dev/insitu/data/' + 'gauss_data' + '.pkl', 'rb') as input:
             Nzeta = pickle.load(input)
             Nweights = pickle.load(input)
         self.Nzeta = Nzeta
         self.Nweights = Nweights
 
     def generate_mesh(self, Lx = 1.0, Ly = 1.0, Nel_per_wavelenth = 6):
-        """ Generate the mesh for simulation
-
-        The mesh will consists of rectangular elements. Their size is a function
-        of the sample's size (Lx and Ly) and the maximum frequency intended and
-        the number of elements per wavelength (recomended: 6)
-
-        Parameters
-        ----------
-        Lx : float
-            Sample's lenght
-        Ly : float
-            Sample's width
-        Nel_per_wavelenth : int
-            Number of elements per wavelength. The default value is 6.
-        """
+        '''
+        This method is used to generate the mesh for simulation
+        '''
         # Get the maximum frequency to estimate element size required
         self.Lx = Lx
         self.Ly = Ly
@@ -176,30 +75,31 @@ class BEMFlush(object):
                 self.node_x[d,:]=[xje[n], xje[n]+el_size, xje[n]+el_size, xje[n]]
                 self.node_y[d,:]=[yje[m], yje[m], yje[m]+el_size, yje[m]+el_size]
                 d += 1
+        # print(xje)
+        # print(self.el_center)
+        # print(xje)
 
     def psurf(self,):
-        """ Calculates the surface pressure of the BEM mesh.
-
-        Uses C++ implemented module.
-        The surface pressure calculation represents the first step in a BEM simulation.
-        It will assemble the BEM matrix and solve for the surface pressure
-        based on the incident sound pressure. Each column is
+        '''
+        This method is used to calculate the acoustic field (pressure/velocity)
+        as a function of frequency. It will assemble the BEM matrix and solve for
+        the surface pressure based on the incident sound pressure. Each column is
         a complex surface pressure for each element in the mesh. Each row represents
         the evolution of frequency for a single element in the mesh.
-        Therefore, there are N vs len(self.controls.freq) entries in this matrix.
-        This method saves memory, compared to the use of assemble_gij and psurf2.
+        Therefore, there are Nel_x*Nel_y vs N_freq element in this matrix.
+        This method saves memory compared to the use of assemble_gij and psurf2.
         On the other hand, if you want to simulate with a different source(s) configuration
         you will have to re-compute the BEM simulation.
-        """
+        '''
         # Allocate memory for the surface pressure data (# each column a frequency, each line an element)
         Nel = len(self.el_center)
         self.p_surface = np.zeros((Nel, len(self.controls.k0)), dtype=np.csingle)
         # Generate the C matrix
-        c_mtx = 0.5 * np.identity(Nel, dtype = np.float32)
+        c_mtx = 0.5 * np.identity(len(self.el_center), dtype = np.float32)
         # Calculate the distance from source to each element center
-        el_3Dcoord = np.zeros((Nel, 3), dtype=np.float32)
+        el_3Dcoord = np.zeros((len(self.el_center), 3), dtype=np.float32)
         el_3Dcoord[:,0:2] = self.el_center
-        rsel = np.repeat(np.reshape(self.sources.coord[0,:],(1,3)),Nel,axis=0)-\
+        rsel = np.repeat(np.reshape(self.sources.coord[0,:],(1,3)),len(self.el_center),axis=0)-\
             el_3Dcoord
         r_unpt = np.linalg.norm(rsel, axis = 1)
         # Assemble the r-matrix (this runs once and stays in memory for freq loop)
@@ -211,7 +111,7 @@ class BEMFlush(object):
         bar = ChargingBar('Calculating the surface pressure for each frequency step (method 1)',
             max=len(self.controls.k0), suffix='%(percent)d%%')
         for jf, k0 in enumerate(self.controls.k0):
-            # fakebeta = np.array(0.02+1j*0.2)
+            fakebeta = np.array(0.02+1j*0.2)
             # Assemble the bem matrix (c++)
             # print("Assembling matrix for freq: {} Hz.".format(self.controls.freq[jf]))
             #Version 1 (distances in loop)
@@ -233,19 +133,30 @@ class BEMFlush(object):
         print("elapsed time: {}".format(tend-tinit))
 
     def assemble_gij(self,):
-        """ Assemble the BEM matrix.
-
-        Uses C++ implemented module.
-        Assembles a Nel x Nel matrix of complex numbers for each frequency step.
-        It is memory consuming. On the other hand, it is independent of the sound sources.
-        If you store this matrix, you can change the positions of sound sources
-        and use the information in memory to calculate the p_surface attribute.
-        This can save time in simulations where you vary such parametes. The calculation of
+        '''
+        This method is used to assemble the BEM matrix to be used in further computations.
+        You are assembling a Nel x Nel matrix of complex numbers for each frequency step run.
+        So, this is memory consuming. On the other hand, if you store this matrix you can change
+        freely the positions of sound sources and just reinvert the system of equations.
+        This is nice because it can save a lot of time in other simulations, so you just need
+        to run your big case once. The method will only assemble the BEM matrix. The calculation of
         surface pressure (based on the incident sound pressure) should be done later.
-        """
+        '''
         # Allocate memory for the surface pressure data (# each column a frequency, each line an element)
+        # Nel = len(self.el_center)
+        # self.p_surface = np.zeros((Nel, len(self.controls.k0)), dtype=np.csingle)
+        # Generate the C matrix
+        # c_mtx = 0.5 * np.identity(len(self.el_center), dtype = np.float32)
+        # Calculate the distance from source to each element center
         el_3Dcoord = np.zeros((len(self.el_center), 3), dtype=np.float32)
         el_3Dcoord[:,0:2] = self.el_center
+        # rsel = np.repeat(np.reshape(self.sources.coord[0,:],(1,3)),len(self.el_center),axis=0)-\
+        #     el_3Dcoord
+        # r_unpt = np.linalg.norm(rsel, axis = 1)
+        # Assemble the r-matrix (this runs once and stays in memory for freq loop)
+        # print("I am assembling a matrix of gauss distances once...")
+        # r_mtx = insitu_cpp._bemflush_rmtx(self.el_center,
+        #     self.node_x, self.node_y, self.Nzeta)
         # Set a time count for performance check
         tinit = time.time()
         bar = ChargingBar('Assembling BEM matrix for each frequency step',
@@ -253,27 +164,37 @@ class BEMFlush(object):
         self.gij_f = []
         # print(dir(insitu_cpp))
         for jf, k0 in enumerate(self.controls.k0):
+            # fakebeta = np.array(0.02+1j*0.2)
+            # Assemble the bem matrix (c++)
+            # print("Assembling matrix for freq: {} Hz.".format(self.controls.freq[jf]))
+            #Version 1 (distances in loop)
             gij = insitu_cpp._bemflush_mtx(self.el_center, self.node_x, self.node_y,
             self.Nzeta, self.Nweights.T, k0, self.beta[jf])
             self.gij_f.append(gij)
+            # Version 2 (distances in memory)
+            # gij = insitu_cpp._bemflush_mtx2(self.Nweights.T,
+            #     r_mtx, self.jacobian, k0, self.beta[jf])
+            # Calculate the unperturbed pressure
+            # p_unpt = 2.0 * np.exp(-1j * k0 * r_unpt) / r_unpt
+            # Solve system of equations
+            # print("Solving system of eqs for freq: {} Hz.".format(self.controls.freq[jf]))
+            # self.p_surface[:, jf] = np.linalg.solve(c_mtx + gij, p_unpt)
+            # print('Assembling the matrix for frequency {} Hz'.format(self.controls.freq[jf]))
             bar.next()
         bar.finish()
         tend = time.time()
         print("elapsed time: {}".format(tend-tinit))
 
     def psurf2(self,):
-        """ Calculates p_surface using assembled gij_f matrixes.
-
-        Uses C++ implemented module.
-        The surface pressure calculation represents the first step in a BEM simulation.
+        '''
+        This method is used to calculate the surface pressure as a function of frequency. 
         It will use assembled BEM matrix (from assemble_gij) and solve for
         the surface pressure based on the incident sound pressure. Each column is
         a complex surface pressure for each element in the mesh. Each row represents
         the evolution of frequency for a single element in the mesh.
-        Therefore, there are N vs len(self.controls.freq) entries in this matrix.
-        This method saves processing time, compared to the use of psurf. You need to run it
-        if you change sound source(s) configuration (no need to run assemble_gij again)..
-        """
+        Therefore, there are Nel_x*Nel_y vs N_freq element in this matrix.
+        You need to run this if you change sound source(s) configuration (no need to assemble matrix again).
+        '''
         # Allocate memory for the surface pressure data (# each column a frequency, each line an element)
         Nel = len(self.el_center)
         self.p_surface = np.zeros((Nel, len(self.controls.k0)), dtype=np.csingle)
@@ -295,17 +216,23 @@ class BEMFlush(object):
             # Solve system of equations
             # print("Solving system of eqs for freq: {} Hz.".format(self.controls.freq[jf]))
             self.p_surface[:, jf] = np.linalg.solve(c_mtx + gij, p_unpt)
+            # print('Assembling the matrix for frequency {} Hz'.format(self.controls.freq[jf]))
             bar.next()
         bar.finish()
         tend = time.time()
         print("elapsed time: {}".format(tend-tinit))
 
     def p_fps(self,):
-        """ Calculates the total sound pressure spectrum at the receivers coordinates.
+        '''
+        This method calculates the sound pressure spectrum for all sources and receivers
+        Inputs:
 
-        The sound pressure spectrum is calculatef for all receivers (attribute of class).
-        The quantity calculated is the total sound pressure = incident + scattered.
-        """
+        Outputs:
+            pres_s - this is an array of objects. Inside each object there is a
+            (N_rec x N_freq) matrix. Each line of the matrix is a spectrum of a sound
+            pressure for a receiver. Each column is a set of sound pressures measured
+            by the receivers for a given frequency
+        '''
         # Loop the receivers
         self.pres_s = []
         for js, s_coord in enumerate(self.sources.coord):
@@ -315,6 +242,11 @@ class BEMFlush(object):
                 xdist = (s_coord[0] - r_coord[0])**2.0
                 ydist = (s_coord[1] - r_coord[1])**2.0
                 r = (xdist + ydist)**0.5 # horizontal distance source-receiver
+
+                # print((s_coord[0] - r_coord[0])**2)
+                # print((s_coord[1] - r_coord[1])**2)
+                # print((s_coord[0] - r_coord[0])**2 + (s_coord[1] - r_coord[1])**2)
+                # print(((s_coord[0] - r_coord[0])**2 + (s_coord[1] - r_coord[1])**2)**0.5)
                 zr = r_coord[2]  # receiver height
                 r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5
                 r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
@@ -323,7 +255,7 @@ class BEMFlush(object):
                 bar = ChargingBar('Processing sound pressure at field point', max=len(self.controls.k0), suffix='%(percent)d%%')
                 for jf, k0 in enumerate(self.controls.k0):
                     # print('the ps passed is: {}'.format(self.p_surface[:,jf]))
-                    # fakebeta = np.array(0.02+1j*0.2)
+                    fakebeta = np.array(0.02+1j*0.2)
                     # r_coord = np.reshape(np.array([0, 0, 0.01], dtype = np.float32), (1,3))
                     p_scat = insitu_cpp._bemflush_pscat(r_coord, self.node_x, self.node_y,
                         self.Nzeta, self.Nweights.T, k0, self.beta[jf], self.p_surface[:,jf])
@@ -336,11 +268,15 @@ class BEMFlush(object):
             self.pres_s.append(pres_rec)
 
     def uz_fps(self,):
-        """ Calculates the total particle velocity spectrum (z-dir) at the receivers coordinates.
-
-        The particle velocity spectrum is calculatef for all receivers (attribute of class).
-        The quantity calculated is the total particle velocity = incident + scattered.
-        """
+        '''
+        This method calculates the sound particle velocity spectrum (z-dir) for all sources and receivers
+        Inputs:
+        Outputs:
+            uz_s - this is an array of objects. Inside each object there is a
+            (N_rec x N_freq) matrix. Each line of the matrix is a spectrum of a particle
+            velocity (z-dir) for a receiver. Each column is a set of particle velocity (z-dir)
+            measured by the receivers for a given frequency
+        '''
         # Loop the receivers
         for js, s_coord in enumerate(self.sources.coord):
             hs = s_coord[2] # source height
@@ -366,25 +302,10 @@ class BEMFlush(object):
                 bar.finish()
             self.uz_s.append(uz_rec)
 
-    def add_noise(self, snr = 30, uncorr = False):
-        """ Add gaussian noise to the simulated data.
-
-        The function is used to add noise to the pressure and particle velocity data.
-        it reads the clean signal and estimate its power. Then, it estimates the power
-        of the noise that would lead to the target SNR. Then it draws random numbers
-        from a Normal distribution with standard deviation =  noise power
-
-        Parameters
-        ----------
-        snr : float
-            The signal to noise ratio you want to emulate
-        uncorr : bool
-            If added noise to each receiver is uncorrelated or not.
-            If uncorr is True the the noise power is different for each receiver
-            and frequency. If uncorr is False the noise power is calculated from
-            the average signal magnitude of all receivers (for each frequency).
-            The default value is False
-        """
+    def add_noise(self, snr = 30, uncorr = True):
+        '''
+        Method used to artificially add gaussian noise to the measued data
+        '''
         signal = self.pres_s[0]
         try:
             signal_u = self.uz_s[0]
@@ -396,8 +317,7 @@ class BEMFlush(object):
             noisePower_dB = signalPower_dB - snr
             noisePower_lin = 10 ** (noisePower_dB/10)
         else:
-            # signalPower_lin = (np.abs(np.mean(signal, axis=0))/np.sqrt(2))**2
-            signalPower_lin = ((np.mean(np.abs(signal), axis=0))/np.sqrt(2))**2
+            signalPower_lin = (np.abs(np.mean(signal, axis=0))/np.sqrt(2))**2
             signalPower_dB = 10 * np.log10(signalPower_lin)
             noisePower_dB = signalPower_dB - snr
             noisePower_lin = 10 ** (noisePower_dB/10)
@@ -416,20 +336,28 @@ class BEMFlush(object):
             print('Adding noise to particle velocity')
             noise_u = np.random.normal(0, np.sqrt(noisePower_lin_u), size = signal_u.shape) +\
                 1j*np.random.normal(0, np.sqrt(noisePower_lin_u), size = signal_u.shape)
-            self.uz_s[0] = signal_u + noise_u
+            self.uz_s[0] = signal_u + noise_u   
 
-    def plot_scene(self, vsam_size = 2, mesh = False):
-        """ Plot of the scene using matplotlib - not redered
+        # for js, s_coord in enumerate(self.sources.coord):
+        #     # hs = s_coord[2] # source height
+        #     pres_rec = self.pres_s[js]
+        #     # N = (pres_rec).shape
+        #     # print(N)
+        #     for jrec, r_coord in enumerate(self.receivers.coord):
+        #         for jf, k0 in enumerate(self.controls.k0):
+        #             # Here, the signal power is 2 (1 for real and imaginary component)
+        #             signal = pres_rec[jrec, jf]
+        #             signalPower_lin = np.abs(signal)**2
+        #             signalPower_dB = 10 * np.log10(signalPower_lin)
+        #             noisePower_dB = signalPower_dB - snr
+        #             noisePower_lin = 10 ** (noisePower_dB/10)
+        #             noise = np.sqrt(noisePower_lin/2)*(np.random.randn(1) + 1j*np.random.randn(1))
+        #             self.pres_s[js][jrec][jf] = signal + noise
 
-        Parameters
-        ----------
-        vsam_size : float
-            Scene size. Just to make the plot look nicer. You can choose any value.
-            An advice is to choose a value bigger than the sample's largest dimension.
-        mesh : bool
-            Whether to plot the sample mesh or not. Default is False. In this way,
-            the sample is represented by a grey rectangle.
-        """
+    def plot_scene(self, vsam_size = 2, mesh = True):
+        '''
+        a simple plot of the scene using matplotlib - not redered
+        '''
         fig = plt.figure()
         fig.canvas.set_window_title("Measurement scene")
         ax = fig.gca(projection='3d')
@@ -471,9 +399,9 @@ class BEMFlush(object):
             ax.scatter(s_coord[0], s_coord[1], s_coord[2],
                 color='red',  marker = "o", s=200)
         # plot receiver
-        for r_coord in self.receivers.coord:
-            ax.scatter(r_coord[0], r_coord[1], r_coord[2],
-                color='blue',  marker = "o", alpha = 0.35)
+        # for r_coord in self.receivers.coord:
+        #     ax.scatter(r_coord[0], r_coord[1], r_coord[2],
+        #         color='blue',  marker = "o", alpha = 0.35)
         ax.set_xlabel('X axis')
         # plt.xticks([], [])
         ax.set_ylabel('Y axis')
@@ -494,59 +422,36 @@ class BEMFlush(object):
         plt.show() # show plot
 
     def plot_pres(self,):
-        """ Plot the spectrum of the sound pressure for all receivers
-        """
+        '''
+        Method to plot the spectrum of the sound pressure
+        '''
         plot_spk(self.controls.freq, self.pres_s, ref = 20e-6)
 
     def plot_uz(self):
-        """ Plot the spectrum of the particle velocity in zdir for all receivers
-        """
+        '''
+        Method to plot the spectrum of the particle velocity in zdir
+        '''
         plot_spk(self.controls.freq, self.uz_s, ref = 5e-8)
 
-    def plot_colormap(self, freq = 1000, total_pres = True):
-        """Plots a color map of the pressure field.
-
-        Parameters
-        ----------
-        freq : float
-            desired frequency of the color map. If the frequency does not exist
-            on the simulation, then it will choose the frequency just before the target.
-        total_pres : bool
-            Whether to plot the total sound pressure (Default = True) or the reflected only.
-            In the later case, we subtract the incident field Green's function from the total
-            sound field.
-        """
-        id_f = np.where(self.controls.freq <= freq)
-        id_f = id_f[0][-1]
-        # color parameter
-        if total_pres:
-            color_par = np.abs(self.pres_s[0][:,id_f])
-        else:
-            r1 = np.linalg.norm(self.sources.coord - self.receivers.coord, axis = 1)
-            color_par = np.abs(self.pres_s[0][:,id_f]-\
-                np.exp(-1j * self.controls.k0[id_f] * r1) / r1)
-        # Create triangulazition
-        triang = tri.Triangulation(self.receivers.coord[:,0], self.receivers.coord[:,2])
-        # Figure
-        fig = plt.figure() #figsize=(8, 8)
-        # fig = plt.figure()
-        fig.canvas.set_window_title('pressure color map')
-        plt.title('|P(f)|')
-        p = plt.tricontourf(triang, color_par)
-        fig.colorbar(p)
-        plt.xlabel(r'$x$ [m]')
-        plt.ylabel(r'$z$ [m]')
+    def plot_colormap(self, n_pts = 10):
+        pass
+        # x = np.linspace(-2*self.Lx, 2*self.Lx, n_pts)
+        # y = np.zeros(len(x))
+        # z = np.linspace(0.01, 1.0, n_pts)
+        # xv, zv = np.meshgrid(x, z)
+        # r_fpts = np.zeros((xv.shape[0]**2, 3))
+        # print(xv.shape)
+        # # print(yv.shape)
+        # print(zv.shape)
+        # for jrec in np.arange(len(r_fpts)):
+        #     r_fpts[jrec, :] = np.array([xv[jrec,jrec],
+        #         0.0, zv[jrec,jrec]])
+        # print(r_fpts)
 
     def save(self, filename = 'my_bemflush', path = '/home/eric/dev/insitu/data/bem_simulations/'):
-        """ To save the simulation object as pickle
-
-        Parameters
-        ----------
-        filename : str
-            name of the file
-        pathname : str
-            path of folder to save the file
-        """
+        '''
+        This method is used to save the simulation object
+        '''
         filename = filename# + '_Lx_' + str(self.Lx) + 'm_Ly_' + str(self.Ly) + 'm'
         self.path_filename = path + filename + '.pkl'
         f = open(self.path_filename, 'wb')
@@ -554,18 +459,10 @@ class BEMFlush(object):
         f.close()
 
     def load(self, filename = 'my_qterm', path = '/home/eric/dev/insitu/data/bem_simulations/'):
-        """ Load a simulation object.
-
-        You can instantiate an empty object of the class and load a saved one.
-        It will overwrite the empty object.
-
-        Parameters
-        ----------
-        filename : str
-            name of the file
-        pathname : str
-            path of folder to save the file
-        """
+        '''
+        This method is used to load a simulation object. You build a empty object
+        of the class and load a saved one. It will overwrite the empty one.
+        '''
         lpath_filename = path + filename + '.pkl'
         f = open(lpath_filename, 'rb')
         tmp_dict = pickle.load(f)
