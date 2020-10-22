@@ -520,7 +520,7 @@ class BEMFlush(object):
         id_f = id_f[0][-1]
         # color parameter
         if total_pres:
-            color_par = np.abs(self.pres_s[0][:,id_f])
+            color_par = 20*np.log10(np.abs(self.pres_s[0][:,id_f])/np.amax(np.abs(self.pres_s[0][:,id_f])))
         else:
             r1 = np.linalg.norm(self.sources.coord - self.receivers.coord, axis = 1)
             color_par = np.abs(self.pres_s[0][:,id_f]-\
@@ -532,7 +532,7 @@ class BEMFlush(object):
         # fig = plt.figure()
         fig.canvas.set_window_title('pressure color map')
         plt.title('|P(f)|')
-        p = plt.tricontourf(triang, color_par)
+        p = plt.tricontourf(triang, color_par, np.linspace(-15, 0, 15), cmap = 'seismic')
         fig.colorbar(p)
         plt.xlabel(r'$x$ [m]')
         plt.ylabel(r'$z$ [m]')
