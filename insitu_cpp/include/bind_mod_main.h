@@ -10,6 +10,8 @@
 #include "bind_fun_bemflush_mtx.h"
 #include "bind_fun_bemflush_pscat.h"
 #include "bind_fun_bemflush_uzscat.h"
+#include "bind_fun_bemflush_uxscat.h"
+#include "bind_fun_bemflush_uyscat.h"
 
 namespace py = pybind11;
 

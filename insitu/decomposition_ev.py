@@ -3,19 +3,19 @@ import matplotlib.pyplot as plt
 import matplotlib.tri as tri
 # from matplotlib import cm
 # from insitu.controlsair import load_cfg
-import scipy.integrate as integrate
-import scipy as spy
+# import scipy.integrate as integrate
+# import scipy as spy
 from scipy.interpolate import griddata
 from sklearn.linear_model import Ridge
 import time
 from tqdm import tqdm
 import sys
-from progress.bar import Bar, IncrementalBar, FillingCirclesBar, ChargingBar
+# from progress.bar import Bar, IncrementalBar, FillingCirclesBar, ChargingBar
 #from tqdm._tqdm_notebook import tqdm
-from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 unused import
+# from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 unused import
 import cvxpy as cp
-from scipy import linalg # for svd
-from scipy import signal
+# from scipy import linalg # for svd
+# from scipy import signal
 from scipy.sparse.linalg import lsqr, lsmr
 from lcurve_functions import csvd, l_cuve, tikhonov
 import pickle
@@ -40,14 +40,124 @@ plt.rc('ytick', labelsize=BIGGER_SIZE)    # fontsize of the tick labels
 plt.rc('figure', titlesize=BIGGER_SIZE)
 
 class DecompositionEv(object):
-    '''
-    Decomposition class for array processing. Decomposes the measurement into a set of
-    plane propagating waves and plane evanescent waves. 
-    '''
+    """ Decomposition of the sound field using propagating and evanescent waves.
+
+    The class has several methods to perform sound field decomposition into a set of
+    incident and reflected plane waves. These sets of plane waves are composed of
+    propagating and evanescent waves. We create a regular grid on the kx and ky plane,
+    wich will contain the evanescent and propagating waves. In the end, we combine
+    the grid of evanescent and propagating waves onto two grids - one for the incident
+    and another for the reflected sound field.
+
+    Attributes
+    ----------
+    p_mtx : (N_rec x N_freq) numpy array
+        A matrix containing the complex amplitudes of all the receivers
+        Each column is a set of sound pressure at all receivers for a frequency.
+    controls : object (AlgControls)
+        Controls of the decomposition (frequency spam)
+    material : object (PorousAbsorber)
+        Contains the material properties (surface impedance). This can be used as reference
+        when simulations is what you want to do.
+    receivers : object (Receiver)
+        The receivers in the field - this contains the information of the coordinates of
+        the microphones in your array
+    kx : numpy 1darray
+        contains the kx waves.
+    ky : numpy 1darray
+        contains the ky waves.
+    decomp_type : str
+        Decomposition description
+    f_ref : float
+        The amplitude of the reflected waves (or radiating waves)
+    f_inc : float
+        The amplitude of the incident waves.
+    zp : float
+        Virtual source plane location (reflected waves).
+    zm : float
+        Virtual source plane location (incident waves).
+    kx : numpy 1darray
+        kx wave numbers (for later plots)
+    ky : numpy 1darray
+        ky wave numbers (for later plots)
+    delta_kx : float
+        spacing in kx
+    delta_ky : float
+        spacing in ky
+    kx_grid : numpy ndarray
+        Uniform grid on kx
+    ky_grid : numpy ndarray
+        Uniform grid on ky
+    kx_f : numpy 1darray
+        Flattened version of kx_grid
+    ky_f : numpy 1darray
+        Flattened version of ky_grid
+    cond_num : (1 x N_freq) numpy 1darray
+        condition number of sensing matrix
+    pk : list
+        List of estimated amplitudes of all plane waves.
+        Each element in the list is relative to a frequency of the measurement spectrum.
+    fpts : object (Receiver)
+        The field points in the field where pressure and velocity are reconstructed
+    p_recon : (N_rec x N_freq) numpy array
+        A matrix containing the complex amplitudes of the reconstructed sound pressure
+        at all the field points
+    uz_recon : (N_rec x N_freq) numpy array
+        A matrix containing the complex amplitudes of the reconstructed particle vel (z)
+        at all the field points
+
+    Methods
+    ----------
+    create_kx_ky(n_kx = 20, n_ky = 20, plot=False, freq = 1000)
+        Create a regular grid of kx and ky.
+
+    pk_tikhonov_ev(method = 'direct', f_ref = 1.0, f_inc = 1.0, factor = 1, z0 = 1.5, plot_l = False)
+        Wave number spectrum estimation using Tikhonov inversion
+
+    reconstruct_pu(receivers)
+        Reconstruct the sound pressure and particle velocity at a receiver object
+
+    plot_pk_scatter(freq = 1000, db = False, dinrange = 40, save = False, name='name', travel=True)
+        plot the magnitude of P(k) as a scatter plot of evanescent and propagating waves
+
+    plot_colormap(self, freq = 1000, total_pres = True)
+        Plots a color map of the pressure field.
+
+    plot_pkmap(freq = 1000, db = False, dinrange = 20, save = False, name='name')
+        Plot wave number spectrum as a 2D maps (vs. kx and ky) - uses tricontourf
+
+    plot_pkmap_v2(freq = 1000, db = False, dinrange = 20,
+        save = False, name='name', color_code = 'viridis')
+        Plot wave number spectrum as a 2D maps (vs. kx and ky) - uses contourf
+
+    plot_pkmap_prop(freq = 1000, db = False, dinrange = 20,
+        save = False, name='name', color_code = 'viridis'):
+        Plot wave number spectrum  - propagating only (vs. phi and theta)
+
+    save(filename = 'my_bemflush', path = '/home/eric/dev/insitu/data/bem_simulations/')
+        To save the simulation object as pickle
+
+    load(filename = 'my_qterm', path = '/home/eric/dev/insitu/data/bem_simulations/')
+        Load a simulation object.
+    """
+
     def __init__(self, p_mtx = None, controls = None, material = None, receivers = None):
-        '''
-        Init - we first retrive general data, then we process some receiver data
-        '''
+        """
+
+        Parameters
+        ----------
+        p_mtx : (N_rec x N_freq) numpy array
+            A matrix containing the complex amplitudes of all the receivers
+            Each column is a set of sound pressure at all receivers for a frequency.
+        controls : object (AlgControls)
+            Controls of the decomposition (frequency spam)
+        material : object (PorousAbsorber)
+            Contains the material properties (surface impedance).
+        receivers : object (Receiver)
+            The receivers in the field
+
+        The objects are stored as attributes in the class (easier to retrieve).
+        """
         # self.pres_s = sim_field.pres_s[source_num] #FixMe
         # self.air = sim_field.air
         self.controls = controls
@@ -58,10 +168,21 @@ class DecompositionEv(object):
         self.flag_oct_interp = False
 
     def create_kx_ky(self, n_kx = 20, n_ky = 20, plot=False, freq = 1000):
-        '''
-        This method is used to create a regular grid of kx and ky.
+        """ Create a regular grid of kx and ky.
+
         This will be used to create all propagating and evanescent waves at the decompostition time.
-        '''
+
+        Parameters
+        ----------
+        n_kx : int
+            number of elementary waves in kx direction
+        n_ky : int
+            number of elementary waves in ky direction
+        plot : bool
+            whether you plot or not the directions in space for k = 2 pi freq/c0
+        freq : float
+            frequency for which the L waves are ploted (just for visualization)
+        """
         #### With linspace and n_waves
         self.kx = np.linspace(start = -np.pi/self.receivers.ax,
             stop = np.pi/self.receivers.ax, num = n_kx)
@@ -84,29 +205,58 @@ class DecompositionEv(object):
             plt.ylabel('ky')
             plt.show()
 
-    def pk_tikhonov_ev(self, method = 'Rigde', f_ref = 1.0, f_inc = 1.0, factor = 1, z0 = 1.5, plot_l = False):
-        '''
-        Method to estimate wave number spectrum based on the Tikhonov matrix inversion technique.
-        This version includes the evanescent waves
-        Inputs:
-            method: string defining the method to be used on finding the correct P(k).
-                It can be:
-                    (1) - 'scipy': using scipy.linalg.lsqr
-                    (2) - 'direct': via x= (Hm^H) * ((Hm * Hm^H + lambd_value * I)^-1) * pm
-                    (3) - else: via cvxpy
-        '''
+    def pk_tikhonov_ev(self, method = 'direct', f_ref = 1.0, f_inc = 1.0, factor = 1, z0 = 1.5, plot_l = False):
+        """ Wave number spectrum estimation using Tikhonov inversion
+
+        Estimate the wave number spectrum using regularized Tikhonov inversion.
+        The choice of the regularization parameter is baded on the L-curve criterion.
+        This sound field is modelled by a set of propagating and evanescent waves. We
+        use a grid for the incident and another for the reflected sound field. This
+        method is very similar of SONAH, implemented in:
+            Hald, J. Basic theory and properties of statistically optimized near-field acoustical
+            holography, J Acoust Soc Am. 2009 Apr;125(4):2105-20. doi: 10.1121/1.3079773
+
+        The inversion steps are: (i) - We will use regular grid (evanescent and propagating);
+        (ii) - create the correct kz for propagating and evanescent waves (reflected/radiating);
+        (iii) - use Eqs. (16 - 19) to form reflected matrix using Eq. (2)
+        (iv) - use Eqs. (16 - 19) to form incident matrix using Eq. (2) - if requested
+        (v) - form the sensing matrix; (vi) - compute SVD of the sensing matix;
+        (vi) - compute the regularization parameter (L-curve); (vii) - matrix inversion.
+
+        Parameters
+        ----------
+        method : string
+            Mathod to compute wave number spectrum. Default is 'direct'. You can also try
+            'scipy' (from scipy sparse - not that precise), 'Ridge' from sklearn and
+            'cvx' from cvxpy (the three are possibly slower than direct and not more precise)
+        f_ref : float
+            The amplitude of the reflected waves (or radiating waves). Default value is 1.0
+        f_inc : float
+            The amplitude of the incident waves . Default value is 1.0.
+            If you only have a radiatig structure you can set this to 0.0.
+            The algorithm will use the appropiate basis for the decomposition.
+        factor : float
+            This parameter controls the position of your source-plane. It is combined
+            with the microphone spacing on the array. This is an hyper-parameter important
+            for regularization of the problem. Typically, the location of the source plane
+            will be a multiple of the array spacing - this is what factor represents.
+            Default value is 2.5 - found optimal on a large set of simulations.
+        z0 : float
+            The location of the source plane for the incident sound field.
+            It should be a vaule somewhat close to the array. The recomendations is to
+            use some sensible value that promotes some simetry relative to the array
+            distance from the sample and the array thickness.
+        plot_l : bool
+            Whether to plot the L-curve or not. Default is false.
+        """
         self.decomp_type = 'Tikhonov (transparent array) w/ evanescent waves'
+        # Incident and reflected amplitudes
         self.f_ref = f_ref
         self.f_inc = f_inc
-        # self.factor = factor
-        # self.z0 = z0
+        # reflected and incident virtual source plane distances
         self.zp = -factor * np.amax([self.receivers.ax, self.receivers.ay])
-        print('freq: {}'.format(self.controls.freq))
-        print('zp: {}, rel to lam {}'.format(self.zp, self.zp/(2*np.pi/self.controls.k0)))
-        # self.zm = factor * (z0 + np.amax([self.receivers.ax, self.receivers.ay]))
         self.zm = z0 + factor * np.amax([self.receivers.ax, self.receivers.ay]) # Try
-        bar = tqdm(total = len(self.controls.k0),
-            desc = 'Calculating Tikhonov inversion (with evanescent waves)...')
+        # Initialize variables
         self.cond_num = np.zeros(len(self.controls.k0))
         if f_inc != 0:
             self.pk = np.zeros((2*len(self.kx_f), len(self.controls.k0)), dtype=complex)
@@ -115,37 +265,41 @@ class DecompositionEv(object):
         self.kx_ef = [] # Filtered version
         self.ky_ef = [] # Filtered version
         self.pk_ev = []
+        # Initializa bar
+        bar = tqdm(total = len(self.controls.k0),
+            desc = 'Calculating Tikhonov inversion (with evanescent waves)...')
+        # Freq loop
         for jf, k0 in enumerate(self.controls.k0):
-            # print(self.controls.freq[jf])
-            # 1 - for smooth transition from continous to discrete k domain
+            # For smooth transition from continous to discrete k domain
             kappa = np.sqrt(self.delta_kx*self.delta_ky/(2*np.pi*k0**2))
-            # 2 - form kz
+            # compute kz
             kz_f = form_kz(k0, self.kx_f, self.ky_f, plot=False)
             k_vec_ref = np.array([self.kx_f, self.ky_f, kz_f])
-            # 3 - Reflected or radiating part
-            fz_ref = f_ref * np.sqrt(k0/np.abs(kz_f))
+            # Reflected or radiating part
+            fz_ref = f_ref * np.sqrt(k0/np.abs(kz_f)) # compensate for higher density near the poles (propagating)
             recs = np.array([self.receivers.coord[:,0], self.receivers.coord[:,1],
                 self.receivers.coord[:,2]-self.zp]).T
             psi_ref = fz_ref * kappa * np.exp(-1j * recs @ k_vec_ref)
-            # 4 - Incident part
+            # Incident part
             if f_inc != 0:
                 k_vec_inc = np.array([self.kx_f, self.ky_f, -kz_f])
                 fz_inc = f_inc * np.sqrt(k0/np.abs(kz_f))
                 recs = np.array([self.receivers.coord[:,0], self.receivers.coord[:,1],
                     self.receivers.coord[:,2]-self.zm]).T
                 psi_inc = fz_inc * kappa * np.exp(-1j * recs @ k_vec_inc)
-            # 5 - Form sensing matrix
+            # Forming the sensing matrix
             if f_inc == 0:
                 h_mtx = psi_ref
             else:
                 h_mtx = np.hstack((psi_inc, psi_ref))
             self.cond_num[jf] = np.linalg.cond(h_mtx)
-            # measured data
+            # Measured data
             pm = self.pres_s[:,jf].astype(complex)
-            # 6 - finding the optimal regularization parameter.
+            # Compute SVD
             u, sig, v = csvd(h_mtx)
+            # Find the optimal regularization parameter.
             lambd_value = l_cuve(u, sig, pm, plotit=plot_l)
-            # ## Choosing the method to find the P(k)
+            # Choosing the method to find the P(k)
             if method == 'scipy':
                 from scipy.sparse.linalg import lsqr, lsmr
                 x = lsqr(h_mtx, self.pres_s[:,jf], damp=lambd_value)[0]
@@ -160,10 +314,7 @@ class DecompositionEv(object):
                 regressor = Ridge(alpha=lambd_value, fit_intercept = False, solver = 'svd')
                 x2 = regressor.fit(H2, p2).coef_
                 x = x2[:h_mtx.shape[1]]+1j*x2[h_mtx.shape[1]:]
-            elif method == 'tikhonov':
-                u, sig, v = csvd(h_mtx)
-                x = tikhonov(u, sig, v, pm, lambd_value)
-            # #### Performing the Tikhonov inversion with cvxpy #########################
+            # Performing the Tikhonov inversion with cvxpy #########################
             else:
                 H = h_mtx.astype(complex)
                 x_cvx = cp.Variable(h_mtx.shape[1], complex = True)
@@ -171,55 +322,56 @@ class DecompositionEv(object):
                 lambd.value = lambd_value[0]
                 # Create the problem and solve
                 problem = cp.Problem(cp.Minimize(objective_fn(H, pm, x_cvx, lambd)))
-                # problem.solve()
                 problem.solve(solver=cp.SCS, verbose=False) # Fast but gives some warnings
-                # problem.solve(solver=cp.ECOS, abstol=1e-3) # slow
-                # problem.solve(solver=cp.ECOS_BB) # slow
-                # problem.solve(solver=cp.NAG) # not installed
-                # problem.solve(solver=cp.CPLEX) # not installed
-                # problem.solve(solver=cp.CBC)  # not installed
-                # problem.solve(solver=cp.CVXOPT) # not installed
-                # problem.solve(solver=cp.MOSEK) # not installed
-                # problem.solve(solver=cp.OSQP) # did not work
-                # self.pk[:,jf] = x.value[0:self.n_waves]
-                # self.pk_ev.append(x.value[self.n_waves:])
                 x = x_cvx.value
-            self.pk[:,jf] = x#[0:self.n_waves]
-            # if include_evan:
-            #     self.pk_ev.append(x[self.n_waves:])
+            # Get correct complex wave number spk
+            self.pk[:,jf] = x
             bar.update(1)
         bar.close()
 
     def reconstruct_pu(self, receivers):
-        '''
-        reconstruct sound pressure and particle velocity at a receiver object
-        '''
-        self.p_recon = np.zeros((receivers.coord.shape[0], len(self.controls.k0)), dtype=complex)
-        self.uz_recon = np.zeros((receivers.coord.shape[0], len(self.controls.k0)), dtype=complex)
+        """ Reconstruct the sound pressure and particle velocity at a receiver object
+
+        Reconstruct the pressure and particle velocity at a set of desired field points.
+        This can be used on impedance estimation or to plot spatial maps of pressure,
+        velocity, intensity.
+
+        The steps are: (i) - We will use regular grid (evanescent and propagating);
+        (ii) - create the correct kz for propagating and evanescent waves (reflected/radiating);
+        (iii) - use Eqs. (16 - 19) to form reflected matrix using Eq. (2)
+        (iv) - use Eqs. (16 - 19) to form incident matrix using Eq. (2) - if requested
+        (v) - form the new sensing matrix; (vi) - compute p and u.
+        """
+        self.fpts = receivers
+        # Initialize variables
+        self.p_recon = np.zeros((self.fpts.coord.shape[0], len(self.controls.k0)), dtype=complex)
+        self.uz_recon = np.zeros((self.fpts.coord.shape[0], len(self.controls.k0)), dtype=complex)
+        # Initialize bar
         bar = tqdm(total = len(self.controls.k0), desc = 'Reconstructing sound field...')
         for jf, k0 in enumerate(self.controls.k0):
-            # 1 - for smooth transition from continous to discrete k domain
+            # For smooth transition from continous to discrete k domain
             kappa = np.sqrt(self.delta_kx*self.delta_ky/(2*np.pi*k0**2))
-            # 2 - form kz
+            # compute kz
             kz_f = form_kz(k0, self.kx_f, self.ky_f)
             k_vec_ref = np.array([self.kx_f, self.ky_f, kz_f])
-            # 3 - Reflected or radiating part
+            # Reflected or radiating part
             fz_ref = self.f_ref * np.sqrt(k0/np.abs(kz_f))
-            recs = np.array([receivers.coord[:,0], receivers.coord[:,1],
-                receivers.coord[:,2]-self.zp]).T
+            recs = np.array([self.fpts.coord[:,0], self.fpts.coord[:,1],
+                self.fpts.coord[:,2]-self.zp]).T
             psi_ref = fz_ref * kappa * np.exp(-1j * recs @ k_vec_ref)
-            # 4 - Incident part
+            # Incident part
             if self.f_inc != 0:
                 k_vec_inc = np.array([self.kx_f, self.ky_f, -kz_f])
                 fz_inc = self.f_inc * np.sqrt(k0/np.abs(kz_f))
-                recs = np.array([receivers.coord[:,0], receivers.coord[:,1],
-                    receivers.coord[:,2]-self.zm]).T
+                recs = np.array([self.fpts.coord[:,0], self.fpts.coord[:,1],
+                    self.fpts.coord[:,2]-self.zm]).T
                 psi_inc = fz_inc * kappa * np.exp(-1j * recs @ k_vec_inc)
-            # 5 - Form sensing matrix
+            # Forming the sensing matrix
             if self.f_inc == 0:
                 h_mtx = psi_ref
             else:
                 h_mtx = np.hstack((psi_inc, psi_ref))
+            # Compute p and uz
             self.p_recon[:,jf] = h_mtx @ self.pk[:,jf]
             if self.f_inc == 0:
                 self.uz_recon[:,jf] = -((np.divide(kz_f, k0)) * h_mtx) @ self.pk[:,jf]
@@ -229,18 +381,31 @@ class DecompositionEv(object):
         bar.close()
 
     def plot_pk_scatter(self, freq = 1000, db = False, dinrange = 40, save = False, name='name', travel=True):
-        '''
-        Method to plot the magnitude of the spatial fourier transform as a scatter plot of
-        evanescent and propagating waves.
-        It is a normalized version of the magnitude, either between 0 and 1 or between -dinrange and 0.
-        inputs:
-            freq - Which frequency you want to see. If the calculated spectrum does not contain it
-                we plot the closest frequency before the asked one.
-            dB (bool) - Whether to plot in linear scale (default) or decibel scale.
-            dinrange - You can specify a dinamic range for the decibel scale. It will not affect the
-            linear scale.
-            save (bool) - Whether to save or not the figure. PDF file with simple standard name
-        '''
+        """ plot the magnitude of P(k) as a scatter plot of evanescent and propagating waves
+
+        Plot the magnitude of the wave number spectrum as a scatter plot of
+        propagating  and evanescent waves.
+        It is a normalized version of the magnitude, either between
+        0 and 1 or between -dinrange and 0. The maps are ploted as color as function
+        of phi and theta.
+
+        Parameters
+        ----------
+            freq : float
+                Which frequency you want to see. If the calculated spectrum does not contain it
+                we plot the closest frequency before the target.
+            db : bool
+                Whether to plot in linear scale (default) or decibel scale.
+            dinrange : float
+                You can specify a dinamic range for the decibel scale. It will not affect the
+                linear scale.
+            save : bool
+                Whether to save or not the figure. PDF file with simple standard name
+            name : str
+                Name of the figure file #FixMe
+            travel : bool
+                Whether to plot travel direction or arrival direction. Default is True
+        """
         id_f = np.where(self.controls.freq <= freq)
         # id_f = np.where(self.freq_oct <= freq)
         id_f = id_f[0][-1]
@@ -251,30 +416,10 @@ class DecompositionEv(object):
         # Calculate colors
         if db:
             color_par_i = 20*np.log10(np.abs(pk_i)/np.amax(np.abs(pk)))
-            # id_outofrange = np.where(color_par_i <  20*np.log10(np.amax(np.abs(pk_i)))-dinrange)
-            # color_par_i[id_outofrange] = -dinrange
-
             color_par_r = 20*np.log10(np.abs(pk_r)/np.amax(np.abs(pk)))
-            # id_outofrange = np.where(color_par_r <  20*np.log10(np.amax(np.abs(pk_r)))-dinrange)
-            # color_par_r[id_outofrange] = -dinrange
-            # color_par = 20*np.log10(np.abs(pk)/np.amax(np.abs(pk)))
-            # # color_par = 20*np.log10(np.concatenate((np.ones(int(len(pk)/2)), 0.1*np.ones(int(len(pk)/2)))))
-            # id_outofrange = np.where(color_par < -dinrange)
-            # color_par[id_outofrange] = -dinrange
         else:
             color_par_i = np.abs(pk_i)
             color_par_r = np.abs(pk_r)
-            # color_par = np.abs(pk)/np.amax(np.abs(pk))
-        # Get the correct directions
-        # if len(pk) != len(self.kx_f):
-        #     kx = np.concatenate((self.kx_f, self.kx_f))
-        #     ky = np.concatenate((self.ky_f, self.ky_f))
-        #     kz = np.concatenate((np.real(kz_f)+self.controls.k0[id_f]/8, -np.real(kz_f)-self.controls.k0[id_f]/8))
-        #     # kz = np.concatenate((-np.real(kz_f)-self.controls.k0[id_f]/8, np.real(kz_f)+self.controls.k0[id_f]/8))
-        # else:
-        #     kx = self.kx_f
-        #     ky = self.ky_f
-        #     kz = np.real(kz_f)
         kx = self.kx_f
         ky = self.ky_f
         kz = np.real(kz_f)
@@ -283,8 +428,6 @@ class DecompositionEv(object):
         fig.canvas.set_window_title('Scatter plot of wavenumber spectrum')
         ax = fig.gca(projection='3d')
         if travel:
-            # ax.plot_trisurf(kx, ky, -kz-self.controls.k0[id_f]/8, linewidth=0.2, antialiased=True)
-            # ax.plot_trisurf(kx, ky, kz+self.controls.k0[id_f]/8, linewidth=0.2, antialiased=True)
             p=ax.scatter(kx, ky, -kz-self.controls.k0[id_f]/8, c = color_par_i,
                 vmin=-dinrange, vmax=0, s=int(dinrange))
             p=ax.scatter(kx, ky, kz+self.controls.k0[id_f]/8, c = color_par_r,
@@ -294,48 +437,48 @@ class DecompositionEv(object):
                 vmin=-dinrange, vmax=0, s=int(dinrange))
             p=ax.scatter(kx, ky, -kz-self.controls.k0[id_f]/8, c = color_par_r,
                 vmin=-dinrange, vmax=0, s=int(dinrange))
-        # p=ax.plot_surface(self.dir[:,0], self.dir[:,1], self.dir[:,2],
-        #     color = color_par)
             fig.colorbar(p)
         ax.set_xlabel(r'$k_x$ [rad/m]')
         ax.set_ylabel(r'$k_y$ [rad/m]')
         ax.set_zlabel(r'$k_z$ [rad/m]')
         ax.view_init(elev=10, azim=0)
         plt.title('|P(k)| at ' + str(self.controls.freq[id_f]) + 'Hz - ' + name)
-        # plt.show()
         if save:
             filename = 'data/colormaps/cmat_' + str(int(freq)) + 'Hz_' + name
             plt.savefig(fname = filename, format='pdf')
 
     def plot_pkmap(self, freq = 1000, db = False, dinrange = 20, save = False, name='name'):
-        '''
-        Method to plot the magnitude of the spatial fourier transform as two 2D maps of
-        evanescent and propagating waves.
-        It is a normalized version of the magnitude, either between 0 and 1 or between -dinrange and 0.
-        inputs:
-            freq - Which frequency you want to see. If the calculated spectrum does not contain it
-                we plot the closest frequency before the asked one.
-            dB (bool) - Whether to plot in linear scale (default) or decibel scale.
-            dinrange - You can specify a dinamic range for the decibel scale. It will not affect the
-            linear scale.
-            save (bool) - Whether to save or not the figure. PDF file with simple standard name
-        '''
+        """ Plot wave number spectrum as a 2D maps (vs. kx and ky) - uses tricontourf
+
+        Plot the magnitude of the wave number spectrum as two 2D maps of
+        evanescent and propagating waves. It is a normalized version of the
+        magnitude, either between 0 and 1 or between -dinrange and 0.
+        The maps are ploted as color as function of kx and ky.
+        The radiation circle is also ploted.
+
+        Parameters
+        ----------
+            freq : float
+                Which frequency you want to see. If the calculated spectrum does not contain it
+                we plot the closest frequency before the target.
+            db : bool
+                Whether to plot in linear scale (default) or decibel scale.
+            dinrange : float
+                You can specify a dinamic range for the decibel scale. It will not affect the
+                linear scale.
+            save : bool
+                Whether to save or not the figure. PDF file with simple standard name
+            name : str
+                Name of the figure file #FixMe
+        """
         id_f = np.where(self.controls.freq <= freq)
         # id_f = np.where(self.freq_oct <= freq)
         id_f = id_f[0][-1]
         k0 = self.controls.k0[id_f]
         kappa = np.sqrt(self.delta_kx*self.delta_ky/(2*np.pi*k0**2))
-        # 2 - form kz
-        # kz_f = form_kz(k0, self.kx_f, self.ky_f, plot=False)
-        # fz = np.sqrt(k0/np.abs(kz_f))
-        # pk = np.concatenate((self.f_inc * kappa * fz, self.f_ref * kappa * fz)) * self.pk[:,id_f]
-        # pk_i = self.f_inc * fz * kappa * self.pk[:len(self.kx_f),id_f] # incident
-        # pk_r = self.f_ref * fz * kappa * self.pk[len(self.kx_f):,id_f] # reflected
         pk = self.pk[:,id_f]
         pk_i = self.pk[:len(self.kx_f),id_f] # incident
         pk_r = self.pk[len(self.kx_f):,id_f] # reflected
-
-        # kz_f = form_kz(self.controls.k0[id_f], self.kx_f, self.ky_f, plot=False)
         # Calculate colors
         if db:
             color_par_i = 20*np.log10(np.abs(pk_i)/np.amax(np.abs(pk)))
@@ -375,22 +518,34 @@ class DecompositionEv(object):
 
     def plot_pkmap_v2(self, freq = 1000, db = False, dinrange = 20,
         save = False, name='name', color_code = 'viridis'):
-        '''
-        Method to plot the magnitude of the spatial fourier transform as two 2D maps of
-        evanescent and propagating waves. The map is first interpolated into a regular grid
-        It is a normalized version of the magnitude, either between 0 and 1 or between -dinrange and 0.
-        inputs:
-            freq - Which frequency you want to see. If the calculated spectrum does not contain it
-                we plot the closest frequency before the asked one.
-            dB (bool) - Whether to plot in linear scale (default) or decibel scale.
-            dinrange - You can specify a dinamic range for the decibel scale. It will not affect the
-            linear scale.
-            save (bool) - Whether to save or not the figure. PDF file with simple standard name
-            color_code - can be anything that matplotlib supports. Some recomendations given below:
+        """ Plot wave number spectrum as a 2D maps (vs. kx and ky) - uses contourf
+
+        Plot the magnitude of the wave number spectrum as two 2D maps of
+        evanescent and propagating waves. The map is first interpolated into
+        a regular grid. It is a normalized version of the magnitude, either between
+        0 and 1 or between -dinrange and 0. The maps are ploted as color as function
+        of kx and ky. The radiation circle is also ploted. 
+
+        Parameters
+        ----------
+            freq : float
+                Which frequency you want to see. If the calculated spectrum does not contain it
+                we plot the closest frequency before the target.
+            db : bool
+                Whether to plot in linear scale (default) or decibel scale.
+            dinrange : float
+                You can specify a dinamic range for the decibel scale. It will not affect the
+                linear scale.
+            save : bool
+                Whether to save or not the figure. PDF file with simple standard name
+            name : str
+                Name of the figure file #FixMe
+            color_code : str
+                Can be anything that matplotlib supports. Some recomendations given below:
                 'viridis' (default) - Perceptually Uniform Sequential
                 'Greys' - White (cold) to black (hot)
                 'seismic' - Blue (cold) to red (hot) with a white in the middle
-        '''
+        """
         id_f = np.where(self.controls.freq <= freq)
         # id_f = np.where(self.freq_oct <= freq)
         id_f = id_f[0][-1]
@@ -445,22 +600,35 @@ class DecompositionEv(object):
 
     def plot_pkmap_prop(self, freq = 1000, db = False, dinrange = 20,
         save = False, name='name', color_code = 'viridis'):
-        '''
-        Method to plot the magnitude of the spatial fourier transform as a map of
-        propagating waves in terms of theta and phi. The map is first interpolated into a regular grid
-        It is a normalized version of the magnitude, either between 0 and 1 or between -dinrange and 0.
-        inputs:
-            freq - Which frequency you want to see. If the calculated spectrum does not contain it
-                we plot the closest frequency before the asked one.
-            dB (bool) - Whether to plot in linear scale (default) or decibel scale.
-            dinrange - You can specify a dinamic range for the decibel scale. It will not affect the
-            linear scale.
-            save (bool) - Whether to save or not the figure. PDF file with simple standard name
-            color_code - can be anything that matplotlib supports. Some recomendations given below:
+        """ Plot wave number spectrum  - propagating only (vs. phi and theta)
+
+        Plot the magnitude of the wave number spectrum as a map of
+        propagating waves. The map is first interpolated into
+        a regular grid of azimuth (phi) and elevation (theta) angle.
+        It is a normalized version of the magnitude, either between
+        0 and 1 or between -dinrange and 0. The maps are ploted as color as function
+        of phi and theta.
+
+        Parameters
+        ----------
+            freq : float
+                Which frequency you want to see. If the calculated spectrum does not contain it
+                we plot the closest frequency before the target.
+            db : bool
+                Whether to plot in linear scale (default) or decibel scale.
+            dinrange : float
+                You can specify a dinamic range for the decibel scale. It will not affect the
+                linear scale.
+            save : bool
+                Whether to save or not the figure. PDF file with simple standard name
+            name : str
+                Name of the figure file #FixMe
+            color_code : str
+                Can be anything that matplotlib supports. Some recomendations given below:
                 'viridis' (default) - Perceptually Uniform Sequential
                 'Greys' - White (cold) to black (hot)
                 'seismic' - Blue (cold) to red (hot) with a white in the middle
-        '''
+        """
         id_f = np.where(self.controls.freq <= freq)
         # id_f = np.where(self.freq_oct <= freq)
         id_f = id_f[0][-1]
@@ -511,32 +679,36 @@ class DecompositionEv(object):
         if save:
             filename = 'data/colormaps/cmat_' + str(int(freq)) + 'Hz_' + name
             plt.savefig(fname = filename, format='pdf')
-        #### Scatter plot ######
-        # color_par = 20*np.log10(np.abs(pk_p)/np.amax(np.abs(pk_p)))
-        # # Figure
-        # fig = plt.figure()
-        # fig.canvas.set_window_title('Dir test')
-        # ax = fig.gca(projection='3d')
-        # p=ax.scatter(directions[:,0], directions[:,1], directions[:,2], c = color_par,
-        #         vmin=-dinrange, vmax=0, s=int(dinrange))
 
 
-    def plot_pk_evmap(self, freq = 1000, db = False, dinrange = 12, save = False, name='', path = '', fname='', contourplot = True, plot_kxky = False):
-        '''
-        Method to plot the magnitude of the spatial fourier transform of the evanescent components
-        The map of interpolated to a kx and ky wave numbers.
-        It is a normalized version of the magnitude, either between 0 and 1 or between -dinrange and 0.
-        inputs:
-            freq (float) - Which frequency you want to see. If the calculated spectrum does not contain it
-                we plot the closest frequency before the asked one.
-            dB (bool) - Whether to plot in linear scale (default) or decibel scale.
-            dinrange (float) - You can specify a dinamic range for the decibel scale. It will not affect the
-            linear scale.
-            save (bool) - Whether to save or not the figure (png file)
-            path (str) - path to save fig
-            fname (str) - name file of the figure
-            plot_kxky (bool) - whether to plot or not the kx and ky points that are part of the evanescent map.
-        '''
+    def plot_pk_evmap(self, freq = 1000, db = False, dinrange = 12, save = False, name='',
+        path = '', fname='', contourplot = True):
+        """ Plot wave number spectrum as a 2D maps (vs. kx and ky) without radiating circle
+
+        Plot the magnitude of the wave number spectrum as two 2D maps of
+        evanescent waves (excludes propagating). 
+        It is a normalized version of the magnitude, either between
+        0 and 1 or between -dinrange and 0. The maps are ploted as color as function
+        of kx and ky. The radiation circle is also ploted. 
+
+        Parameters
+        ----------
+            freq : float
+                Which frequency you want to see. If the calculated spectrum does not contain it
+                we plot the closest frequency before the target.
+            db : bool
+                Whether to plot in linear scale (default) or decibel scale.
+            dinrange : float
+                You can specify a dinamic range for the decibel scale. It will not affect the
+                linear scale.
+            save : bool
+                Whether to save or not the figure. PDF file with simple standard name
+            name : str
+                Name of the figure file #FixMe
+            countourplot : bool
+                Whether to plot a contourplot (using tricontourf) or a scatter plot.
+                Default is True
+        """
         import matplotlib.tri as tri
         id_f = np.where(self.controls.freq <= freq)
         id_f = id_f[0][-1]
@@ -547,14 +719,10 @@ class DecompositionEv(object):
             color_par[id_outofrange] = -dinrange
         else:
             color_par = np.abs(self.pk[:,id_f])#/np.amax(np.abs(pk_ev_grid))
-        ############### Countourf ##########################
         # Create the Triangulation; no triangles so Delaunay triangulation created.
         x = self.kx_f
         y = self.ky_f
         triang = tri.Triangulation(x, y)
-        # Mask off unwanted triangles.
-        # triang.set_mask(np.hypot(x[triang.triangles].mean(axis=1),
-        #     y[triang.triangles].mean(axis=1)) < k0)
         fig = plt.figure()
         fig.canvas.set_window_title('Filtered evanescent waves')
         plt.plot(k0*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
@@ -565,8 +733,6 @@ class DecompositionEv(object):
         else:
             p=plt.scatter(self.kx_f, self.ky_f, c = color_par)
         fig.colorbar(p)
-        # if plot_kxky:
-        #     plt.scatter(self.kx_f, self.ky_f, c = 'grey', alpha = 0.4)
         plt.xlabel(r'$k_x$ rad/m')
         plt.ylabel(r'$k_y$ rad/m')
         plt.title("|P(k)| (evanescent) at {0:.1f} Hz (k = {1:.2f} rad/m) {2}".format(self.controls.freq[id_f],k0, name))
@@ -576,9 +742,15 @@ class DecompositionEv(object):
             plt.savefig(fname = filename, format='png')
 
     def save(self, filename = 'array_zest', path = '/home/eric/dev/insitu/data/zs_recovery/'):
-        '''
-        This method is used to save the simulation object
-        '''
+        """ To save the decomposition object as pickle
+
+        Parameters
+        ----------
+        filename : str
+            name of the file
+        pathname : str
+            path of folder to save the file
+        """
         filename = filename# + '_Lx_' + str(self.Lx) + 'm_Ly_' + str(self.Ly) + 'm'
         self.path_filename = path + filename + '.pkl'
         f = open(self.path_filename, 'wb')
@@ -586,10 +758,18 @@ class DecompositionEv(object):
         f.close()
 
     def load(self, filename = 'array_zest', path = '/home/eric/dev/insitu/data/zs_recovery/'):
-        '''
-        This method is used to load a simulation object. You build a empty object
-        of the class and load a saved one. It will overwrite the empty one.
-        '''
+        """ To load the decomposition object as pickle
+
+        You can instantiate an empty object of the class and load a saved one.
+        It will overwrite the empty object.
+
+        Parameters
+        ----------
+        filename : str
+            name of the file
+        pathname : str
+            path of folder to save the file
+        """
         lpath_filename = path + filename + '.pkl'
         f = open(lpath_filename, 'rb')
         tmp_dict = pickle.load(f)
@@ -597,30 +777,25 @@ class DecompositionEv(object):
         self.__dict__.update(tmp_dict)
 
 def form_kz(k0, kx_f, ky_f, plot=False):
-    '''
-    This auxiliary function will exclude all propagating wave numbers from the evanescent wave numbers.
-    This is necessary because we are creating an arbitrary number of wave numbers (to be used in the decomposition).
-    '''
+    """ Form kz according to kx and ky
+
+    Parameters
+    ----------
+    kx_f : numpy 1darray
+        contains all the kx on the search grid
+    ky_f : numpy 1darray
+        contains all the ky on the search grid
+    plot : bool
+        whether to plot the grid or not (for checking)
+    """
     ke_norm = (kx_f**2 + ky_f**2)**0.5
     kz_f = np.zeros(len(kx_f), dtype = complex)
     # propagating part
     idp = np.where(ke_norm <= k0)[0]
-    # kx_p = kx_f[idp]
-    # ky_p = ky_f[idp]
     kz_f[idp] = np.sqrt(k0**2 - (kx_f[idp]**2+ky_f[idp]**2))
-    # kx_p = kx_f[ke_norm <= k0]
-    # ky_p = ky_f[ke_norm <= k0]
-    # kz_p = np.sqrt(k0**2 - (kx_p**2+ky_p**2))
     # evanescent part
     ide = np.where(ke_norm > k0)[0]
     kz_f[ide] = -1j*np.sqrt(kx_f[ide]**2+ky_f[ide]**2-k0**2)
-
-    # kx_e = kx_f[ke_norm > k0]
-    # ky_e = ky_f[ke_norm > k0]
-    # kz_e = -1j*np.sqrt(kx_e**2+ky_e**2-k0**2)
-    # # whole thing
-    # kz_f = np.concatenate((kz_p, kz_e))
-    # # n_evan = len(kx_e_filtered)
     if plot:
         fig = plt.figure()
         fig.canvas.set_window_title('Scatter plot of wave-number directions (half)')
@@ -632,20 +807,22 @@ def form_kz(k0, kx_f, ky_f, plot=False):
         ax.set_zlabel(r'$k_z$ [rad/m]')
         plt.title('Wave number directions (half)')
         plt.tight_layout()
-        # plt.scatter(kx_f, ky_f, kz_f, 'ob')
-        # plt.xlabel(r'$k_x$ [rad/m]')
-        # plt.ylabel(r'$k_y$ [rad/m]')
-        # plt.zlabel(r'$k_z$ [rad/m]')
         plt.show()
     return kz_f
 
 def loss_fn(H, pm, x):
+    """ Loss function for cvx (residual)
+    """
     return cp.pnorm(cp.matmul(H, x) - pm, p=2)**2
 
 def regularizer(x):
+    """ l2 norm of the result (for cvx)
+    """
     return cp.pnorm(x, p=2)**2
 
 def objective_fn(H, pm, x, lambd):
+    """ Objective function for cvx
+    """
     return loss_fn(H, pm, x) + lambd * regularizer(x)
 
 

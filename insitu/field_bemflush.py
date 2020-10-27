@@ -9,13 +9,14 @@ import scipy as spy
 import time
 import sys
 from progress.bar import Bar, IncrementalBar, FillingCirclesBar, ChargingBar
+from tqdm import tqdm
 import pickle
 import time
 
 # import impedance-py/C++ module and other stuff
 import insitu_cpp
 
-from controlsair import plot_spk
+from insitu.controlsair import plot_spk
 
 class BEMFlush(object):
     """ Calculates the sound field above a finite locally reactive squared sample.
@@ -49,6 +50,10 @@ class BEMFlush(object):
         Each element of the list has a (N_rec x N_freq) matrix for a given source.
         Each line of the matrix is a spectrum of a sound pressure for a receiver.
         Each column is a set of sound pressure at all receivers for a frequency.
+    ux_s - list of receiver velocity spectrums (x-dir) for each source.
+        Each element of the list has a (N_rec x N_freq) matrix for a given source.
+    uy_s - list of receiver velocity spectrums (y-dir) for each source.
+        Each element of the list has a (N_rec x N_freq) matrix for a given source.
     uz_s - list of receiver velocity spectrums (z-dir) for each source.
         Each element of the list has a (N_rec x N_freq) matrix for a given source.
 
@@ -70,7 +75,7 @@ class BEMFlush(object):
         Calculates the total sound pressure spectrum at the receivers coordinates.
 
     uz_fps()
-        Calculates the total particle velocity spectrum (z-dir) at the receivers coordinates.
+        Calculates the total particle velocity spectrum at the receivers coordinates.
 
     add_noise(snr = 30, uncorr = False)
         Add gaussian noise to the simulated data.
@@ -85,6 +90,9 @@ class BEMFlush(object):
         Plot the spectrum of the particle velocity in zdir for all receivers
 
     plot_colormap(freq = 1000):
+        Plots a color map of the pressure field.
+
+    plot_intensity(self, freq = 1000)
         Plots a color map of the pressure field.
 
     save(filename = 'my_bemflush', path = '/home/eric/dev/insitu/data/bem_simulations/')
@@ -123,6 +131,8 @@ class BEMFlush(object):
         except:
             self.beta = []
         self.pres_s = []
+        self.ux_s = []
+        self.uy_s = []
         self.uz_s = []
         # Load Gauss points and weights
         with open('/home/eric/dev/insitu/data/' + 'gauss_data' + '.pkl', 'rb') as input:
@@ -208,8 +218,10 @@ class BEMFlush(object):
         #     self.node_x, self.node_y, self.Nzeta)
         # Set a time count for performance check
         tinit = time.time()
-        bar = ChargingBar('Calculating the surface pressure for each frequency step (method 1)',
-            max=len(self.controls.k0), suffix='%(percent)d%%')
+        # bar = ChargingBar('Calculating the surface pressure for each frequency step (method 1)',
+        #     max=len(self.controls.k0), suffix='%(percent)d%%')
+        bar = tqdm(total = len(self.controls.k0),
+            desc = 'Calculating the surface pressure for each frequency step (method 1)')
         for jf, k0 in enumerate(self.controls.k0):
             # fakebeta = np.array(0.02+1j*0.2)
             # Assemble the bem matrix (c++)
@@ -227,8 +239,10 @@ class BEMFlush(object):
             # print("Solving system of eqs for freq: {} Hz.".format(self.controls.freq[jf]))
             self.p_surface[:, jf] = np.linalg.solve(c_mtx + gij, p_unpt)
             # print('Assembling the matrix for frequency {} Hz'.format(self.controls.freq[jf]))
-            bar.next()
-        bar.finish()
+            bar.update(1)
+        bar.close()
+        #     bar.next()
+        # bar.finish()
         tend = time.time()
         print("elapsed time: {}".format(tend-tinit))
 
@@ -248,16 +262,20 @@ class BEMFlush(object):
         el_3Dcoord[:,0:2] = self.el_center
         # Set a time count for performance check
         tinit = time.time()
-        bar = ChargingBar('Assembling BEM matrix for each frequency step',
-            max=len(self.controls.k0), suffix='%(percent)d%%')
+        # bar = ChargingBar('Assembling BEM matrix for each frequency step',
+        #     max=len(self.controls.k0), suffix='%(percent)d%%')
+        bar = tqdm(total = len(self.controls.k0),
+            desc = 'Assembling BEM matrix for each frequency step')
         self.gij_f = []
         # print(dir(insitu_cpp))
         for jf, k0 in enumerate(self.controls.k0):
             gij = insitu_cpp._bemflush_mtx(self.el_center, self.node_x, self.node_y,
             self.Nzeta, self.Nweights.T, k0, self.beta[jf])
             self.gij_f.append(gij)
-            bar.next()
-        bar.finish()
+            bar.update(1)
+        bar.close()
+        #     bar.next()
+        # bar.finish()
         tend = time.time()
         print("elapsed time: {}".format(tend-tinit))
 
@@ -286,8 +304,10 @@ class BEMFlush(object):
             el_3Dcoord
         r_unpt = np.linalg.norm(rsel, axis = 1)
         tinit = time.time()
-        bar = ChargingBar('Calculating the surface pressure for each frequency step (method 2)',
-            max=len(self.controls.k0), suffix='%(percent)d%%')
+        # bar = ChargingBar('Calculating the surface pressure for each frequency step (method 2)',
+        #     max=len(self.controls.k0), suffix='%(percent)d%%')
+        bar = tqdm(total = len(self.controls.k0),
+            desc = 'Calculating the surface pressure for each frequency step (method 2)')
         for jf, k0 in enumerate(self.controls.k0):
             gij = self.gij_f[jf]
             # Calculate the unperturbed pressure
@@ -295,8 +315,10 @@ class BEMFlush(object):
             # Solve system of equations
             # print("Solving system of eqs for freq: {} Hz.".format(self.controls.freq[jf]))
             self.p_surface[:, jf] = np.linalg.solve(c_mtx + gij, p_unpt)
-            bar.next()
-        bar.finish()
+            bar.update(1)
+        bar.close()
+        #     bar.next()
+        # bar.finish()
         tend = time.time()
         print("elapsed time: {}".format(tend-tinit))
 
@@ -320,51 +342,96 @@ class BEMFlush(object):
                 r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
                 # print('Calculate p_scat and p_fp for rec: {}'.format(r_coord))
                 print('Calculate sound pressure for source {} at ({}) and receiver {} at ({})'.format(js+1, s_coord, jrec+1, r_coord))
-                bar = ChargingBar('Processing sound pressure at field point', max=len(self.controls.k0), suffix='%(percent)d%%')
+                # bar = ChargingBar('Processing sound pressure at field point', max=len(self.controls.k0), suffix='%(percent)d%%')
+                bar = tqdm(total = len(self.controls.k0),
+                    desc = 'Processing sound pressure at field point')
                 for jf, k0 in enumerate(self.controls.k0):
                     # print('the ps passed is: {}'.format(self.p_surface[:,jf]))
                     # fakebeta = np.array(0.02+1j*0.2)
                     # r_coord = np.reshape(np.array([0, 0, 0.01], dtype = np.float32), (1,3))
                     p_scat = insitu_cpp._bemflush_pscat(r_coord, self.node_x, self.node_y,
                         self.Nzeta, self.Nweights.T, k0, self.beta[jf], self.p_surface[:,jf])
-                    # print('p_scat for freq {} Hz is: {}'.format(self.controls.freq[jf], p_scat))
                     pres_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1) +\
                         (np.exp(-1j * k0 * r2) / r2) + p_scat
-                    bar.next()
-                bar.finish()
+                    bar.update(1)
+                bar.close()
+                #     bar.next()
+                # bar.finish()
                     # print('p_fp for freq {} Hz is: {}'.format(self.controls.freq[jf], pres_rec[jrec, jf]))
             self.pres_s.append(pres_rec)
 
-    def uz_fps(self,):
-        """ Calculates the total particle velocity spectrum (z-dir) at the receivers coordinates.
+    def uz_fps(self, compute_ux = False, compute_uy = False):
+        """ Calculates the total particle velocity spectrum at the receivers coordinates.
 
         The particle velocity spectrum is calculatef for all receivers (attribute of class).
         The quantity calculated is the total particle velocity = incident + scattered.
+        The z-direction of particle velocity is always computed. x and y directions are optional.
+
+        Parameters
+        ----------
+        compute_ux : bool
+            Whether to compute x component of particle velocity or not (Default is False)
+        compute_uy : bool
+            Whether to compute y component of particle velocity or not (Default is False)
         """
         # Loop the receivers
+        if compute_ux and compute_uy:
+            message = 'Processing particle velocity (x,y,z dir at field point)'
+        elif compute_ux:
+            message = 'Processing particle velocity (x,z dir at field point)'
+        elif compute_uy:
+            message = 'Processing particle velocity (y,z dir at field point)'
+        else:
+            message = 'Processing particle velocity (z dir at field point)'
+
         for js, s_coord in enumerate(self.sources.coord):
             hs = s_coord[2] # source height
             uz_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
+            if compute_ux:
+                ux_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
+            if compute_uy:
+                uy_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
             for jrec, r_coord in enumerate(self.receivers.coord):
                 r = ((s_coord[0] - r_coord[0])**2.0 + (s_coord[1] - r_coord[1])**2.0)**0.5 # horizontal distance source-receiver
                 zr = r_coord[2]  # receiver height
                 r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5
                 r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
                 print('Calculate particle vel. (z-dir) for source {} and receiver {}'.format(js+1, jrec+1))
-                bar = ChargingBar('Processing particle velocity z-dir',
-                    max=len(self.controls.k0), suffix='%(percent)d%%')
+                # bar = ChargingBar('Processing particle velocity z-dir',
+                #     max=len(self.controls.k0), suffix='%(percent)d%%')
+                bar = tqdm(total = len(self.controls.k0),
+                    desc = message)
                 for jf, k0 in enumerate(self.controls.k0):
                     uz_scat = insitu_cpp._bemflush_uzscat(r_coord, self.node_x, self.node_y,
                         self.Nzeta, self.Nweights.T, k0, self.beta[jf], self.p_surface[:,jf])
+                    # print(uz_scat)
                     # print('p_scat for freq {} Hz is: {}'.format(self.controls.freq[jf], p_scat))
                     uz_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1)*\
                         (1 + (1 / (1j * k0 * r1)))* ((hs - zr)/r1)-\
                         (np.exp(-1j * k0 * r2) / r2) *\
-                        (1 + (1 / (1j * k0 * r2))) * ((hs + zr)/r2) - uz_scat
+                        (1 + (1 / (1j * k0 * r2))) * ((hs + zr)/r2) + uz_scat
+                    if compute_ux:
+                        ux_scat = insitu_cpp._bemflush_uxscat(r_coord, self.node_x, self.node_y,
+                            self.Nzeta, self.Nweights.T, k0, self.beta[jf], self.p_surface[:,jf])
+                        ux_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1)*\
+                            (1 + (1 / (1j * k0 * r1)))* (-r_coord[0]/r1)-\
+                            (np.exp(-1j * k0 * r2) / r2) *\
+                            (1 + (1 / (1j * k0 * r2))) * (-r_coord[0]/r2) + ux_scat
+                    if compute_uy:
+                        uy_scat = insitu_cpp._bemflush_uyscat(r_coord, self.node_x, self.node_y,
+                            self.Nzeta, self.Nweights.T, k0, self.beta[jf], self.p_surface[:,jf])
+                        uy_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1)*\
+                            (1 + (1 / (1j * k0 * r1)))* (-r_coord[1]/r1)-\
+                            (np.exp(-1j * k0 * r2) / r2) *\
+                            (1 + (1 / (1j * k0 * r2))) * (-r_coord[1]/r2) + uy_scat
                     # Progress bar stuff
-                    bar.next()
-                bar.finish()
+                    bar.update(1)
+                bar.close()
             self.uz_s.append(uz_rec)
+            if compute_ux:
+                self.ux_s.append(ux_rec)
+            if compute_uy:
+                self.uy_s.append(uy_rec)
 
     def add_noise(self, snr = 30, uncorr = False):
         """ Add gaussian noise to the simulated data.
@@ -536,6 +603,59 @@ class BEMFlush(object):
         fig.colorbar(p)
         plt.xlabel(r'$x$ [m]')
         plt.ylabel(r'$z$ [m]')
+
+    def plot_intensity(self, freq = 1000):
+        """Plots a color map of the pressure field.
+
+        Parameters
+        ----------
+        freq : float
+            desired frequency of the color map. If the frequency does not exist
+            on the simulation, then it will choose the frequency just before the target.
+        """
+        id_f = np.where(self.controls.freq <= freq)
+        id_f = id_f[0][-1]
+        # Intensities
+        Ix = 0.5*np.real(self.pres_s[0][:,id_f] *\
+            np.conjugate(self.ux_s[0][:,id_f]))
+        Iy = 0.5*np.real(self.pres_s[0][:,id_f] *\
+            np.conjugate(self.uy_s[0][:,id_f]))
+        Iz = 0.5*np.real(self.pres_s[0][:,id_f] *\
+            np.conjugate(self.uz_s[0][:,id_f]))
+        I = np.sqrt(Ix**2+Iy**2+Iz**2)
+        # # Figure
+        fig = plt.figure() #figsize=(8, 8)
+        fig.canvas.set_window_title('Intensity distribution map')
+        cmap = 'viridis'
+        plt.title('|I|')
+        # if streamlines:
+        #     q = plt.streamplot(self.receivers.coord[:,0], self.receivers.coord[:,2],
+        #         Ix/I, Iz/I, color=I, linewidth=2, cmap=cmap)
+        #     fig.colorbar(q.lines)
+        # else:
+        q = plt.quiver(self.receivers.coord[:,0], self.receivers.coord[:,2],
+            Ix/I, Iz/I, I, cmap = cmap)
+        fig.colorbar(q)
+        plt.xlabel(r'$x$ [m]')
+        plt.ylabel(r'$z$ [m]')
+        # Figure
+        # fig = plt.figure() #figsize=(8, 8)
+        # ax = fig.gca(projection='3d')
+        # cmap = 'seismic'
+        # # fig = plt.figure()
+        # # fig.canvas.set_window_title('Intensity distribution map')
+        # plt.title('|I|')
+        # q = ax.quiver(self.receivers.coord[:,0], self.receivers.coord[:,1],
+        #     self.receivers.coord[:,2], Ix, Iy, Iz,
+        #     cmap = cmap, length=0.01, normalize=True)
+        # c = I
+        # c = getattr(plt.cm, cmap)(c)
+        # # fig.colorbar(p)
+        # fig.colorbar(q)
+        # q.set_edgecolor(c)
+        # q.set_facecolor(c)
+        # plt.xlabel(r'$x$ [m]')
+        # plt.ylabel(r'$z$ [m]')
 
     def save(self, filename = 'my_bemflush', path = '/home/eric/dev/insitu/data/bem_simulations/'):
         """ To save the simulation object as pickle
