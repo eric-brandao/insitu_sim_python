@@ -4,6 +4,5 @@
 build
 eigen
 pybind11
-*.so
 data
 
