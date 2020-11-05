@@ -125,6 +125,7 @@ class DecompositionEv2(object):
     load(filename = 'my_qterm', path = '/home/eric/dev/insitu/data/bem_simulations/')
         Load a simulation object.
     """
+
     def __init__(self, p_mtx = None, controls = None, material = None, receivers = None):
         """
 
@@ -273,7 +274,7 @@ class DecompositionEv2(object):
             bar.update(1)
         bar.close()
 
-    def reconstruct_pu(self, receivers):
+    def reconstruct_pu(self, receivers, compute_uxy = True):
         """ Reconstruct the sound pressure and particle velocity at a receiver object
 
         Reconstruct the pressure and particle velocity at a set of desired field points.
@@ -285,10 +286,20 @@ class DecompositionEv2(object):
         (iii) - concatenate the filterd evanescent waves grid with the propagating grid
         created earlier, and; (iv) - form the incident and reflected wave number grids;
         (v) - form the new sensing matrix; (vi) - compute p and u.
+
+        Parameters
+        ----------
+        receivers : object (Receiver)
+            contains a set of field points at which to reconstruct
+        compute_uxy : bool
+            Whether to compute x and y components of particle velocity or not (Default is False)
         """
         self.fpts = receivers
         self.p_recon = np.zeros((receivers.coord.shape[0], len(self.controls.k0)), dtype=complex)
         self.uz_recon = np.zeros((self.fpts.coord.shape[0], len(self.controls.k0)), dtype=complex)
+        if compute_uxy:
+            self.ux_recon = np.zeros((self.fpts.coord.shape[0], len(self.controls.k0)), dtype=complex)
+            self.uy_recon = np.zeros((self.fpts.coord.shape[0], len(self.controls.k0)), dtype=complex)
         # Generate kx and ky for evanescent wave grid
         kx_grid, ky_grid = np.meshgrid(self.kx, self.ky)
         kx_e = kx_grid.flatten()
@@ -319,6 +330,11 @@ class DecompositionEv2(object):
             self.p_recon[:,jf] = np.squeeze(np.asarray(h_mtx @ self.pk[jf].T))
             self.uz_recon[:,jf] = np.squeeze(np.asarray(-((np.divide(np.concatenate((k_vec_inc[:,2], k_vec_ref[:,2])), k0)) *\
                 h_mtx) @ self.pk[jf].T))
+            if compute_uxy:
+                self.ux_recon[:,jf] = np.squeeze(np.asarray(((np.divide(np.concatenate(
+                    (k_vec_inc[:,0], k_vec_ref[:,0])), k0)) * h_mtx) @ self.pk[jf].T))
+                self.uy_recon[:,jf] = np.squeeze(np.asarray(((np.divide(np.concatenate(
+                    (k_vec_inc[:,1], k_vec_ref[:,1])), k0)) * h_mtx) @ self.pk[jf].T))
             bar.update(1)
         bar.close()
 
@@ -333,6 +349,10 @@ class DecompositionEv2(object):
         total_pres : bool
             Whether to plot the total sound pressure (Default = True) or the reflected only.
             In the later case, we use the reflectd grid only
+
+        Returns
+        ---------
+        plt : Figure object
         """
         id_f = np.where(self.controls.freq <= freq)
         id_f = id_f[0][-1]
@@ -355,6 +375,49 @@ class DecompositionEv2(object):
         fig.colorbar(p)
         plt.xlabel(r'$x$ [m]')
         plt.ylabel(r'$z$ [m]')
+        return plt
+
+    def plot_intensity(self, freq = 1000):
+        """Plots a vector map of the intensity field.
+
+        Parameters
+        ----------
+        freq : float
+            desired frequency of the color map. If the frequency does not exist
+            on the simulation, then it will choose the frequency just before the target.
+
+        Returns
+        ---------
+        plt : Figure object
+        """
+        id_f = np.where(self.controls.freq <= freq)
+        id_f = id_f[0][-1]
+        c0 = self.controls.c0
+        rho0 = self.material.rho0
+        # Intensities
+        Ix = 0.5*np.real(self.p_recon[:,id_f] *\
+            np.conjugate(self.ux_recon[:,id_f]))
+        Iy = 0.5*np.real(self.p_recon[:,id_f] *\
+            np.conjugate(self.uy_recon[:,id_f]))
+        Iz = 0.5*np.real(self.p_recon[:,id_f] *\
+            np.conjugate(self.uz_recon[:,id_f]))
+        I = np.sqrt(Ix**2+Iy**2+Iz**2)
+        # # Figure
+        fig = plt.figure() #figsize=(8, 8)
+        fig.canvas.set_window_title('Recon. Intensity distribution map')
+        cmap = 'viridis'
+        plt.title('Reconstructed |I|')
+        # if streamlines:
+        #     q = plt.streamplot(self.receivers.coord[:,0], self.receivers.coord[:,2],
+        #         Ix/I, Iz/I, color=I, linewidth=2, cmap=cmap)
+        #     fig.colorbar(q.lines)
+        # else:
+        q = plt.quiver(self.fpts.coord[:,0], self.fpts.coord[:,2],
+            Ix/I, Iz/I, I, cmap = cmap, width = 0.010)
+        fig.colorbar(q)
+        plt.xlabel(r'$x$ [m]')
+        plt.ylabel(r'$z$ [m]')
+        return plt
 
     def plot_pkmap_v2(self, freq = 1000, db = False, dinrange = 20,
         save = False, name='name', color_code = 'viridis'):

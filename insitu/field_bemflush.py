@@ -15,8 +15,10 @@ import time
 
 # import impedance-py/C++ module and other stuff
 import insitu_cpp
-
-from insitu.controlsair import plot_spk
+try:
+    from insitu.controlsair import plot_spk
+except:
+    from controlsair import plot_spk
 
 class BEMFlush(object):
     """ Calculates the sound field above a finite locally reactive squared sample.
@@ -480,7 +482,7 @@ class BEMFlush(object):
         #     (np.random.randn(signal.shape[0], signal.shape[1]) + 1j*np.random.randn(signal.shape[0], signal.shape[1]))
         self.pres_s[0] = signal + noise
         if signal_u.any() != 0:
-            print('Adding noise to particle velocity')
+            # print('Adding noise to particle velocity')
             noise_u = np.random.normal(0, np.sqrt(noisePower_lin_u), size = signal_u.shape) +\
                 1j*np.random.normal(0, np.sqrt(noisePower_lin_u), size = signal_u.shape)
             self.uz_s[0] = signal_u + noise_u
@@ -582,6 +584,10 @@ class BEMFlush(object):
             Whether to plot the total sound pressure (Default = True) or the reflected only.
             In the later case, we subtract the incident field Green's function from the total
             sound field.
+
+        Returns
+        ---------
+        plt : Figure object
         """
         id_f = np.where(self.controls.freq <= freq)
         id_f = id_f[0][-1]
@@ -598,20 +604,25 @@ class BEMFlush(object):
         fig = plt.figure() #figsize=(8, 8)
         # fig = plt.figure()
         fig.canvas.set_window_title('pressure color map')
-        plt.title('|P(f)|')
+        plt.title('Reference |P(f)| (BEM sim)')
         p = plt.tricontourf(triang, color_par, np.linspace(-15, 0, 15), cmap = 'seismic')
         fig.colorbar(p)
         plt.xlabel(r'$x$ [m]')
         plt.ylabel(r'$z$ [m]')
+        return plt
 
     def plot_intensity(self, freq = 1000):
-        """Plots a color map of the pressure field.
+        """Plots a vector map of the intensity field.
 
         Parameters
         ----------
         freq : float
             desired frequency of the color map. If the frequency does not exist
             on the simulation, then it will choose the frequency just before the target.
+
+        Returns
+        ---------
+        plt : Figure object
         """
         id_f = np.where(self.controls.freq <= freq)
         id_f = id_f[0][-1]
@@ -627,17 +638,18 @@ class BEMFlush(object):
         fig = plt.figure() #figsize=(8, 8)
         fig.canvas.set_window_title('Intensity distribution map')
         cmap = 'viridis'
-        plt.title('|I|')
+        plt.title('Reference Intensity (BEM sim)')
         # if streamlines:
         #     q = plt.streamplot(self.receivers.coord[:,0], self.receivers.coord[:,2],
         #         Ix/I, Iz/I, color=I, linewidth=2, cmap=cmap)
         #     fig.colorbar(q.lines)
         # else:
         q = plt.quiver(self.receivers.coord[:,0], self.receivers.coord[:,2],
-            Ix/I, Iz/I, I, cmap = cmap)
+            Ix/I, Iz/I, I, cmap = cmap, width = 0.010)
         fig.colorbar(q)
         plt.xlabel(r'$x$ [m]')
         plt.ylabel(r'$z$ [m]')
+        return plt
         # Figure
         # fig = plt.figure() #figsize=(8, 8)
         # ax = fig.gca(projection='3d')

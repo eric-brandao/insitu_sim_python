@@ -342,6 +342,20 @@ def cart2sph(x,y,z):
     r = np.sqrt(x**2 + y**2 + z**2)
     return r, theta, phi
 
+def plot_material(fig_obj, Lx, Ly, xlim):
+    """
+    Plots the material in a given figure scene
+    """
+    # sample
+    fig_obj.plot(np.linspace(-Lx/2, Lx/2, 100), np.zeros(100),
+        color = 'grey', linewidth = 3.0)
+    # baffle
+    fig_obj.plot(np.linspace(-xlim, -Lx/2, 500), np.zeros(500),
+        color = 'k', linewidth = 3.0)
+    fig_obj.plot(np.linspace(Lx/2, xlim, 500), np.zeros(500),
+        color = 'k', linewidth = 3.0)
+    return fig_obj
+
 def update_progress(progress):
     barLength = 20 # Modify this to change the length of the progress bar
     status = ""
