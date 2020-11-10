@@ -6,7 +6,7 @@ import matplotlib.tri as tri
 # import scipy.integrate as integrate
 # import scipy as spy
 from scipy.interpolate import griddata
-# from sklearn.linear_model import Ridge
+from sklearn.linear_model import Ridge
 import time
 from tqdm import tqdm
 #from tqdm.autonotebook import tqdm
@@ -179,7 +179,8 @@ class DecompositionEv2(object):
             ax = fig.gca(projection='3d')
             p=ax.scatter(self.pdir[:,0], self.pdir[:,1], self.pdir[:,2])
 
-    def pk_tikhonov_ev_ig(self, f_ref = 1.0, f_inc = 1.0, factor = 2.5, z0 = 1.5, plot_l = False):
+    def pk_tikhonov_ev_ig(self, f_ref = 1.0, f_inc = 1.0, factor = 2.5, z0 = 1.5,
+        plot_l = False, method = 'direct'):
         """ Wave number spectrum estimation using Tikhonov inversion
 
         Estimate the wave number spectrum using regularized Tikhonov inversion.
@@ -268,8 +269,17 @@ class DecompositionEv2(object):
             # Find the optimal regularization parameter.
             lambd_value = l_cuve(u, sig, pm, plotit=plot_l)
             # Matrix inversion
-            Hm = np.matrix(h_mtx)
-            x = Hm.getH() @ np.linalg.inv(Hm @ Hm.getH() + (lambd_value**2)*np.identity(len(pm))) @ pm
+            if method == 'Ridge':
+                # Form a real H2 matrix and p2 measurement
+                H2 = np.vstack((np.hstack((h_mtx.real, -h_mtx.imag)),
+                    np.hstack((h_mtx.imag, h_mtx.real))))
+                p2 = np.vstack((pm.real,pm.imag)).flatten()
+                regressor = Ridge(alpha=lambd_value, fit_intercept = False, solver = 'svd')
+                x2 = regressor.fit(H2, p2).coef_
+                x = x2[:h_mtx.shape[1]]+1j*x2[h_mtx.shape[1]:]
+            else:
+                Hm = np.matrix(h_mtx)
+                x = Hm.getH() @ np.linalg.inv(Hm @ Hm.getH() + (lambd_value**2)*np.identity(len(pm))) @ pm
             self.pk.append(x)
             bar.update(1)
         bar.close()

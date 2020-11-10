@@ -437,7 +437,9 @@ class DecompositionEv(object):
                 vmin=-dinrange, vmax=0, s=int(dinrange))
             p=ax.scatter(kx, ky, -kz-self.controls.k0[id_f]/8, c = color_par_r,
                 vmin=-dinrange, vmax=0, s=int(dinrange))
-            fig.colorbar(p)
+            # fig.colorbar(p)
+        p=ax.scatter(kx, ky, -kz-self.controls.k0[id_f]/8)
+        p=ax.scatter(kx, ky, kz+self.controls.k0[id_f]/8)
         ax.set_xlabel(r'$k_x$ [rad/m]')
         ax.set_ylabel(r'$k_y$ [rad/m]')
         ax.set_zlabel(r'$k_z$ [rad/m]')

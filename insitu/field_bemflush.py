@@ -14,7 +14,10 @@ import pickle
 import time
 
 # import impedance-py/C++ module and other stuff
-import insitu_cpp
+try:
+    import insitu_cpp
+except:
+    print("I could not find insitu_cpp. You should be able to load BEM files and add noise.")
 try:
     from insitu.controlsair import plot_spk
 except:
@@ -558,7 +561,7 @@ class BEMFlush(object):
         ax.set_xticks((-1, -0.5, 0.0, 0.5, 1.0))
         ax.set_yticks((-1, -0.5, 0.0, 0.5, 1.0))
 
-        ax.view_init(elev=10, azim=0)
+        ax.view_init(elev=10, azim=45)
         # ax.invert_zaxis()
         plt.show() # show plot
 
