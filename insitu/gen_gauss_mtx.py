@@ -34,10 +34,10 @@ Nweigths = np.reshape(Nweigths, (1,zeta.size**2))
 print(Nweigths)
 print(Nweigths.shape)
 
-path_filename = '/home/eric/dev/insitu/data/' + 'gauss_data' + '.pkl'
-with open(path_filename, 'wb') as output:
-    pickle.dump(Nzeta, output, pickle.HIGHEST_PROTOCOL)
-    pickle.dump(Nweigths, output, pickle.HIGHEST_PROTOCOL)
+# path_filename = '/home/eric/dev/insitu/data/' + 'gauss_data' + '.pkl'
+# with open(path_filename, 'wb') as output:
+#     pickle.dump(Nzeta, output, pickle.HIGHEST_PROTOCOL)
+#     pickle.dump(Nweigths, output, pickle.HIGHEST_PROTOCOL)
 
 # f = open(path_filename, 'wb')
 # pickle.dump(self.__dict__, f, 2)
