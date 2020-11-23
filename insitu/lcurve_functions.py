@@ -1,3 +1,19 @@
+""" L-curve regularization parameter finding.
+
+This set of functions are used to find an optimal regularization parameter
+for a under determined system of equations. The optimal parameter is found
+according to the L-curve criteria, described in
+
+Discrete Inverse Problems - insight and algorithms, Per Christian Hansen,
+Technical University of Denmark, DTU compute, 2010
+
+The code was adapted from http://www.imm.dtu.dk/~pcha/Regutools/ by
+Per Christian Hansen, DTU Compute, October 27, 2010 - originally implemented in Matlab
+
+This version is only for the under determined case.
+"""
+
+
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.io as scio
@@ -6,9 +22,23 @@ from scipy import optimize
 import warnings
 
 def curvature(lambd, sig, beta, xi):
-    '''
-    computes the NEGATIVE of the curvature. Adapted from Per Christian Hansen, DTU Compute, October 27, 2010.
-    '''
+    """ computes the NEGATIVE of the curvature.
+
+    Parameters
+    ----------
+        lambd : float
+            regularization parameter
+        sig : numpy 1darray
+            singular values
+        beta: numpy 1darray
+            conj(u) @ bm
+        xi : numpy 1darray
+            beta / sig
+    Returns
+    -------
+        curv : numpy 1darray
+            negative curvature
+    """
     # Initialization.
     phi = np.zeros(lambd.shape)
     dphi = np.zeros(lambd.shape)
@@ -56,24 +86,30 @@ def curvature(lambd, sig, beta, xi):
     return curv
 
 def l_corner(rho,eta,reg_param,u,sig,bm):
-    '''
-    computes the corner of the L-curve.
-    Inputs:
-        rho, eta, reg_param - computed in l_curve function
-        u left side matrix computed from svd (size: Nm x Nm) - Nm is the number of measurement points
-        sig is the singular value vector of A
-        bm is the measured results
-    A is of Nm x Nu, where Nm are the number of measurements and Nu the number of unknowns
-    Adapted from Per Christian Hansen, DTU Compute, October 27, 2010.
-    '''
-    # print('checking rho {}, shape {}'.format(rho[5], rho.shape))
-    # print('checking eta {}, shape {}'.format(eta[5], eta.shape))
-    # print('checking u {}, shape {}'.format(u[5,5], u.shape))
-    # print('checking sig {}, shape {}'.format(sig[5], sig.shape))
-    # print('checking reg_param {}, shape {}'.format(reg_param[5], reg_param.shape))
-    # print('checking bm {}, shape {}'.format(bm[5], bm.shape))
-    # Set threshold for skipping very small singular values in the
-    # analysis of a discrete L-curve.
+    """ Computes the corner of the L-curve.
+
+    Uses the function "curvature"
+
+    Parameters
+    ----------
+        rho : numpy 1darray
+            computed in l_curve function (residual norm) - related to curvature
+        eta : numpy 1darray
+            computed in l_curve function (solution norm) - related to curvature
+        reg_param : numpy 1darray
+            computed in l_curve function
+        u : numpy ndarray
+            left singular vectors
+        sig : numpy 1darray
+            singular values
+        bm: numpy 1darray
+            your measurement vector (size: Nm x 1)
+    Returns
+    -------
+        reg_c : float
+            optimal regularization parameter
+    """
+    # Set threshold for skipping very small singular values in the analysis of a discrete L-curve.
     s_thr = np.finfo(float).eps # Neglect singular values less than s_thr.
     # Set default parameters for treatment of discrete L-curve.
     deg   = 2  # Degree of local smooting polynomial.
@@ -84,31 +120,22 @@ def l_corner(rho,eta,reg_param,u,sig,bm):
         print('I will fail. Too few data points for L-curve analysis')
     Nm, Nu = u.shape
     p = sig.shape
-    # up here is fine
-    # if (nargout > 0), locate = 1; else locate = 0; end
-    beta = (np.conj(u)) @ bm #FixMe - This operation is doing something weird
-    # print(beta[5])
+    beta = (np.conj(u)) @ bm 
     beta = np.reshape(beta[0:int(p[0])], beta.shape[0])
-    
-    b0 = (bm - (beta.T @ u).T)#u @ beta
-    # s = sig
+    b0 = (bm - (beta.T @ u).T)
     xi = np.divide(beta[0:int(p[0])], sig)
     # Call curvature calculator
     curv = curvature(reg_param, sig, beta, xi) # ok
     # Minimize 1
-    # reg_c = optimize.fmin(curvature, 0.0, args = (sig, beta, xi), full_output=False, disp=False)
-    # Minimize 1
     curv_id = np.argmin(curv)
-    # print('curv_id {}'.format(curv_id))
     x1 = reg_param[int(np.amin([curv_id+1, len(curv)-1]))]
     x2 = reg_param[int(np.amax([curv_id-1, 0]))]
     # x1 = reg_param[int(np.amin([curv_id+1, len(curv)]))]
     # x2 = reg_param[int(np.amax([curv_id-1, 0]))]
-    # print('x1 is {} and x2 is {}'.format(x1,x2))
+    # Minimize 2 - set tolerance first (new versions of scipy need that)
     tolerance = np.amin([x1/50, x2/50, 1e-5])
     reg_c = optimize.fminbound(curvature, x1, x2, args = (sig, beta, xi), xtol=tolerance,
         full_output=False, disp=False)
-    # reg_c = optimize.brentq(curvature, x1, x2, args = (sig, beta, xi), full_output=False, disp=False)
     kappa_max = - curvature(reg_c, sig, beta, xi) # Maximum curvature.
     if kappa_max < 0:
         lr = len(rho)
@@ -124,53 +151,71 @@ def l_corner(rho,eta,reg_param,u,sig,bm):
     return reg_c
 
 def csvd(A):
-    '''
-    computes the svd based on the size of A.
-    Input:
-        A is of Nm x Nu, where Nm are the number of measurements and Nu the number of unknowns
-    Adapted from Per Christian Hansen, DTU Compute, October 27, 2010.
-    '''
+    """ Computes the SVD based on the size of A.
+
+    Parameters
+    ----------
+        A : numpy ndarray
+            sensing matrix (Nm x Nu). Nm are the number of measurements
+            and Nu the number of unknowns
+    Returns
+    -------
+        u : numpy ndarray
+            left singular vectors
+        sig : numpy 1darray
+            singular values
+        v : numpy ndarray
+            right singular vectors
+    """
     Nm, Nu = A.shape
-    # A = np.matrix(A)
     if Nm >= Nu: # more measurements than unknowns
         u, sig, v = np.linalg.svd(A, full_matrices=False)
     else:
         v, sig, u = np.linalg.svd(np.conjugate(A.T), full_matrices=False)
-        # print('checking u {}, shape {}'.format(u[5,5], u.shape))
     return u, sig, v
 
 def l_cuve(u, sig, bm, plotit = False):
-    '''
-    Plot the L-curve and find its "corner".
-    Adapted from Per Christian Hansen, DTU Compute, October 27, 2010.
-    Inputs:
-        u: left side matrix computed from svd (size: Nm x Nm) - Nm is the number of measurement points
-        sig: singular values computed from svd (size: Nm x 1)
-        bm: your measurement vector (size: Nm x 1)
-    '''
+    """ Find the optimal regularizatin parameter.
+
+    This function uses the L-curve and computes its curvature in
+    order to find its corner - optimal regularization parameter.
+
+    Uses the function "l_corner"
+
+    Parameters
+    ----------
+        u : numpy ndarray
+            left singular vectors
+        sig : numpy 1darray
+            singular values
+        bm: numpy 1darray
+            your measurement vector (size: Nm x 1)
+        plotit : bool
+            whether to plot the L curve or not. Default is False
+    Returns
+    -------
+        lam_opt : float
+            optimal regularization parameter
+    """
     # Set defaults.
     npoints = 200  # Number of points on the L-curve
     smin_ratio = 16*np.finfo(float).eps  # Smallest regularization parameter.
     # Initialization.
     Nm, Nu = u.shape
     p = sig.shape
-    # if (nargout > 0), locate = 1; else locate = 0; end
     beta = np.conjugate(u) @ bm
     beta2 = np.linalg.norm(bm) ** 2 - np.linalg.norm(beta)**2
-    # if ps == 1:
     s = sig
     beta = np.reshape(beta[0:int(p[0])], beta.shape[0])
     xi = np.divide(beta[0:int(p[0])],s)
     xi[np.isinf(xi)] = 0
 
     eta = np.zeros((npoints,1))
-    # print('eta {}'.format(eta.shape))
     rho = np.zeros((npoints,1)) #eta
     reg_param = np.zeros((npoints,1))
     s2 = s ** 2
     reg_param[-1] = np.amax([s[-1], s[0]*smin_ratio])
     ratio = (s[0]/reg_param[-1]) ** (1/(npoints-1))
-    # print('ratio {}'.format(ratio))
     for i in np.arange(start=npoints-2, step=-1, stop = -1):
         reg_param[i] = ratio*reg_param[i+1]
     for i in np.arange(start=0, step=1, stop = npoints):
@@ -179,22 +224,23 @@ def l_cuve(u, sig, bm, plotit = False):
         rho[i] = np.linalg.norm((1-f) * beta[:int(p[0])])
     if (Nm > Nu and beta2 > 0):
         rho = np.sqrt(rho ** 2 + beta2)
-    # want to plot the L curve?
     # Compute the corner of the L-curve (optimal regularization parameter)
     lam_opt = l_corner(rho,eta,reg_param,u,sig,bm)
+    # want to plot the L curve?
     if plotit:
+        fig = plt.figure()
+        fig.canvas.set_window_title("L-curve")
         plt.loglog(rho, eta, label='Reg. par: ' + "%.6f" % lam_opt)
         plt.xlabel(r'Residual norm $||Ax - b||_2$')
         plt.ylabel(r'Solution norm $||x||_2$')
         plt.legend(loc = 'best')
         plt.grid(linestyle = '--', which='both')
         plt.tight_layout()
-        plt.show()
     return lam_opt
 
 def tikhonov(u,s,v,b,lambd_value):
-    '''
-    TIKHONOV Tikhonov regularization.
+    """ Tikhonov regularization. Needs some work
+
     Computes the Tikhonov regularized solution x_lambda, given the SVD or
     GSVD as computed via csvd or cgsvd, respectively.  The SVD is used,
     i.e. if U, s, and V are specified, then standard-form regularization
@@ -204,7 +250,24 @@ def tikhonov(u,s,v,b,lambd_value):
     Based on the matlab routine by: Per Christian Hansen, DTU Compute, April 14, 2003.
     Reference: A. N. Tikhonov & V. Y. Arsenin, "Solutions of Ill-Posed
     Problems", Wiley, 1977.
-    '''
+
+    Parameters
+    ----------
+        u : numpy ndarray
+            left singular vectors
+        sig : numpy 1darray
+            singular values
+        v : numpy ndarray
+            right singular vectors
+        bm: numpy 1darray
+            your measurement vector (size: Nm x 1)
+        lam_opt : float
+            optimal regularization parameter
+    Returns
+    -------
+        x_lambda : numpy 1darray
+            estimated solution to inverse problem
+    """
     # warn that lambda should be bigger than 0
     if lambd_value < 0:
         warnings.warn("Illegal regularization parameter lambda. I'll set it to 1.0")

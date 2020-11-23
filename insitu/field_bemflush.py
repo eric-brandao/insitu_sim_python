@@ -140,11 +140,13 @@ class BEMFlush(object):
         self.uy_s = []
         self.uz_s = []
         # Load Gauss points and weights
-        with open('/home/eric/dev/insitu/data/' + 'gauss_data' + '.pkl', 'rb') as input:
-            Nzeta = pickle.load(input)
-            Nweights = pickle.load(input)
-        self.Nzeta = Nzeta
-        self.Nweights = Nweights
+        # with open('/home/eric/dev/insitu/data/' + 'gauss_data' + '.pkl', 'rb') as input:
+        #     Nzeta = pickle.load(input)
+        #     Nweights = pickle.load(input)
+        # self.Nzeta = Nzeta
+        # self.Nweights = Nweights
+        self.Nzeta, self.Nweights = zeta_weights()
+        # print("pause")
 
     def generate_mesh(self, Lx = 1.0, Ly = 1.0, Nel_per_wavelenth = 6):
         """ Generate the mesh for simulation
@@ -414,21 +416,21 @@ class BEMFlush(object):
                     uz_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1)*\
                         (1 + (1 / (1j * k0 * r1)))* ((hs - zr)/r1)-\
                         (np.exp(-1j * k0 * r2) / r2) *\
-                        (1 + (1 / (1j * k0 * r2))) * ((hs + zr)/r2) + uz_scat
+                        (1 + (1 / (1j * k0 * r2))) * ((hs + zr)/r2) - uz_scat
                     if compute_ux:
                         ux_scat = insitu_cpp._bemflush_uxscat(r_coord, self.node_x, self.node_y,
                             self.Nzeta, self.Nweights.T, k0, self.beta[jf], self.p_surface[:,jf])
                         ux_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1)*\
                             (1 + (1 / (1j * k0 * r1)))* (-r_coord[0]/r1)-\
                             (np.exp(-1j * k0 * r2) / r2) *\
-                            (1 + (1 / (1j * k0 * r2))) * (-r_coord[0]/r2) + ux_scat
+                            (1 + (1 / (1j * k0 * r2))) * (-r_coord[0]/r2) - ux_scat
                     if compute_uy:
                         uy_scat = insitu_cpp._bemflush_uyscat(r_coord, self.node_x, self.node_y,
                             self.Nzeta, self.Nweights.T, k0, self.beta[jf], self.p_surface[:,jf])
                         uy_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1)*\
                             (1 + (1 / (1j * k0 * r1)))* (-r_coord[1]/r1)-\
                             (np.exp(-1j * k0 * r2) / r2) *\
-                            (1 + (1 / (1j * k0 * r2))) * (-r_coord[1]/r2) + uy_scat
+                            (1 + (1 / (1j * k0 * r2))) * (-r_coord[1]/r2) - uy_scat
                     # Progress bar stuff
                     bar.update(1)
                 bar.close()
@@ -707,4 +709,36 @@ class BEMFlush(object):
         f.close()
         self.__dict__.update(tmp_dict)
 
+def zeta_weights():
+    """ Calculates Nzeta and Nweights
+    """
+    zeta = np.array([-0.93246951, -0.66120939, -0.23861918,
+    0.23861918, 0.66120939, 0.93246951], dtype=np.float32)
+
+    weigths = np.array([0.17132449, 0.36076157, 0.46791393,
+        0.46791393, 0.36076157, 0.17132449], dtype=np.float32)
+
+    # Create vectors of size 1 x 36 for the zetas
+    N1 = 0.25 * np.matmul(np.reshape(1-zeta, (zeta.size,1)),  np.reshape(1-zeta, (1,zeta.size)))
+    N2 = 0.25 * np.matmul(np.reshape(1+zeta, (zeta.size,1)),  np.reshape(1-zeta, (1,zeta.size)))
+    N3 = 0.25 * np.matmul(np.reshape(1+zeta, (zeta.size,1)),  np.reshape(1+zeta, (1,zeta.size)))
+    N4 = 0.25 * np.matmul(np.reshape(1-zeta, (zeta.size,1)),  np.reshape(1+zeta, (1,zeta.size)))
+
+    N1 = np.reshape(N1, (1,zeta.size**2))
+    N2 = np.reshape(N2, (1,zeta.size**2))
+    N3 = np.reshape(N3, (1,zeta.size**2))
+    N4 = np.reshape(N4, (1,zeta.size**2))
+
+    # Let each line of the following matrix be a N vector
+    Nzeta = np.zeros((4, zeta.size**2), dtype=np.float32)
+    Nzeta[0,:] = N1
+    Nzeta[1,:] = N2
+    Nzeta[2,:] = N3
+    Nzeta[3,:] = N4
+
+    # Create vector of size 1 x 36 for the weights
+    Nweigths = np.matmul(np.reshape(weigths, (zeta.size,1)),  np.reshape(weigths, (1,zeta.size)))
+    Nweigths = np.reshape(Nweigths, (1,zeta.size**2))
+    # print('I have calculated!')
+    return Nzeta, Nweigths
 

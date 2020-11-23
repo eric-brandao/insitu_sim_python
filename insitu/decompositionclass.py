@@ -219,7 +219,7 @@ class Decomposition(object):
             # compute SVD of the sensing matix
             u, sig, v = csvd(h_mtx)
             # compute the regularization parameter (L-curve)
-            lambd_value = l_cuve(u, sig, pm, plotit=False)
+            lambd_value = l_cuve(u, sig, pm, plotit=plot_l)
             ## Choosing the method to find the P(k)
             if method == 'scipy':
                 x = lsqr(h_mtx, self.pres_s[:,jf], damp=lambd_value)

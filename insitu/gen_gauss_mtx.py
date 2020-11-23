@@ -30,9 +30,14 @@ Nzeta[3,:] = N4
 # Create vector of size 1 x 36 for the weights
 Nweigths = np.matmul(np.reshape(weigths, (zeta.size,1)),  np.reshape(weigths, (1,zeta.size)))
 Nweigths = np.reshape(Nweigths, (1,zeta.size**2))
-
+print("weights")
 print(Nweigths)
 print(Nweigths.shape)
+
+print("zeta")
+print(Nzeta)
+print(Nzeta.shape)
+
 
 # path_filename = '/home/eric/dev/insitu/data/' + 'gauss_data' + '.pkl'
 # with open(path_filename, 'wb') as output:
