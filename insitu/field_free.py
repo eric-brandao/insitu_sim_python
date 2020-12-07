@@ -111,9 +111,9 @@ class FreeField(object):
                     kze = (kxe**2 + kye**2 - k0**2)**0.5
                     # Evanescent pressure
                     p_ev = (np.exp(-kze * r_coord[2])) * (np.exp(-1j * (kxe * r_coord[0] + kye * r_coord[1])))
-                    pres_rec[jrec, jf] = Ap * np.exp(-1j * np.dot(k_vec, r_coord)) + Ae * p_ev
+                    pres_rec[jrec, jf] = Ap * np.exp(1j * np.dot(k_vec, r_coord)) + Ae * p_ev
                 else:
-                    pres_rec[jrec, jf] = Ap * np.exp(-1j * np.dot(k_vec, r_coord))
+                    pres_rec[jrec, jf] = Ap * np.exp(1j * np.dot(k_vec, r_coord))
         self.pres_s.append(pres_rec)
 
     def monopole_ff(self, sources):
