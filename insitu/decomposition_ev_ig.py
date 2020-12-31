@@ -430,7 +430,7 @@ class DecompositionEv2(object):
         return plt
 
     def plot_pkmap_v2(self, freq = 1000, db = False, dinrange = 20,
-        save = False, name='name', color_code = 'viridis'):
+        save = False, name='name', path = '', fname='', color_code = 'viridis'):
         """ Plot wave number spectrum as a 2D maps (vs. kx and ky)
 
         Plot the magnitude of the wave number spectrum as two 2D maps of
@@ -453,6 +453,10 @@ class DecompositionEv2(object):
                 Whether to save or not the figure. PDF file with simple standard name
             name : str
                 Name of the figure file #FixMe
+            path : str
+                Path to save the figure file
+            fname : str
+                File name to save the figure file
             color_code : str
                 Can be anything that matplotlib supports. Some recomendations given below:
                 'viridis' (default) - Perceptually Uniform Sequential
@@ -494,7 +498,7 @@ class DecompositionEv2(object):
         fig.canvas.set_window_title('2D plot of wavenumber spectrum - PEIG')
         # Incident
         plt.subplot(2, 1, 1)
-        plt.title('Incident field')
+        plt.title('Incident field' + name)
         plt.plot(self.controls.k0[id_f]*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
             self.controls.k0[id_f]*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'r')
         p = plt.contourf(kx_grid, ky_grid, color_par_i,
@@ -513,11 +517,11 @@ class DecompositionEv2(object):
         plt.ylabel(r'$k_y$ [rad/m]')
         plt.tight_layout()
         if save:
-            filename = 'data/colormaps/cmat_' + str(int(freq)) + 'Hz_' + name #FixMe
-            plt.savefig(fname = filename, format='pdf')
+            filename = path + fname + '_' + str(int(freq)) + 'Hz'
+            plt.savefig(fname = filename, format='png')
 
     def plot_pkmap_prop(self, freq = 1000, db = False, dinrange = 20,
-        save = False, name='name', color_code = 'viridis'):
+        save = False, name='name', path = '', fname='', color_code = 'viridis'):
         """ Plot wave number spectrum  - propagating only (vs. phi and theta)
 
         Plot the magnitude of the wave number spectrum as a map of
@@ -541,6 +545,10 @@ class DecompositionEv2(object):
                 Whether to save or not the figure. PDF file with simple standard name
             name : str
                 Name of the figure file #FixMe
+            path : str
+                Path to save the figure file
+            fname : str
+                File name to save the figure file
             color_code : str
                 Can be anything that matplotlib supports. Some recomendations given below:
                 'viridis' (default) - Perceptually Uniform Sequential
@@ -589,8 +597,8 @@ class DecompositionEv2(object):
         plt.ylabel(r'$\theta$ (elevation) [deg]')
         plt.tight_layout()
         if save:
-            filename = 'data/colormaps/cmat_' + str(int(freq)) + 'Hz_' + name
-            plt.savefig(fname = filename, format='pdf')
+            filename = path + fname + '_' + str(int(freq)) + 'Hz'
+            plt.savefig(fname = filename, format='png')
 
     def save(self, filename = 'array_zest', path = '/home/eric/dev/insitu/data/zs_recovery/'):
         """ To save the decomposition object as pickle
