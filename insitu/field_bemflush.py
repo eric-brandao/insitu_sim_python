@@ -577,7 +577,7 @@ class BEMFlush(object):
         """
         plot_spk(self.controls.freq, self.uz_s, ref = 5e-8)
 
-    def plot_colormap(self, freq = 1000, total_pres = True):
+    def plot_colormap(self, freq = 1000, total_pres = True,  dinrange = 20):
         """Plots a color map of the pressure field.
 
         Parameters
@@ -589,6 +589,8 @@ class BEMFlush(object):
             Whether to plot the total sound pressure (Default = True) or the reflected only.
             In the later case, we subtract the incident field Green's function from the total
             sound field.
+        dinrange : float
+            Dinamic range of the color map
 
         Returns
         ---------
@@ -603,6 +605,8 @@ class BEMFlush(object):
             r1 = np.linalg.norm(self.sources.coord - self.receivers.coord, axis = 1)
             color_par = np.abs(self.pres_s[0][:,id_f]-\
                 np.exp(-1j * self.controls.k0[id_f] * r1) / r1)
+            color_par = 20*np.log10(color_par/np.amax(color_par))
+
         # Create triangulazition
         triang = tri.Triangulation(self.receivers.coord[:,0], self.receivers.coord[:,2])
         # Figure
@@ -610,7 +614,8 @@ class BEMFlush(object):
         # fig = plt.figure()
         fig.canvas.set_window_title('pressure color map')
         plt.title('Reference |P(f)| (BEM sim)')
-        p = plt.tricontourf(triang, color_par, np.linspace(-15, 0, 15), cmap = 'seismic')
+        # p = plt.tricontourf(triang, color_par, np.linspace(-15, 0, 15), cmap = 'seismic')
+        p = plt.tricontourf(triang, color_par, np.linspace(-dinrange, 0, int(dinrange)), cmap = 'seismic')
         fig.colorbar(p)
         plt.xlabel(r'$x$ [m]')
         plt.ylabel(r'$z$ [m]')
@@ -651,7 +656,7 @@ class BEMFlush(object):
         # else:
         q = plt.quiver(self.receivers.coord[:,0], self.receivers.coord[:,2],
             Ix/I, Iz/I, I, cmap = cmap, width = 0.010)
-        fig.colorbar(q)
+        #fig.colorbar(q)
         plt.xlabel(r'$x$ [m]')
         plt.ylabel(r'$z$ [m]')
         return plt

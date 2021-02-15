@@ -108,6 +108,9 @@ class DecompositionEv2(object):
     reconstruct_pu(receivers)
         Reconstruct the sound pressure and particle velocity at a receiver object
 
+    def reconstruct_pref(receivers, compute_uxy = True)
+        Reconstruct the reflected sound pressure at a receiver object
+
     plot_colormap(self, freq = 1000, total_pres = True)
         Plots a color map of the pressure field.
 
@@ -348,7 +351,69 @@ class DecompositionEv2(object):
             bar.update(1)
         bar.close()
 
-    def plot_colormap(self, freq = 1000, total_pres = True):
+    def reconstruct_pref(self, receivers, compute_uxy = True):
+        """ Reconstruct the reflected sound pressure at a receiver object
+
+        Reconstruct the the reflected sound pressure at a set of desired field points.
+        This can be used on spatial maps of scattered pressure,
+        velocity, intensity.
+
+        The steps are: (i) - Generate the evanescent wave regular grid;
+        (ii) - filter out the propagating waves from this regular grid;
+        (iii) - concatenate the filterd evanescent waves grid with the propagating grid
+        created earlier, and; (iv) - form the reflected wave number grids;
+        (v) - form the new sensing matrix; (vi) - compute p and u.
+
+        Parameters
+        ----------
+        receivers : object (Receiver)
+            contains a set of field points at which to reconstruct
+        compute_uxy : bool
+            Whether to compute x and y components of particle velocity or not (Default is False)
+        """
+        self.fpts = receivers
+        self.p_scat = np.zeros((receivers.coord.shape[0], len(self.controls.k0)), dtype=complex)
+        # self.uz_recon = np.zeros((self.fpts.coord.shape[0], len(self.controls.k0)), dtype=complex)
+        # if compute_uxy:
+        #     self.ux_recon = np.zeros((self.fpts.coord.shape[0], len(self.controls.k0)), dtype=complex)
+        #     self.uy_recon = np.zeros((self.fpts.coord.shape[0], len(self.controls.k0)), dtype=complex)
+        # Generate kx and ky for evanescent wave grid
+        kx_grid, ky_grid = np.meshgrid(self.kx, self.ky)
+        kx_e = kx_grid.flatten()
+        ky_e = ky_grid.flatten()
+        # Initializa bar
+        bar = tqdm(total = len(self.controls.k0), desc = 'Reconstructing scattered sound field...')
+        # Freq loop
+        for jf, k0 in enumerate(self.controls.k0):
+            # Filter propagating from evanescent wave grid
+            kx_eig, ky_eig, n_e = filter_evan(k0, kx_e, ky_e, plot=False)
+            # compute evanescent kz
+            kz_eig = -1j*np.sqrt(kx_eig**2 + ky_eig**2 - k0**2)
+            # Stack evanescent kz with propagating kz for incident and reflected grids
+            k_vec_inc = np.vstack((k0 * np.array([self.pdir[:,0], self.pdir[:,1], -self.pdir[:,2]]).T,
+                np.array([kx_eig, ky_eig, -kz_eig]).T))
+            k_vec_ref = np.vstack((k0 * np.array([self.pdir[:,0], self.pdir[:,1], self.pdir[:,2]]).T,
+                np.array([kx_eig, ky_eig, kz_eig]).T))
+            # The receivers relative to the virtual source planes 
+            recs_ref = np.array([self.fpts.coord[:,0], self.fpts.coord[:,1],
+                self.fpts.coord[:,2]-self.zp]).T
+            # Forming the sensing matrix
+            h_mtx = np.exp(-1j * recs_ref @ k_vec_ref.T)
+            # Compute p and uz
+            pk = np.squeeze(np.asarray(self.pk[jf]))
+            pk_r = pk[int(len(pk)/2):] # reflected
+            self.p_scat[:,jf] = np.squeeze(np.asarray(h_mtx @ pk_r.T))
+            # self.uz_recon[:,jf] = np.squeeze(np.asarray(-((np.divide(np.concatenate((k_vec_inc[:,2], k_vec_ref[:,2])), k0)) *\
+            #     h_mtx) @ self.pk[jf].T))
+            # if compute_uxy:
+            #     self.ux_recon[:,jf] = np.squeeze(np.asarray(((np.divide(np.concatenate(
+            #         (k_vec_inc[:,0], k_vec_ref[:,0])), k0)) * h_mtx) @ self.pk[jf].T))
+            #     self.uy_recon[:,jf] = np.squeeze(np.asarray(((np.divide(np.concatenate(
+            #         (k_vec_inc[:,1], k_vec_ref[:,1])), k0)) * h_mtx) @ self.pk[jf].T))
+            bar.update(1)
+        bar.close()
+
+    def plot_colormap(self, freq = 1000, total_pres = True, dinrange = 20):
         """Plots a color map of the pressure field.
 
         Parameters
@@ -359,6 +424,8 @@ class DecompositionEv2(object):
         total_pres : bool
             Whether to plot the total sound pressure (Default = True) or the reflected only.
             In the later case, we use the reflectd grid only
+        dinrange : float
+            Dinamic range of the color map
 
         Returns
         ---------
@@ -367,13 +434,12 @@ class DecompositionEv2(object):
         id_f = np.where(self.controls.freq <= freq)
         id_f = id_f[0][-1]
         # color parameter
-        color_par = 20*np.log10(np.abs(self.p_recon[:, id_f])/np.amax(np.abs(self.p_recon[:, id_f])))
-        # if total_pres:
-        #     color_par = np.abs(self.pres_s[0][:,id_f])
-        # else:
-        #     r1 = np.linalg.norm(self.sources.coord - self.receivers.coord, axis = 1)
-        #     color_par = np.abs(self.pres_s[0][:,id_f]-\
-        #         np.exp(-1j * self.controls.k0[id_f] * r1) / r1)
+        # color_par = 20*np.log10(np.abs(self.p_recon[:, id_f])/np.amax(np.abs(self.p_recon[:, id_f])))
+        if total_pres:
+            color_par = 20*np.log10(np.abs(self.p_recon[:, id_f])/np.amax(np.abs(self.p_recon[:, id_f])))
+        else:
+            color_par = 20*np.log10(np.abs(self.p_scat[:, id_f])/np.amax(np.abs(self.p_scat[:, id_f])))
+            # color_par = np.real(self.p_scat[:, id_f])
         # Create triangulazition
         triang = tri.Triangulation(self.fpts.coord[:,0], self.fpts.coord[:,2])
         # Figure
@@ -381,7 +447,9 @@ class DecompositionEv2(object):
         # fig = plt.figure()
         fig.canvas.set_window_title('pressure color map')
         plt.title('|P(f)| - reconstructed')
-        p = plt.tricontourf(triang, color_par, np.linspace(-15, 0, 15), cmap = 'seismic')
+        # p = plt.tricontourf(triang, color_par, cmap = 'seismic')
+        p = plt.tricontourf(triang, color_par, np.linspace(-dinrange, 0, int(dinrange)), cmap = 'seismic')
+
         fig.colorbar(p)
         plt.xlabel(r'$x$ [m]')
         plt.ylabel(r'$z$ [m]')
@@ -424,20 +492,21 @@ class DecompositionEv2(object):
         # else:
         q = plt.quiver(self.fpts.coord[:,0], self.fpts.coord[:,2],
             Ix/I, Iz/I, I, cmap = cmap, width = 0.010)
-        fig.colorbar(q)
+        #fig.colorbar(q)
         plt.xlabel(r'$x$ [m]')
         plt.ylabel(r'$z$ [m]')
         return plt
 
     def plot_pkmap_v2(self, freq = 1000, db = False, dinrange = 20,
-        save = False, name='name', path = '', fname='', color_code = 'viridis'):
+        save = False, fig_title = '', path = '', fname='', color_code = 'viridis',
+        plot_incident = True, dpi = 600):
         """ Plot wave number spectrum as a 2D maps (vs. kx and ky)
 
-        Plot the magnitude of the wave number spectrum as two 2D maps of
+        Plot the magnitude of the wave number spectrum (WNS) as two 2D maps of
         evanescent and propagating waves. The map is first interpolated into
         a regular grid. It is a normalized version of the magnitude, either between
         0 and 1 or between -dinrange and 0. The maps are ploted as color as function
-        of kx and ky. The radiation circle is also ploted. 
+        of kx and ky. The radiation circle is also ploted.
 
         Parameters
         ----------
@@ -451,8 +520,8 @@ class DecompositionEv2(object):
                 linear scale.
             save : bool
                 Whether to save or not the figure. PDF file with simple standard name
-            name : str
-                Name of the figure file #FixMe
+            fig_title : str
+                Title of the figure file #FixMe
             path : str
                 Path to save the figure file
             fname : str
@@ -462,6 +531,10 @@ class DecompositionEv2(object):
                 'viridis' (default) - Perceptually Uniform Sequential
                 'Greys' - White (cold) to black (hot)
                 'seismic' - Blue (cold) to red (hot) with a white in the middle
+            plot_incident : bool
+                Whether to plot incident WNS or not
+            dpi : float
+                dpi of figure - to save
         """
         id_f = np.where(self.controls.freq <= freq)
         # id_f = np.where(self.freq_oct <= freq)
@@ -493,35 +566,49 @@ class DecompositionEv2(object):
             color_par_r = np.abs(pk_r_grid)/np.amax(np.abs(pk))
             color_range = np.linspace(0, 1, 21)
         # Figure
-        fig = plt.figure(figsize=(8, 8))
-        # fig = plt.figure()
-        fig.canvas.set_window_title('2D plot of wavenumber spectrum - PEIG')
-        # Incident
-        plt.subplot(2, 1, 1)
-        plt.title('Incident field' + name)
-        plt.plot(self.controls.k0[id_f]*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
-            self.controls.k0[id_f]*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'r')
-        p = plt.contourf(kx_grid, ky_grid, color_par_i,
-            color_range, extend='both', cmap = color_code)
-        fig.colorbar(p)
-        plt.ylabel(r'$k_y$ [rad/m]')
-        # Reflected
-        plt.subplot(2, 1, 2)
-        plt.title('Reflected field')
-        plt.plot(self.controls.k0[id_f]*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
+        if plot_incident:
+            fig = plt.figure(figsize=(8, 8))
+            fig.canvas.set_window_title('2D plot of wavenumber spectrum - PEIG')
+            # Incident
+            plt.subplot(2, 1, 1)
+            plt.title('Incident: ' + fig_title)
+            plt.plot(self.controls.k0[id_f]*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
                 self.controls.k0[id_f]*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'r')
-        p = plt.contourf(kx_grid, ky_grid, color_par_r,
-            color_range, extend='both', cmap = color_code)
-        fig.colorbar(p)
-        plt.xlabel(r'$k_x$ [rad/m]')
-        plt.ylabel(r'$k_y$ [rad/m]')
-        plt.tight_layout()
+            p = plt.contourf(kx_grid, ky_grid, color_par_i,
+                color_range, extend='both', cmap = color_code)
+            fig.colorbar(p)
+            plt.ylabel(r'$k_y$ [rad/m]')
+            # Reflected
+            plt.subplot(2, 1, 2)
+            plt.title('Reflected: ' + fig_title)
+            plt.plot(self.controls.k0[id_f]*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
+                    self.controls.k0[id_f]*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'r')
+            p = plt.contourf(kx_grid, ky_grid, color_par_r,
+                color_range, extend='both', cmap = color_code)
+            fig.colorbar(p)
+            plt.xlabel(r'$k_x$ [rad/m]')
+            plt.ylabel(r'$k_y$ [rad/m]')
+            plt.tight_layout()
+        else:
+            fig = plt.figure(figsize=(8, 4))
+            fig.canvas.set_window_title('2D plot of wavenumber spectrum - PEIG')
+            # Reflected
+            plt.title('Reflected: ' + fig_title)
+            plt.plot(self.controls.k0[id_f]*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
+                    self.controls.k0[id_f]*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'r')
+            p = plt.contourf(kx_grid, ky_grid, color_par_r,
+                color_range, extend='both', cmap = color_code)
+            fig.colorbar(p)
+            plt.xlabel(r'$k_x$ [rad/m]')
+            plt.ylabel(r'$k_y$ [rad/m]')
+            plt.tight_layout()
         if save:
             filename = path + fname + '_' + str(int(freq)) + 'Hz'
-            plt.savefig(fname = filename, format='png')
+            plt.savefig(fname = filename, format='png', dpi = dpi)
 
     def plot_pkmap_prop(self, freq = 1000, db = False, dinrange = 20,
-        save = False, name='name', path = '', fname='', color_code = 'viridis'):
+        save = False, name='name', path = '', fname='', color_code = 'viridis',
+        dpi = 600):
         """ Plot wave number spectrum  - propagating only (vs. phi and theta)
 
         Plot the magnitude of the wave number spectrum as a map of
@@ -554,6 +641,8 @@ class DecompositionEv2(object):
                 'viridis' (default) - Perceptually Uniform Sequential
                 'Greys' - White (cold) to black (hot)
                 'seismic' - Blue (cold) to red (hot) with a white in the middle
+            dpi : float
+                dpi of figure - to save
         """
 
         id_f = np.where(self.controls.freq <= freq)
@@ -562,7 +651,7 @@ class DecompositionEv2(object):
         # Quatinties from simulation
         k0 = self.controls.k0[id_f]
         pk = np.squeeze(np.asarray(self.pk[id_f]))
-        # Incident and reflected with evanescent
+        # Propagating incident and reflected
         pk_i = pk[:self.n_prop] # incident
         pk_r = pk[int(len(pk)/2):int(len(pk)/2)+self.n_prop] # reflected
         pk_p = np.hstack((pk_i, pk_r))
@@ -571,9 +660,12 @@ class DecompositionEv2(object):
             -k0 * np.array([self.pdir[:,0], self.pdir[:,1], -self.pdir[:,2]]).T))
         # Transform uninterpolated data to spherical coords
         r, theta, phi = cart2sph(directions[:,0], directions[:,1], directions[:,2])
+        # phi = phi[phi > -150]
+        # theta = theta[phi > -150]
+        # pk_p = pk_p[phi > -150]
         thetaphi = np.transpose(np.array([phi, theta]))
         # Create the new grid to iterpolate
-        new_phi = np.linspace(np.deg2rad(-170), np.deg2rad(170), 2*int(np.sqrt(2*self.n_prop))+1)
+        new_phi = np.linspace(np.deg2rad(-175), np.deg2rad(175), 2*int(np.sqrt(2*self.n_prop))+1)
         new_theta = np.linspace(-np.pi/2, np.pi/2,  int(np.sqrt(2*self.n_prop)))#(0, np.pi, nn)
         grid_phi, grid_theta = np.meshgrid(new_phi, new_theta)
         # Interpolate
@@ -598,7 +690,7 @@ class DecompositionEv2(object):
         plt.tight_layout()
         if save:
             filename = path + fname + '_' + str(int(freq)) + 'Hz'
-            plt.savefig(fname = filename, format='png')
+            plt.savefig(fname = filename, format='png', dpi = dpi)
 
     def save(self, filename = 'array_zest', path = '/home/eric/dev/insitu/data/zs_recovery/'):
         """ To save the decomposition object as pickle
@@ -698,6 +790,8 @@ class ZsArrayEvIg(DecompositionEv2):
         Estimated surface impedance (impedance reconstrucion at surface)
     alpha : (1 x N_freq) numpy 1darray
         Estimated absorption coefficient (from impedance reconstrucion at surface)
+    self.alpha_pk : (1 x N_freq) numpy 1darray
+        Estimated absorption coefficient (from propagating waves on WNS)
 
     Methods
     ----------
@@ -794,3 +888,31 @@ class ZsArrayEvIg(DecompositionEv2):
             self.alpha[jtheta,:] = 1 - (np.abs(np.divide((self.Zs  * np.cos(dtheta) - 1),\
                 (self.Zs * np.cos(dtheta) + 1))))**2
         return self.alpha
+
+    def alpha_from_pk(self, ):
+        """ Calculate the absorption coefficient from wave-number spectra.
+
+        There is no target angle in this method. Simply, the total reflected energy is
+        divided by the total incident energy
+
+        Returns
+        -------
+        alpha_pk : (1 x N_freq) numpy 1darray
+            Estimated absorption coefficient (from propagating waves on WNS)
+        """
+        # Initialize
+        self.alpha_pk = np.zeros(len(self.controls.k0))
+        bar = tqdm(total = len(self.controls.k0), desc = 'Calculating absorption from propagating P(k)')
+        # loop over frequencies
+        for jf, k0 in enumerate(self.controls.k0):
+            # Whole P(k) - propagating and evanescet
+            pk = np.squeeze(np.asarray(self.pk[jf]))
+            # Propagating incident and reflected
+            pk_i = pk[:self.n_prop] # incident
+            pk_i2 = np.mean((np.abs(pk_i))**2)
+            pk_r = pk[int(len(pk)/2):int(len(pk)/2)+self.n_prop] # reflected
+            pk_r2 = np.mean((np.abs(pk_r))**2)
+            self.alpha_pk[jf] = 1 - pk_r2/pk_i2
+            bar.update(1)
+        bar.close()
+        return self.alpha_pk

@@ -265,6 +265,38 @@ class Receiver():
         self.coord[0:n_total, 1] = yc.flatten()
         self.coord[0:n_total, 2] = zc.flatten()
 
+    def planar_xz(self, x_len = 1.0, n_x = 10, z0 = 0 ,z_len = 1.0, n_z = 10, yr = 0.0):
+        """ Initializes a planar array of receivers (xz plane).
+
+        The method will overwrite self.coord to be a matrix where each line
+        gives a 3D coordinate for each receiver
+
+        Parameters
+        ----------
+            x_len : float
+                the length of the x direction (array goes from -x_len/2 to +x_len/2).
+            n_x : int
+                the number of receivers in the x direction
+            z0 : float
+                initial z coordinate
+            z_len : float
+                the length of the z direction (array goes from z0 to z0+z_len).
+            n_z : int
+                the number of receivers in the z direction
+            yr : float
+                y coordinate of the plane
+        """
+        # x and y coordinates of the grid
+        xc = np.linspace(-x_len/2, x_len/2, n_x)
+        zc = np.linspace(z0, z_len, n_z)
+        # meshgrid
+        self.x_grid, self.z_grid = np.meshgrid(xc, zc)
+        # initialize receiver list in memory
+        self.coord = np.zeros((n_x * n_z, 3), dtype = np.float32)
+        self.coord[:, 0] = self.x_grid.flatten()
+        self.coord[:, 1] = yr
+        self.coord[:, 2] = self.z_grid.flatten()
+
     def spherical_array(self, radius = 0.1, n_rec = 32, center_dist = 0.5):
         """ Initializes a spherical array of receivers. To be done.
 
