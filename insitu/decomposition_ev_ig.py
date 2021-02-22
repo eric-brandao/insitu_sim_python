@@ -499,7 +499,7 @@ class DecompositionEv2(object):
 
     def plot_pkmap_v2(self, freq = 1000, db = False, dinrange = 20,
         save = False, fig_title = '', path = '', fname='', color_code = 'viridis',
-        plot_incident = True, dpi = 600):
+        plot_incident = True, dpi = 600, figsize=(8, 8)):
         """ Plot wave number spectrum as a 2D maps (vs. kx and ky)
 
         Plot the magnitude of the wave number spectrum (WNS) as two 2D maps of
@@ -535,6 +535,8 @@ class DecompositionEv2(object):
                 Whether to plot incident WNS or not
             dpi : float
                 dpi of figure - to save
+            figsize : tuple
+                size of the figure
         """
         id_f = np.where(self.controls.freq <= freq)
         # id_f = np.where(self.freq_oct <= freq)
@@ -567,7 +569,7 @@ class DecompositionEv2(object):
             color_range = np.linspace(0, 1, 21)
         # Figure
         if plot_incident:
-            fig = plt.figure(figsize=(8, 8))
+            fig = plt.figure(figsize=figsize)
             fig.canvas.set_window_title('2D plot of wavenumber spectrum - PEIG')
             # Incident
             plt.subplot(2, 1, 1)
@@ -590,7 +592,7 @@ class DecompositionEv2(object):
             plt.ylabel(r'$k_y$ [rad/m]')
             plt.tight_layout()
         else:
-            fig = plt.figure(figsize=(8, 4))
+            fig = plt.figure(figsize=figsize)
             fig.canvas.set_window_title('2D plot of wavenumber spectrum - PEIG')
             # Reflected
             plt.title('Reflected: ' + fig_title)

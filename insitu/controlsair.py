@@ -201,10 +201,34 @@ def compare_spk(freq, *spks, ref = 1.0):
     plt.show()
 
 ### Function to compare spectrums
-def compare_alpha(*alphas, title = 'absorption comparison', freq_max=4000, save = False, path = '', fname = ''):
-    '''
-    This function is used to compare the absorption coefficients of several estimations
-    '''
+def compare_alpha(*alphas, title = 'absorption comparison', freq_max=4000,
+    save = False, path = '', fname = '', figsize=(6, 6)):
+    """ Compare the absorption coefficients of several estimations
+
+    Parameters
+        ----------
+        *alphas : dictionary
+            dictionary containing sample information
+            alpha = {
+                'freq' : freq vec (1darray)
+                'label' : label of the data (str)
+                'color' : color of fig (str - matplotlib compatible)
+                'linewidth' : width of line (double - matplotlib compatible)
+                'linetype' : type of line (str - matplotlib compatible)
+            }
+        freq_max : float
+            maximum frequency of the graph
+        title : str
+            title of graph
+        save : bool
+                    Whether to save or not the figure. PDF file with simple standard name
+        path : str
+            Path to save the figure file
+        fname : str
+            File name to save the figure file
+        figsize : tuple
+            size of the figure
+    """
     SMALL_SIZE = 14
     BIGGER_SIZE = 16
     #plt.rcParams.update({'font.size': 10})
