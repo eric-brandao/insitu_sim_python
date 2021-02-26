@@ -579,6 +579,7 @@ class DecompositionEv2(object):
             p = plt.contourf(kx_grid, ky_grid, color_par_i,
                 color_range, extend='both', cmap = color_code)
             fig.colorbar(p)
+            plt.xlabel(r'$k_x$ [rad/m]')
             plt.ylabel(r'$k_y$ [rad/m]')
             plt.tight_layout()
             if save:
