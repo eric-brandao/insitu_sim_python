@@ -570,9 +570,9 @@ class DecompositionEv2(object):
         # Figure
         if plot_incident:
             fig = plt.figure(figsize=figsize)
-            fig.canvas.set_window_title('2D plot of wavenumber spectrum - PEIG')
+            fig.canvas.set_window_title('Incident WNS - PEIG')
             # Incident
-            plt.subplot(2, 1, 1)
+            # plt.subplot(2, 1, 1)
             plt.title('Incident: ' + fig_title)
             plt.plot(self.controls.k0[id_f]*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
                 self.controls.k0[id_f]*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'r')
@@ -580,8 +580,14 @@ class DecompositionEv2(object):
                 color_range, extend='both', cmap = color_code)
             fig.colorbar(p)
             plt.ylabel(r'$k_y$ [rad/m]')
+            plt.tight_layout()
+            if save:
+                filename = path + fname + '_' + str(int(freq)) + 'Hz_i'
+                plt.savefig(fname = filename, format='png', dpi = dpi)
             # Reflected
-            plt.subplot(2, 1, 2)
+            # plt.subplot(2, 1, 2)
+            fig = plt.figure(figsize=figsize)
+            fig.canvas.set_window_title('Reflected WNS - PEIG')
             plt.title('Reflected: ' + fig_title)
             plt.plot(self.controls.k0[id_f]*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
                     self.controls.k0[id_f]*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'r')
@@ -591,9 +597,12 @@ class DecompositionEv2(object):
             plt.xlabel(r'$k_x$ [rad/m]')
             plt.ylabel(r'$k_y$ [rad/m]')
             plt.tight_layout()
+            if save:
+                filename = path + fname + '_' + str(int(freq)) + 'Hz_r'
+                plt.savefig(fname = filename, format='png', dpi = dpi)
         else:
             fig = plt.figure(figsize=figsize)
-            fig.canvas.set_window_title('2D plot of wavenumber spectrum - PEIG')
+            fig.canvas.set_window_title('Reflected WNS - PEIG')
             # Reflected
             plt.title('Reflected: ' + fig_title)
             plt.plot(self.controls.k0[id_f]*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
@@ -604,9 +613,9 @@ class DecompositionEv2(object):
             plt.xlabel(r'$k_x$ [rad/m]')
             plt.ylabel(r'$k_y$ [rad/m]')
             plt.tight_layout()
-        if save:
-            filename = path + fname + '_' + str(int(freq)) + 'Hz'
-            plt.savefig(fname = filename, format='png', dpi = dpi)
+            if save:
+                filename = path + fname + '_' + str(int(freq)) + 'Hz_r'
+                plt.savefig(fname = filename, format='png', dpi = dpi)
 
     def plot_pkmap_prop(self, freq = 1000, db = False, dinrange = 20,
         save = False, name='name', path = '', fname='', color_code = 'viridis',
