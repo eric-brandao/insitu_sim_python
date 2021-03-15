@@ -96,6 +96,12 @@ class DecompositionEv2(object):
     uz_recon : (N_rec x N_freq) numpy array
         A matrix containing the complex amplitudes of the reconstructed particle vel (z)
         at all the field points
+    p_scat : (N_rec x N_freq) numpy array
+        A matrix containing the complex amplitudes of the reconstructed reflected sound pressure
+        at all the field points
+    p_inc : (N_rec x N_freq) numpy array
+        A matrix containing the complex amplitudes of the reconstructed incident sound pressure
+        at all the field points
 
     Methods
     ----------
@@ -287,6 +293,139 @@ class DecompositionEv2(object):
             bar.update(1)
         bar.close()
 
+    def filter_wns(self, kc_factor = 1.0, tapper = 2.0, plot_filter = False):
+        """ 2D window in k dommain
+        """
+        # recover original regular grid
+        kx_grid, ky_grid = np.meshgrid(self.kx,self.ky)
+        kx_e = kx_grid.flatten()
+        ky_e = ky_grid.flatten()
+        # Initializa bar
+        bar = tqdm(total = len(self.controls.k0), desc = 'Filtering WNS...')
+        # Freq loop
+        for jf, k0 in enumerate(self.controls.k0):
+            # construct the flattened wave numbers
+            kx_eig, ky_eig, n_e = filter_evan(k0, kx_e, ky_e, plot=False)
+            kz_eig = -1j*np.sqrt(kx_eig**2 + ky_eig**2 - k0**2)
+            k_vec = np.vstack((k0 * np.array([self.pdir[:,0], self.pdir[:,1], self.pdir[:,2]]).T,
+                np.array([kx_eig, ky_eig, kz_eig]).T))
+            # kr and initialization of the filter
+            kx = np.real(k_vec[:,0])
+            ky = np.real(k_vec[:,1])
+            kr = (kx**2 + ky**2)**0.5
+            kfilter = np.zeros(len(kr))
+            # Transition band
+            idx = np.where(np.logical_and(kr >= -tapper*kc_factor*k0, kr < kc_factor*k0))
+            kfilter[idx[0]] = 0.5*(1 - np.cos(2*np.pi*kr[idx[0]]/(tapper*kc_factor*k0)))
+            idx = np.where(np.logical_and(kr <= tapper*kc_factor*k0, kr > kc_factor*k0))
+            kfilter[idx[0]] = 0.5*(1 - np.cos(2*np.pi*kr[idx[0]]/(tapper*kc_factor*k0)))
+            # Pass band
+            idx = np.where(np.logical_and(kr >= -kc_factor*k0, kr <= kc_factor*k0))
+            kfilter[idx[0]] = 1.0
+            # Filter
+            pk = np.squeeze(np.asarray(self.pk[jf]))
+            pk_i = pk[:int(len(pk)/2)] # incident
+            pk_r = pk[int(len(pk)/2):] # reflected
+            pk_i = pk_i * kfilter
+            pk_r = pk_r * kfilter
+            self.pk[jf] = np.reshape(np.concatenate((pk_i, pk_r)), (1,len(pk)))
+            # self.pk[jf] = self.pk[jf] * kfilter
+            # Plot the filter tapper*k0
+            if plot_filter:
+                fig = plt.figure(figsize=(7, 5))
+                fig.canvas.set_window_title('Filter for freq {:.2f} Hz'.format(self.controls.freq[jf]))
+                ax = fig.gca(projection='3d')
+                p=ax.scatter(k_vec[:,0], k_vec[:,1], kfilter,
+                    c = kfilter, vmin=0, vmax=1)
+                fig.colorbar(p)
+                # plt.xlim((self.kx[0],self.kx[-1]))
+                # plt.ylim((self.ky[0],self.ky[-1]))
+                plt.tight_layout()
+                plt.show()
+            bar.update(1)
+        bar.close()
+
+
+
+    # def filter_wns(self, tapper = 1.5, plot_filter = False):
+    #     """ Construct a circular window to filter the evanescent waves of the WNS
+    #     """
+    #     import matplotlib.tri as tri
+    #     from skimage.filters import window
+    #     # recover original regular grid
+    #     kx_grid, ky_grid = np.meshgrid(self.kx,self.ky)
+    #     kx_e = kx_grid.flatten()
+    #     ky_e = ky_grid.flatten()
+    #     # Initialize filter
+    #     wns_sqfilter = np.zeros((len(self.kx), len(self.ky)))
+    #     # Initializa bar
+    #     bar = tqdm(total = len(self.controls.k0), desc = 'Filtering WNS...')
+    #     # Freq loop
+    #     for jf, k0 in enumerate(self.controls.k0):
+    #         # get the number of samples in the window
+    #         idkx = np.where(np.logical_and(self.kx >= -tapper*k0, self.kx <= tapper*k0))
+    #         idky = np.where(np.logical_and(self.ky >= -tapper*k0, self.ky <= tapper*k0))
+    #         # Create a base grid for windowing
+    #         kxw = np.linspace(-tapper*2*k0, tapper*2*k0, len(idkx[0]))
+    #         kyw = np.linspace(-tapper*2*k0, tapper*2*k0, len(idky[0]))
+    #         kxwg, kywg = np.meshgrid(kxw, kyw)
+    #         # Create a circular tukey window - radialy it goes from 0 to tapper*k0
+    #         w = window(('tukey', 0.5*tapper), (len(kxw), len(kyw)))
+    #         # Insert the window in the middle of wns_sqfilter (same as zero tappering)
+    #         lower = (wns_sqfilter.shape[0]) // 2 - (w.shape[0] // 2)
+    #         upper = (wns_sqfilter.shape[0] // 2) + (w.shape[0] // 2)
+    #         wns_sqfilter[lower:upper, lower:upper] = w
+    #         # substitute propagating part and assemble
+    #         idev = np.where(kx_e**2+ky_e**2 > k0**2)
+    #         wns_evfilter = wns_sqfilter.flatten()[idev[0]]
+    #         wns_pfilter = np.ones(len(self.pdir[:,0]))
+    #         wns_filter = np.concatenate((wns_pfilter, wns_evfilter))
+
+    #         # w1 = np.ones(len(self.pdir[:,0]))
+    #         # kx_eig, ky_eig, n_e = filter_evan(k0, kx_e, ky_e, plot=False)
+    #         # wns_filter = np.ones(int(self.pk[jf].shape[1]/2))
+    #         # idp = np.where(kx_e**2+ky_e**2 > k0**2)
+    #         # wns_filter[idp[0]] = wns_sqfilter.flatten()[idp[0]]
+    #         print('freq {:.2f}, filter: {}, pk: {}'.format(self.controls.freq[jf],
+    #             len(wns_filter), int(self.pk[jf].shape[1]/2)))
+
+    #         # Plot the filter tapper*k0
+    #         if plot_filter:
+    #             # kx_eig, ky_eig, n_e = filter_evan(k0, kx_e, ky_e, plot=False)
+    #             # kz_eig = -1j*np.sqrt(kx_eig**2 + ky_eig**2 - k0**2)
+    #             # k_vec_ref = np.vstack((k0 * np.array([self.pdir[:,0], self.pdir[:,1], self.pdir[:,2]]).T,
+    #             #     np.array([kx_eig, ky_eig, kz_eig]).T))
+    #             # triang = tri.Triangulation(k_vec_ref[:,0], k_vec_ref[:,1])
+    #             # fig = plt.figure()
+    #             # fig.canvas.set_window_title('Filtered evanescent waves')
+    #             # plt.plot(k0*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
+    #             #     k0*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'r')
+    #             # p = plt.tricontourf(wns_filter, levels=50)
+    #             kx_eig, ky_eig, n_e = filter_evan(k0, kx_e, ky_e, plot=False)
+    #             kz_eig = -1j*np.sqrt(kx_eig**2 + ky_eig**2 - k0**2)
+    #             k_vec_ref = np.vstack((k0 * np.array([self.pdir[:,0], self.pdir[:,1], self.pdir[:,2]]).T,
+    #             np.array([kx_eig, ky_eig, kz_eig]).T))
+
+    #             fig = plt.figure(figsize=(7, 5))
+    #             fig.canvas.set_window_title('Filter for freq {:.2f} Hz'.format(self.controls.freq[jf]))
+    #             ax = fig.gca(projection='3d')
+    #             # plt.plot(self.controls.k0[jf]*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
+    #             #     self.controls.k0[jf]*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'r')
+    #             # p = plt.contourf(kx_grid, kx_grid, wns_sqfilter, np.linspace(0,1,101))
+    #             # p=ax.scatter(kx_grid.flatten(), ky_grid.flatten(), wns_sqfilter.flatten(),
+    #             #     c = wns_sqfilter.flatten(), vmin=0, vmax=1)
+    #             p=ax.scatter(k_vec_ref[:,0], k_vec_ref[:,1], wns_filter,
+    #                 c = wns_filter, vmin=0, vmax=1)
+    #             fig.colorbar(p)
+    #             # plt.xlim((self.kx[0],self.kx[-1]))
+    #             # plt.ylim((self.ky[0],self.ky[-1]))
+    #             plt.tight_layout()
+    #             plt.show()
+    #         bar.update(1)
+    #     bar.close()
+
+
+
     def reconstruct_pu(self, receivers, compute_uxy = True):
         """ Reconstruct the sound pressure and particle velocity at a receiver object
 
@@ -351,7 +490,7 @@ class DecompositionEv2(object):
             bar.update(1)
         bar.close()
 
-    def reconstruct_pref(self, receivers, compute_uxy = True):
+    def reconstruct_pref(self, receivers, compute_pinc = False):
         """ Reconstruct the reflected sound pressure at a receiver object
 
         Reconstruct the the reflected sound pressure at a set of desired field points.
@@ -368,15 +507,13 @@ class DecompositionEv2(object):
         ----------
         receivers : object (Receiver)
             contains a set of field points at which to reconstruct
-        compute_uxy : bool
-            Whether to compute x and y components of particle velocity or not (Default is False)
+        compute_pinc : bool
+            Whether to compute incident sound pressure or not (Default is False)
         """
         self.fpts = receivers
         self.p_scat = np.zeros((receivers.coord.shape[0], len(self.controls.k0)), dtype=complex)
-        # self.uz_recon = np.zeros((self.fpts.coord.shape[0], len(self.controls.k0)), dtype=complex)
-        # if compute_uxy:
-        #     self.ux_recon = np.zeros((self.fpts.coord.shape[0], len(self.controls.k0)), dtype=complex)
-        #     self.uy_recon = np.zeros((self.fpts.coord.shape[0], len(self.controls.k0)), dtype=complex)
+        if compute_pinc:
+            self.p_inc = np.zeros((receivers.coord.shape[0], len(self.controls.k0)), dtype=complex)
         # Generate kx and ky for evanescent wave grid
         kx_grid, ky_grid = np.meshgrid(self.kx, self.ky)
         kx_e = kx_grid.flatten()
@@ -390,8 +527,6 @@ class DecompositionEv2(object):
             # compute evanescent kz
             kz_eig = -1j*np.sqrt(kx_eig**2 + ky_eig**2 - k0**2)
             # Stack evanescent kz with propagating kz for incident and reflected grids
-            k_vec_inc = np.vstack((k0 * np.array([self.pdir[:,0], self.pdir[:,1], -self.pdir[:,2]]).T,
-                np.array([kx_eig, ky_eig, -kz_eig]).T))
             k_vec_ref = np.vstack((k0 * np.array([self.pdir[:,0], self.pdir[:,1], self.pdir[:,2]]).T,
                 np.array([kx_eig, ky_eig, kz_eig]).T))
             # The receivers relative to the virtual source planes 
@@ -399,17 +534,22 @@ class DecompositionEv2(object):
                 self.fpts.coord[:,2]-self.zp]).T
             # Forming the sensing matrix
             h_mtx = np.exp(-1j * recs_ref @ k_vec_ref.T)
-            # Compute p and uz
+            # Compute pref
             pk = np.squeeze(np.asarray(self.pk[jf]))
             pk_r = pk[int(len(pk)/2):] # reflected
             self.p_scat[:,jf] = np.squeeze(np.asarray(h_mtx @ pk_r.T))
-            # self.uz_recon[:,jf] = np.squeeze(np.asarray(-((np.divide(np.concatenate((k_vec_inc[:,2], k_vec_ref[:,2])), k0)) *\
-            #     h_mtx) @ self.pk[jf].T))
-            # if compute_uxy:
-            #     self.ux_recon[:,jf] = np.squeeze(np.asarray(((np.divide(np.concatenate(
-            #         (k_vec_inc[:,0], k_vec_ref[:,0])), k0)) * h_mtx) @ self.pk[jf].T))
-            #     self.uy_recon[:,jf] = np.squeeze(np.asarray(((np.divide(np.concatenate(
-            #         (k_vec_inc[:,1], k_vec_ref[:,1])), k0)) * h_mtx) @ self.pk[jf].T))
+            if compute_pinc:
+                # Stack evanescent kz with propagating kz for incident and reflected grids
+                k_vec_inc = np.vstack((k0 * np.array([self.pdir[:,0], self.pdir[:,1], -self.pdir[:,2]]).T,
+                    np.array([kx_eig, ky_eig, -kz_eig]).T))
+                # The receivers relative to the virtual source planes 
+                recs_inc = np.array([self.fpts.coord[:,0], self.fpts.coord[:,1],
+                    self.fpts.coord[:,2]-self.zm]).T
+                # Forming the sensing matrix
+                h_mtx_i = np.exp(-1j * recs_inc @ k_vec_inc.T)
+                # Compute pref
+                pk_i = pk[:int(len(pk)/2)] # incident
+                self.p_inc[:,jf] = np.squeeze(np.asarray(h_mtx_i @ pk_i.T))
             bar.update(1)
         bar.close()
 
@@ -560,12 +700,17 @@ class DecompositionEv2(object):
             method='cubic', fill_value=np.finfo(float).eps, rescale=False)
         # Calculate colors
         if db:
+            np.seterr(divide='ignore')
             color_par_i = 20*np.log10(np.abs(pk_i_grid)/np.amax(np.abs(pk)))
+            color_par_i[color_par_i<-dinrange] = -dinrange
             color_par_r = 20*np.log10(np.abs(pk_r_grid)/np.amax(np.abs(pk)))
+            color_par_r[color_par_r<-dinrange] = -dinrange
             color_range = np.linspace(-dinrange, 0, dinrange+1)
         else:
             color_par_i = np.abs(pk_i_grid)/np.amax(np.abs(pk))
+            # color_par_i = np.nan_to_num(color_par_i)
             color_par_r = np.abs(pk_r_grid)/np.amax(np.abs(pk))
+            # color_par_r = np.nan_to_num(color_par_r)
             color_range = np.linspace(0, 1, 21)
         # Figure
         if plot_incident:
@@ -819,6 +964,9 @@ class ZsArrayEvIg(DecompositionEv2):
     zs(Lx = 0.1, Ly = 0.1, n_x = 21, n_y = 21, theta = [0], avgZs = True)
         Reconstruct the surface impedance and estimate the absorption
 
+    vp_surf(Lx = 0.1, Ly = 0.1, n_x = 21, n_y = 21, avgvp = True)
+        Reconstruct the surface reflection coefficient and estimate the absorption
+
     plot_colormap(self, freq = 1000, total_pres = True)
         Plots a color map of the pressure field.
 
@@ -891,7 +1039,7 @@ class ZsArrayEvIg(DecompositionEv2):
             self.grid = grid.coord
         else:
             self.grid = np.array([0,0,0])
-        # Alocate some memory prior to loop
+        # Reconstruct
         self.reconstruct_pu(receivers=grid)
         Zs_pt = np.divide(self.p_recon, self.uz_recon)
         self.Zs = np.mean(Zs_pt, axis=0)#np.zeros(len(self.controls.k0), dtype=complex)
@@ -900,6 +1048,48 @@ class ZsArrayEvIg(DecompositionEv2):
             self.alpha[jtheta,:] = 1 - (np.abs(np.divide((self.Zs  * np.cos(dtheta) - 1),\
                 (self.Zs * np.cos(dtheta) + 1))))**2
         return self.alpha
+
+    def vp_surf(self, Lx = 0.1, Ly = 0.1, n_x = 21, n_y = 21, avgvp = True):
+        """ Reconstruct the surface reflection coefficient and estimate the absorption
+
+        Reconstruct incident and reflected pressure at a grid of points
+        on ther surface of the absorber (z = 0.0). The absorption coefficient
+        is also calculated.
+
+        Parameters
+        ----------
+        Lx : float
+            The length of calculation aperture
+        Ly : float
+            The width of calculation aperture
+        n_x : int
+            The number of calculation points in x
+        n_y : int
+            The number of calculation points in y dir
+        avgvp : bool
+            Whether to average over <Zs> (default - True) or over <p>/<uz> (if False)
+
+        Returns
+        -------
+        alpha_vp : (N_theta x Nfreq) numpy ndarray
+            The absorption coefficients for each target incident angle.
+        """
+        # Set the grid used to reconstruct the surface impedance
+        grid = Receiver()
+        grid.planar_array(x_len=Lx, y_len=Ly, zr=0.0, n_x = n_x, n_y = n_x)
+        if n_x > 1 or n_y > 1:
+            self.grid = grid.coord
+        else:
+            self.grid = np.array([0,0,0])
+        # Reconstruct
+        self.reconstruct_pref(grid, compute_pinc = True)
+        vp_pt = np.divide(self.p_scat, self.p_inc)
+        vp_recon = np.mean(np.abs(vp_pt)**2, axis=0)
+        # vp_recon = np.linalg.norm(vp_pt, ord=2, axis=0)
+        # self.alpha_vp = 1 - (np.abs(vp_recon))**2
+        # self.alpha_vp = np.zeros(len(self.controls.k0))
+        self.alpha_vp = 1 - vp_recon
+        return self.alpha_vp
 
     def alpha_from_pk(self, ):
         """ Calculate the absorption coefficient from wave-number spectra.
@@ -914,17 +1104,17 @@ class ZsArrayEvIg(DecompositionEv2):
         """
         # Initialize
         self.alpha_pk = np.zeros(len(self.controls.k0))
-        bar = tqdm(total = len(self.controls.k0), desc = 'Calculating absorption from propagating P(k)')
+        bar = tqdm(total = len(self.controls.k0), desc = 'Calculating absorption from P(k)')
         # loop over frequencies
         for jf, k0 in enumerate(self.controls.k0):
             # Whole P(k) - propagating and evanescet
             pk = np.squeeze(np.asarray(self.pk[jf]))
             # Propagating incident and reflected
-            pk_i = pk[:self.n_prop] # incident
-            pk_i2 = np.mean((np.abs(pk_i))**2)
-            pk_r = pk[int(len(pk)/2):int(len(pk)/2)+self.n_prop] # reflected
-            pk_r2 = np.mean((np.abs(pk_r))**2)
-            self.alpha_pk[jf] = 1 - pk_r2/pk_i2
+            pk_i = pk[:int(len(pk)/2)] # incident
+            pk_i2 = np.sum((np.abs(pk_i))**2)
+            pk_r = pk[int(len(pk)/2):] # reflected
+            pk_r2 = np.sum((np.abs(pk_r))**2)
+            self.alpha_pk[jf] = 1 - (pk_r2/pk_i2)
             bar.update(1)
         bar.close()
         return self.alpha_pk

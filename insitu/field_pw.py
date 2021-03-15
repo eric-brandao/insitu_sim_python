@@ -130,6 +130,42 @@ class PWField(object):
                     self.material.Vp[jf] * np.exp(1j * np.dot(k_vecr_p, r_coord)) + p_ev
         self.pres_s.append(pres_rec)
 
+    def add_noise(self, snr = 30, uncorr = False):
+        """ Add gaussian noise to the simulated data.
+
+        The function is used to add noise to the pressure data.
+        it reads the clean signal and estimate its power. Then, it estimates the power
+        of the noise that would lead to the target SNR. Then it draws random numbers
+        from a Normal distribution with standard deviation =  noise power
+
+        Parameters
+        ----------
+        snr : float
+            The signal to noise ratio you want to emulate
+        uncorr : bool
+            If added noise to each receiver is uncorrelated or not.
+            If uncorr is True the the noise power is different for each receiver
+            and frequency. If uncorr is False the noise power is calculated from
+            the average signal magnitude of all receivers (for each frequency).
+            The default value is False
+        """
+        signal = self.pres_s[0]
+        if uncorr:
+            signalPower_lin = (np.abs(signal)/np.sqrt(2))**2
+            signalPower_dB = 10 * np.log10(signalPower_lin)
+            noisePower_dB = signalPower_dB - snr
+            noisePower_lin = 10 ** (noisePower_dB/10)
+        else:
+            # signalPower_lin = (np.abs(np.mean(signal, axis=0))/np.sqrt(2))**2
+            signalPower_lin = ((np.mean(np.abs(signal), axis=0))/np.sqrt(2))**2
+            signalPower_dB = 10 * np.log10(signalPower_lin)
+            noisePower_dB = signalPower_dB - snr
+            noisePower_lin = 10 ** (noisePower_dB/10)
+        np.random.seed(0)
+        noise = np.random.normal(0, np.sqrt(noisePower_lin), size = signal.shape) +\
+                1j*np.random.normal(0, np.sqrt(noisePower_lin), size = signal.shape)
+        self.pres_s[0] = signal + noise
+
     def plot_scene(self, vsam_size = 2):
         '''
         a simple plot of the scene using matplotlib - not redered
