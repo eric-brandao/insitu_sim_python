@@ -720,10 +720,12 @@ class DecompositionEv2(object):
             # plt.subplot(2, 1, 1)
             plt.title('Incident: ' + fig_title)
             plt.plot(self.controls.k0[id_f]*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
-                self.controls.k0[id_f]*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'r')
+                self.controls.k0[id_f]*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'grey')
             p = plt.contourf(kx_grid, ky_grid, color_par_i,
                 color_range, extend='both', cmap = color_code)
             fig.colorbar(p)
+            for c in p.collections:
+                c.set_edgecolor("face")
             plt.xlabel(r'$k_x$ [rad/m]')
             plt.ylabel(r'$k_y$ [rad/m]')
             plt.tight_layout()
@@ -736,10 +738,12 @@ class DecompositionEv2(object):
             fig.canvas.set_window_title('Reflected WNS - PEIG')
             plt.title('Reflected: ' + fig_title)
             plt.plot(self.controls.k0[id_f]*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
-                    self.controls.k0[id_f]*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'r')
+                    self.controls.k0[id_f]*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'grey')
             p = plt.contourf(kx_grid, ky_grid, color_par_r,
                 color_range, extend='both', cmap = color_code)
             fig.colorbar(p)
+            for c in p.collections:
+                c.set_edgecolor("face")
             plt.xlabel(r'$k_x$ [rad/m]')
             plt.ylabel(r'$k_y$ [rad/m]')
             plt.tight_layout()
@@ -752,10 +756,12 @@ class DecompositionEv2(object):
             # Reflected
             plt.title('Reflected: ' + fig_title)
             plt.plot(self.controls.k0[id_f]*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
-                    self.controls.k0[id_f]*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'r')
+                    self.controls.k0[id_f]*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'grey')
             p = plt.contourf(kx_grid, ky_grid, color_par_r,
                 color_range, extend='both', cmap = color_code)
             fig.colorbar(p)
+            for c in p.collections:
+                c.set_edgecolor("face")
             plt.xlabel(r'$k_x$ [rad/m]')
             plt.ylabel(r'$k_y$ [rad/m]')
             plt.tight_layout()
