@@ -639,7 +639,7 @@ class DecompositionEv2(object):
 
     def plot_pkmap_v2(self, freq = 1000, db = False, dinrange = 20,
         save = False, fig_title = '', path = '', fname='', color_code = 'viridis',
-        plot_incident = True, dpi = 600, figsize=(8, 8)):
+        plot_incident = True, dpi = 600, figsize=(8, 8), fileformat='png'):
         """ Plot wave number spectrum as a 2D maps (vs. kx and ky)
 
         Plot the magnitude of the wave number spectrum (WNS) as two 2D maps of
@@ -729,7 +729,7 @@ class DecompositionEv2(object):
             plt.tight_layout()
             if save:
                 filename = path + fname + '_' + str(int(freq)) + 'Hz_i'
-                plt.savefig(fname = filename, format='png', dpi = dpi)
+                plt.savefig(fname = filename, format=fileformat, dpi = dpi)
             # Reflected
             # plt.subplot(2, 1, 2)
             fig = plt.figure(figsize=figsize)
@@ -745,7 +745,7 @@ class DecompositionEv2(object):
             plt.tight_layout()
             if save:
                 filename = path + fname + '_' + str(int(freq)) + 'Hz_r'
-                plt.savefig(fname = filename, format='png', dpi = dpi)
+                plt.savefig(fname = filename, format=fileformat, dpi = dpi)
         else:
             fig = plt.figure(figsize=figsize)
             fig.canvas.set_window_title('Reflected WNS - PEIG')
@@ -761,7 +761,7 @@ class DecompositionEv2(object):
             plt.tight_layout()
             if save:
                 filename = path + fname + '_' + str(int(freq)) + 'Hz_r'
-                plt.savefig(fname = filename, format='png', dpi = dpi)
+                plt.savefig(fname = filename, format=fileformat, dpi = dpi)
 
     def plot_pkmap_prop(self, freq = 1000, db = False, dinrange = 20,
         save = False, name='name', path = '', fname='', color_code = 'viridis',

@@ -243,7 +243,7 @@ def compare_alpha(*alphas, title = 'absorption comparison', freq_max=4000,
     plt.rc('figure', titlesize=BIGGER_SIZE)
 
 
-    plt.figure()
+    plt.figure(figsize=figsize)
     plt.title(title)
     for alpha_dict in alphas:
         alpha_color = alpha_dict['color']
