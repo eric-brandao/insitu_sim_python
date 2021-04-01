@@ -28,11 +28,12 @@ from parray_estimation import octave_freq, octave_avg #, get_hemispheres, get_in
 from decompositionclass import filter_evan
 
 SMALL_SIZE = 11
-BIGGER_SIZE = 13
+BIGGER_SIZE = 18
 #plt.rcParams.update({'font.size': 10})
-plt.rcParams.update({'font.family': 'serif'})
-plt.rc('legend', fontsize=SMALL_SIZE)
-#plt.rc('title', fontsize=SMALL_SIZE)
+plt.rcParams.update({'font.family': 'sans-serif'})
+plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
+plt.rc('legend', fontsize=BIGGER_SIZE)
+#plt.rc('title', fontsize=BIGGER_SIZE)
 plt.rc('font', size=BIGGER_SIZE)          # controls default text sizes
 plt.rc('axes', titlesize=BIGGER_SIZE)     # fontsize of the axes title
 plt.rc('axes', labelsize=BIGGER_SIZE)    # fontsize of the x and y labels

@@ -232,7 +232,7 @@ def compare_alpha(*alphas, title = 'absorption comparison', freq_max=4000,
     SMALL_SIZE = 14
     BIGGER_SIZE = 16
     #plt.rcParams.update({'font.size': 10})
-    plt.rcParams.update({'font.family': 'serif'})
+    plt.rcParams.update({'font.family': 'sans-serif'})
     plt.rc('legend', fontsize=SMALL_SIZE)
     #plt.rc('title', fontsize=SMALL_SIZE)
     plt.rc('font', size=BIGGER_SIZE)          # controls default text sizes
