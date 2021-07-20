@@ -276,6 +276,7 @@ class DecompositionEv2(object):
             pm = self.pres_s[:,jf].astype(complex)
             # Compute SVD
             u, sig, v = csvd(h_mtx)
+            # u, sig, v = np.linalg.svd(h_mtx, full_matrices=False)
             # Find the optimal regularization parameter.
             lambd_value = l_cuve(u, sig, pm, plotit=plot_l)
             # Matrix inversion
@@ -287,6 +288,11 @@ class DecompositionEv2(object):
                 regressor = Ridge(alpha=lambd_value, fit_intercept = False, solver = 'svd')
                 x2 = regressor.fit(H2, p2).coef_
                 x = x2[:h_mtx.shape[1]]+1j*x2[h_mtx.shape[1]:]
+            elif method == 'Tikhonov':
+                # phi_factors = (sig**2)/(sig**2+lambd_value**2)
+                # # because csvd takes the hermitian of h_mtx and only the first m collumns of v
+                # x = (v @ np.diag(phi_factors/sig) @ np.conjugate(u)) @ pm
+                x = tikhonov(u.T,sig,v,pm,lambd_value)
             else:
                 Hm = np.matrix(h_mtx)
                 x = Hm.getH() @ np.linalg.inv(Hm @ Hm.getH() + (lambd_value**2)*np.identity(len(pm))) @ pm
@@ -706,7 +712,7 @@ class DecompositionEv2(object):
             color_par_i[color_par_i<-dinrange] = -dinrange
             color_par_r = 20*np.log10(np.abs(pk_r_grid)/np.amax(np.abs(pk)))
             color_par_r[color_par_r<-dinrange] = -dinrange
-            color_range = np.linspace(-dinrange, 0, dinrange+1)
+            color_range = np.arange(-dinrange, 0.1, 0.1)#np.linspace(-dinrange, 0, 10*(dinrange+0.1))
         else:
             color_par_i = np.abs(pk_i_grid)/np.amax(np.abs(pk))
             # color_par_i = np.nan_to_num(color_par_i)

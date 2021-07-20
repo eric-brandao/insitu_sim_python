@@ -276,12 +276,19 @@ def tikhonov(u,s,v,b,lambd_value):
     # n = v.shape[0]
     p = len(s)
     # ps = 1
-    beta = u[:,0:p].T @ b
+    beta = np.conjugate(u[:,0:p]).T @ b
     zeta = s * beta
     # ll = length(lambda); x_lambda = zeros(n,ll);
     # rho = zeros(ll,1); eta = zeros(ll,1);
     # The standard-form case.
-    x_lambda = v[:,0:p] @ np.divide(zeta,s**2 + lambd_value**2)
+    x_lambda = v[:,0:p] @ np.divide(zeta, s**2 + lambd_value**2)
+    
+    # because csvd takes the hermitian of h_mtx and only the first m collumns of v
+    # phi_factors = (s**2)/(s**2+lambd_value**2)
+    # x = (v @ np.diag(phi_factors/s) @ np.conjugate(u)) @ b
+    # beta_try = np.conjugate(u) @ b
+    # zeta_try = s*beta_try
+    # x_try = v @ np.divide(zeta_try, s**2 + lambd_value**2) #np.diag(s/(s**2+lambd_value**2)) @ beta_try
     return x_lambda
 
 
