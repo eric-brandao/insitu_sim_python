@@ -11,17 +11,17 @@ import sys
 # from progress.bar import Bar, IncrementalBar, FillingCirclesBar, ChargingBar
 #from tqdm._tqdm_notebook import tqdm
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 unused import
-import cvxpy as cp
+#import cvxpy as cp
 # from scipy import linalg # for svd
 # from scipy import signal
 from scipy.sparse.linalg import lsqr, lsmr
-from lcurve_functions import csvd, l_cuve, tikhonov
+from lcurve_functions import csvd, l_cuve, tikhonov, ridge_solver, direct_solver
 import pickle
 from receivers import Receiver
 from material import PorousAbsorber
 from controlsair import cart2sph, sph2cart, cart2sph, update_progress, compare_alpha, compare_zs
 from rayinidir import RayInitialDirections
-from parray_estimation import octave_freq, octave_avg, get_hemispheres, get_inc_ref_dirs
+#from parray_estimation import octave_freq, octave_avg, get_hemispheres, get_inc_ref_dirs
 
 SMALL_SIZE = 11
 BIGGER_SIZE = 13
@@ -228,14 +228,21 @@ class Decomposition(object):
                 Hm = np.matrix(h_mtx)
                 self.pk[:,jf] = Hm.getH() @ np.linalg.inv(Hm @ Hm.getH() + (lambd_value**2)*np.identity(len(pm))) @ pm
             elif method == 'Ridge':
-                # Form a real H2 matrix and p2 measurement
-                H2 = np.vstack((np.hstack((h_mtx.real, -h_mtx.imag)),
-                    np.hstack((h_mtx.imag, h_mtx.real))))
-                p2 = np.vstack((pm.real,pm.imag)).flatten()
-                # form Ridge regressor using the regularization from L-curve
-                regressor = Ridge(alpha=lambd_value, fit_intercept = False, solver = 'svd')
-                x2 = regressor.fit(H2, p2).coef_
-                self.pk[:,jf] = x2[:h_mtx.shape[1]]+1j*x2[h_mtx.shape[1]:]
+                x = ridge_solver(h_mtx,pm,lambd_value)
+                self.pk[:,jf] = x
+            elif method == 'Tikhonov':
+                x = tikhonov(u.T,sig,v,pm,lambd_value)
+                self.pk[:,jf] = x
+# =============================================================================
+#                 # Form a real H2 matrix and p2 measurement
+#                 H2 = np.vstack((np.hstack((h_mtx.real, -h_mtx.imag)),
+#                     np.hstack((h_mtx.imag, h_mtx.real))))
+#                 p2 = np.vstack((pm.real,pm.imag)).flatten()
+#                 # form Ridge regressor using the regularization from L-curve
+#                 regressor = Ridge(alpha=lambd_value, fit_intercept = False, solver = 'svd')
+#                 x2 = regressor.fit(H2, p2).coef_
+#                 self.pk[:,jf] = x2[:h_mtx.shape[1]]+1j*x2[h_mtx.shape[1]:]
+# =============================================================================
                 # # separate propagating from evanescent
                 # self.pk[:,jf] = x[0:self.n_waves]
             #### Performing the Tikhonov inversion with cvxpy #########################
@@ -542,6 +549,7 @@ class Decomposition(object):
             id_f = np.where(self.controls.freq <= freq)
         id_f = id_f[0][-1]
         fig = plt.figure()
+        #plt.subplot(projection="aitoff")
         fig.canvas.set_window_title('Interpolated map of |P(k)| for freq {} Hz'.format(self.controls.freq[id_f]))
         if db:
             color_par = 20*np.log10(np.abs(self.grid_pk[id_f])/np.amax(np.abs(self.grid_pk[id_f])))

@@ -18,14 +18,20 @@ from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 unused import
 # from scipy import linalg # for svd
 # from scipy import signal
 # from scipy.sparse.linalg import lsqr, lsmr
-from lcurve_functions import csvd, l_cuve, tikhonov
+from lcurve_functions import csvd, l_cuve, tikhonov, ridge_solver, direct_solver
 import pickle
 from receivers import Receiver
 from material import PorousAbsorber
 from controlsair import cart2sph
 from rayinidir import RayInitialDirections
-from parray_estimation import octave_freq, octave_avg #, get_hemispheres, get_inc_ref_dirs
+#from parray_estimation import octave_freq, octave_avg #, get_hemispheres, get_inc_ref_dirs
 from decompositionclass import filter_evan
+import utils_insitu
+
+
+import gmsh
+import meshio
+
 
 SMALL_SIZE = 11
 BIGGER_SIZE = 18
@@ -188,9 +194,50 @@ class DecompositionEv2(object):
             fig.canvas.set_window_title('Dir test')
             ax = fig.gca(projection='3d')
             p=ax.scatter(self.pdir[:,0], self.pdir[:,1], self.pdir[:,2])
+            
+    def prop_dir_gmsh(self, n_waves = 642, radius = 50, plot = False):
+        """ Create the propagating wave number directions (hemisphere)
+        
+        The creation of the evanescent waves grid is independent of the propagating waves
+        grid. The reflected propagating wave number directions are uniformily distributed
+        over the surface of an hemisphere (which will have radius k [rad/m] during the
+        decomposition). The directions of propagating waves are computed from gmsh.
+        
+        Parameters
+        ----------
+            n_waves : int
+                The number of intended wave-directions to generate (Default is 642).
+                Usually the subdivision of the sphere will return an equal or higher
+                number of directions. Then, we take the reflected part only (half of it).
+            plot : bool
+                whether you plot or not the directions in space (bool)
+        """
+        radius = radius
+        axis='z'
+        #center_support = False
+        h = np.sqrt(8 * np.pi * radius ** 2 / (np.sqrt(3) * n_waves)) * 20.2 * np.pi / 50
+        coord, elem, all_coords, hemi_index = utils_insitu.gmsh_hemisphere(radius, 
+           [h - 1, h], axis)
+        axis_dict = {"x": 0, "y": 1, "z": 2}
+        
+        self.prop_all_coords_gmsh = all_coords
+        #self.prop_all_coords_gmsh /= np.linalg.norm(self.prop_all_coords_gmsh, axis = 1)[:,None]
+        self.pdir = coord #all_coords #
+        #self.pdir /= np.linalg.norm(self.pdir, axis = 1)[:,None]
+        self.n_prop = len(self.pdir[:,0])
+        #self.prop_coords_gmsh = coord
+        
+        self.conectivities = elem
+        self.receiver_indexes = hemi_index
+        #self.len_center_support = len(arc_coords) if center_support else None
+        if plot:
+            fig = plt.figure()
+            ax = fig.gca(projection='3d')
+            ax.scatter(self.pdir[:,0], self.pdir[:,1], self.pdir[:,2])
+            #ax.scatter(self.prop_all_coords_gmsh[:,0], self.prop_all_coords_gmsh[:,1], self.prop_all_coords_gmsh[:,2])
 
     def pk_tikhonov_ev_ig(self, f_ref = 1.0, f_inc = 1.0, factor = 2.5, z0 = 1.5,
-        plot_l = False, method = 'direct'):
+        plot_l = False, method = 'Tikhonov', zref = 0.0):
         """ Wave number spectrum estimation using Tikhonov inversion
 
         Estimate the wave number spectrum using regularized Tikhonov inversion.
@@ -229,13 +276,20 @@ class DecompositionEv2(object):
             distance from the sample and the array thickness.
         plot_l : bool
             Whether to plot the L-curve or not. Default is false.
+        method : string
+            Method used on inversion: default is Tikhonov, which uses
+            the SVD and is similar to the Matlab implementation. The
+            other is Ridge, which uses de sklearn function
+        zref : float
+            Location of the reference z plane. Default is 0.0
         """
         self.decomp_type = 'Tikhonov (transparent array) w/ evanescent waves - uses irregular grid'
         # Incident and reflected amplitudes
         self.f_ref = f_ref
         self.f_inc = f_inc
         # reflected and incident virtual source plane distances
-        self.zp = -factor * np.amax([self.receivers.ax, self.receivers.ay])
+        self.zref = zref
+        self.zp = self.zref - factor * np.amax([self.receivers.ax, self.receivers.ay])
         self.zm = z0 + factor * np.amax([self.receivers.ax, self.receivers.ay])
         # Generate kx and ky for evanescent wave grid
         self.kx = np.linspace(start = -np.pi/self.receivers.ax,
@@ -281,27 +335,17 @@ class DecompositionEv2(object):
             lambd_value = l_cuve(u, sig, pm, plotit=plot_l)
             # Matrix inversion
             if method == 'Ridge':
-                # Form a real H2 matrix and p2 measurement
-                H2 = np.vstack((np.hstack((h_mtx.real, -h_mtx.imag)),
-                    np.hstack((h_mtx.imag, h_mtx.real))))
-                p2 = np.vstack((pm.real,pm.imag)).flatten()
-                regressor = Ridge(alpha=lambd_value, fit_intercept = False, solver = 'svd')
-                x2 = regressor.fit(H2, p2).coef_
-                x = x2[:h_mtx.shape[1]]+1j*x2[h_mtx.shape[1]:]
+                x = ridge_solver(h_mtx,pm,lambd_value)
             elif method == 'Tikhonov':
-                # phi_factors = (sig**2)/(sig**2+lambd_value**2)
-                # # because csvd takes the hermitian of h_mtx and only the first m collumns of v
-                # x = (v @ np.diag(phi_factors/sig) @ np.conjugate(u)) @ pm
                 x = tikhonov(u.T,sig,v,pm,lambd_value)
             else:
-                Hm = np.matrix(h_mtx)
-                x = Hm.getH() @ np.linalg.inv(Hm @ Hm.getH() + (lambd_value**2)*np.identity(len(pm))) @ pm
+                x = direct_solver(h_mtx,pm,lambd_value)         
             self.pk.append(x)
             bar.update(1)
         bar.close()
 
     def filter_wns(self, kc_factor = 1.0, tapper = 2.0, plot_filter = False):
-        """ 2D window in k dommain
+        """ 2D filter in k dommain
         """
         # recover original regular grid
         kx_grid, ky_grid = np.meshgrid(self.kx,self.ky)
@@ -708,9 +752,9 @@ class DecompositionEv2(object):
         # Calculate colors
         if db:
             np.seterr(divide='ignore')
-            color_par_i = 20*np.log10(np.abs(pk_i_grid)/np.amax(np.abs(pk)))
+            color_par_i = 20*np.log10(np.abs(pk_i_grid)/np.amax(np.abs(pk_i_grid)))
             color_par_i[color_par_i<-dinrange] = -dinrange
-            color_par_r = 20*np.log10(np.abs(pk_r_grid)/np.amax(np.abs(pk)))
+            color_par_r = 20*np.log10(np.abs(pk_r_grid)/np.amax(np.abs(pk_r_grid)))
             color_par_r[color_par_r<-dinrange] = -dinrange
             color_range = np.arange(-dinrange, 0.1, 0.1)#np.linspace(-dinrange, 0, 10*(dinrange+0.1))
         else:
@@ -722,15 +766,15 @@ class DecompositionEv2(object):
         # Figure
         if plot_incident:
             fig = plt.figure(figsize=figsize)
-            fig.canvas.set_window_title('Incident WNS - PEIG')
+            #fig.canvas.set_window_title('Incident WNS - PEIG')
             # Incident
             # plt.subplot(2, 1, 1)
-            plt.title('Incident: ' + fig_title)
+            #plt.title('Incident: ' + fig_title)
             plt.plot(self.controls.k0[id_f]*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
                 self.controls.k0[id_f]*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'grey')
             p = plt.contourf(kx_grid, ky_grid, color_par_i,
-                color_range, extend='both', cmap = color_code)
-            fig.colorbar(p)
+                color_range, vmin=-dinrange, vmax=0, extend='both', cmap = color_code)
+            fig.colorbar(p, shrink=1.0, ticks=np.arange(-dinrange, 3, 3), label = r'$|\bar{P}_i(x, y)|$ dB')
             for c in p.collections:
                 c.set_edgecolor("face")
             plt.xlabel(r'$k_x$ [rad/m]')
@@ -742,13 +786,13 @@ class DecompositionEv2(object):
             # Reflected
             # plt.subplot(2, 1, 2)
             fig = plt.figure(figsize=figsize)
-            fig.canvas.set_window_title('Reflected WNS - PEIG')
-            plt.title('Reflected: ' + fig_title)
+            #fig.canvas.set_window_title('Reflected WNS - PEIG')
+            #plt.title('Reflected: ' + fig_title)
             plt.plot(self.controls.k0[id_f]*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
                     self.controls.k0[id_f]*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'grey')
             p = plt.contourf(kx_grid, ky_grid, color_par_r,
-                color_range, extend='both', cmap = color_code)
-            fig.colorbar(p)
+                color_range, vmin=-dinrange, vmax=0, extend='both', cmap = color_code)
+            fig.colorbar(p, shrink=1.0, ticks=np.arange(-dinrange, 3, 3), label = r'$|\bar{P}_r(x, y)|$ dB')
             for c in p.collections:
                 c.set_edgecolor("face")
             plt.xlabel(r'$k_x$ [rad/m]')
@@ -759,22 +803,22 @@ class DecompositionEv2(object):
                 plt.savefig(fname = filename, format=fileformat, dpi = dpi)
         else:
             fig = plt.figure(figsize=figsize)
-            fig.canvas.set_window_title('Reflected WNS - PEIG')
+            #fig.canvas.set_window_title('Reflected WNS - PEIG')
             # Reflected
-            plt.title('Reflected: ' + fig_title)
+            #plt.title('Reflected: ' + fig_title)
             plt.plot(self.controls.k0[id_f]*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
                     self.controls.k0[id_f]*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'grey')
             p = plt.contourf(kx_grid, ky_grid, color_par_r,
                 color_range, extend='both', cmap = color_code)
-            fig.colorbar(p)
+            fig.colorbar(p, shrink=1.0, ticks=np.arange(-dinrange, 3, 3), label = r'$|\bar{P}_r(x, y)|$ dB')
             for c in p.collections:
                 c.set_edgecolor("face")
             plt.xlabel(r'$k_x$ [rad/m]')
             plt.ylabel(r'$k_y$ [rad/m]')
             plt.tight_layout()
             if save:
-                filename = path + fname + '_' + str(int(freq)) + 'Hz_r'
-                plt.savefig(fname = filename, format=fileformat, dpi = dpi)
+                filename = path + fname + '_' + str(int(freq)) + 'Hz_r.pdf'
+                plt.savefig(fname = filename, format=fileformat, dpi = dpi, bbox_inches='tight')
 
     def plot_pkmap_prop(self, freq = 1000, db = False, dinrange = 20,
         save = False, name='name', path = '', fname='', color_code = 'viridis',
@@ -861,6 +905,129 @@ class DecompositionEv2(object):
         if save:
             filename = path + fname + '_' + str(int(freq)) + 'Hz'
             plt.savefig(fname = filename, format='png', dpi = dpi)
+
+    def plot_directivity(self, freq = 1000, dinrange = 20,
+        save = False, fig_title = '', path = '', fname='', color_code = 'viridis',
+        plot_incident = True, dpi = 600, figsize=(8, 8), fileformat='png',
+        color_method = 'dB',
+        radius_method = 'dB'):
+        """ Plot directivity as a 3D maps (vs. kx and ky)
+
+        Plot the magnitude of the propagating wave number spectrum (WNS) as 
+        3D maps of propagating waves. The map is first interpolated into
+        a regular grid. It is a normalized version of the magnitude, either between
+        0 and 1 or between -dinrange and 0. The maps are ploted as color as function
+        of kx and ky. The radiation circle is also ploted.
+
+        Parameters
+        ----------
+            freq : float
+                Which frequency you want to see. If the calculated spectrum does not contain it
+                we plot the closest frequency before the target.
+            db : bool
+                Whether to plot in linear scale (default) or decibel scale.
+            dinrange : float
+                You can specify a dinamic range for the decibel scale. It will not affect the
+                linear scale.
+            save : bool
+                Whether to save or not the figure. PDF file with simple standard name
+            fig_title : str
+                Title of the figure file #FixMe
+            path : str
+                Path to save the figure file
+            fname : str
+                File name to save the figure file
+            color_code : str
+                Can be anything that matplotlib supports. Some recomendations given below:
+                'viridis' (default) - Perceptually Uniform Sequential
+                'Greys' - White (cold) to black (hot)
+                'seismic' - Blue (cold) to red (hot) with a white in the middle
+            plot_incident : bool
+                Whether to plot incident WNS or not
+            dpi : float
+                dpi of figure - to save
+            figsize : tuple
+                size of the figure
+        """
+        # get freq index
+        id_f = utils_insitu.find_freq_index(self.controls.freq, freq)
+        
+        # wavenumber in air
+        k0 = self.controls.k0[id_f]
+        # propagating plane wave directions
+        directions = k0 * np.array([self.pdir[:,0], self.pdir[:,1], -self.pdir[:,2]]).T
+        
+        # k-space (total)
+        pk = np.squeeze(np.asarray(self.pk[id_f]))
+        
+        # Directivity k-space (reflected)
+        pk_r = pk[int(len(pk)/2):int(len(pk)/2)+self.n_prop] # reflected
+        pk_r2 = (directions[:,2]/k0) * pk_r
+        
+        #arc_theta = []
+        # x, y, z, conectivities, r, plot_pressure = utils_insitu.pre_balloon(directions, 
+        #     self.receiver_indexes, self.conectivities, pk_r, 50)
+        
+        # balloon_data = utils_insitu.pre_balloon_list(directions, 
+        #      self.receiver_indexes, self.conectivities, pk_r, 50, 
+        #      arc_theta)
+        
+        #return balloon_data #x, y, z, conectivities, r, plot_pressure
+        fig = utils_insitu.plot_3d_polar(self.pdir, self.conectivities,
+             pk_r2, dinrange = dinrange, color_method = color_method,
+             radius_method = radius_method)
+        return fig
+# =============================================================================
+#         # theta phi representation of original spherical points
+#         _, theta, phi = cart2sph(directions[:,0], directions[:,1], directions[:,2])
+#         
+#         # Calculate colors
+#         if db:
+#             color_par = 20*np.log10(np.abs(pk_r)/np.amax(np.abs(pk_r)))
+#             color_range = np.linspace(-dinrange, 0, dinrange+1)
+#         else:
+#             color_par = np.abs(pk_r)/np.amax(np.abs(pk_r))
+#             color_range = np.linspace(0, 1, 21)
+#         
+#         utils_insitu.plot3D_directivity_tri(phi, theta, color_par)
+# =============================================================================
+# =============================================================================
+#         # create the new grid to iterpolate
+#         grid_phi, grid_theta = utils_insitu.create_angle_grid(self.n_prop, 
+#               grid_factor = 2, limit_phi = (-180,180), limit_theta = (0, 90))
+#         
+#         # interpolate
+#         pk_grid = utils_insitu.interpolate2regulargrid(directions, np.abs(pk_r), 
+#            grid_phi, grid_theta)
+# 
+#         # Calculate colors
+#         if db:
+#             color_par = 20*np.log10(np.abs(pk_grid)/np.amax(np.abs(pk_grid)))
+#             color_range = np.linspace(-dinrange, 0, dinrange+1)
+#         else:
+#             color_par = np.abs(pk_grid)/np.amax(np.abs(pk_grid))
+#             color_range = np.linspace(0, 1, 21)
+#         
+#         utils_insitu.plot3D_directivity(grid_phi, grid_theta, color_par)
+# =============================================================================
+        
+# =============================================================================
+#         # Figure
+#         fig = plt.figure(figsize = figsize)
+#         ax = fig.gca(projection='3d')
+#         p = ax.plot_surface(np.rad2deg(grid_phi), np.rad2deg(grid_theta)+90, color_par,
+#             color_range, cmap = color_code)
+#         fig.colorbar(p)
+#         ax.set_xlabel(r'$\phi$ (azimuth) [deg]')
+#         ax.set_ylabel(r'$\theta$ (elevation) [deg]')
+#         ax.set_zlabel(r'$|P(\theta,\phi)|$ [-]')
+#         plt.tight_layout()
+#         if save:
+#             filename = path + fname + '_' + str(int(freq)) + 'Hz'
+#             plt.savefig(fname = filename, format='png', dpi = dpi)
+# =============================================================================
+
+        #return fig
 
     def save(self, filename = 'array_zest', path = '/home/eric/dev/insitu/data/zs_recovery/'):
         """ To save the decomposition object as pickle

@@ -399,3 +399,4 @@ def update_progress(progress):
     text = "\rPercent: [{0}] {1}% {2}".format( "#"*block + "-"*(barLength-block), float("{0:.2f}".format(progress*100)), status)
     sys.stdout.write(text)
     sys.stdout.flush()
+    

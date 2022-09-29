@@ -18,6 +18,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import scipy.io as scio
 from scipy import linalg # for svd
+from sklearn.linear_model import Ridge
 from scipy import optimize
 import warnings
 
@@ -261,7 +262,7 @@ def tikhonov(u,s,v,b,lambd_value):
             right singular vectors
         bm: numpy 1darray
             your measurement vector (size: Nm x 1)
-        lam_opt : float
+        lambd_value : float
             optimal regularization parameter
     Returns
     -------
@@ -291,6 +292,53 @@ def tikhonov(u,s,v,b,lambd_value):
     # x_try = v @ np.divide(zeta_try, s**2 + lambd_value**2) #np.diag(s/(s**2+lambd_value**2)) @ beta_try
     return x_lambda
 
+
+def ridge_solver(h_mtx,bm,lambd_value):
+    """ Ridge regression. 
+
+    Parameters
+    ----------
+        h_mtx : numpy ndarray
+            sensing matrix
+        bm: numpy 1darray
+            your measurement vector (size: Nm x 1)
+        lambd_value : float
+            optimal regularization parameter
+    Returns
+    -------
+        x_lambda : numpy 1darray
+            estimated solution to inverse problem
+    """
+    # Form a real H2 matrix and p2 measurement
+    H2 = np.vstack((np.hstack((h_mtx.real, -h_mtx.imag)),
+        np.hstack((h_mtx.imag, h_mtx.real))))
+    p2 = np.vstack((bm.real,bm.imag)).flatten()
+    regressor = Ridge(alpha=lambd_value, fit_intercept = False, solver = 'svd')
+    x2 = regressor.fit(H2, p2).coef_
+    x_lambda = x2[:h_mtx.shape[1]]+1j*x2[h_mtx.shape[1]:]
+    return x_lambda
+
+
+def direct_solver(h_mtx,bm,lambd_value):
+    """ Solves the Tikhonov regularization with analytical sol.
+
+    Parameters
+    ----------
+        h_mtx : numpy ndarray
+            sensing matrix
+        bm: numpy 1darray
+            your measurement vector (size: Nm x 1)
+        lambd_value : float
+            optimal regularization parameter
+    Returns
+    -------
+        x_lambda : numpy 1darray
+            estimated solution to inverse problem
+    """
+    Hm = np.matrix(h_mtx)
+    x_lambda = Hm.getH() @ np.linalg.inv(Hm @ Hm.getH() +\
+                                         (lambd_value**2)*np.identity(len(bm))) @ bm
+    return x_lambda   
 
 # np.random.seed(0)
 # H = np.random.randn(7, 10)

@@ -8,7 +8,7 @@ import scipy.integrate as integrate
 import scipy as spy
 import time
 import sys
-from progress.bar import Bar, IncrementalBar, FillingCirclesBar, ChargingBar
+#from progress.bar import Bar, IncrementalBar, FillingCirclesBar, ChargingBar
 from tqdm import tqdm
 import pickle
 import time

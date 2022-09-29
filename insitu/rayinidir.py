@@ -1,5 +1,5 @@
 import numpy as np
-import quaternion as qua
+#import quaternion as qua
 from tessellation import SphereTessellator
 
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 unused import

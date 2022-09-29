@@ -6,9 +6,9 @@ import scipy.integrate as integrate
 import scipy as spy
 import time
 import sys
-from progress.bar import Bar, IncrementalBar, FillingCirclesBar, ChargingBar
+#from progress.bar import Bar, IncrementalBar, FillingCirclesBar, ChargingBar
 # from insitu.field_calc import LocallyReactive
-
+from tqdm import tqdm
 import pickle
 
 
@@ -171,7 +171,11 @@ class ImpedanceDeductionQterm(object):
         # allocate memory for the estimated impedance
         self.Zs_q_pp = np.zeros(len(k0), dtype = complex)
         # setup progressbar
-        bar = ChargingBar('Calculating the surface impedance (q-term)', max=len(k0), suffix='%(percent)d%%')
+# =============================================================================
+#         bar = ChargingBar('Calculating the surface impedance (q-term)', max=len(k0), suffix='%(percent)d%%')
+# =============================================================================
+        bar = tqdm(total = len(self.controls.k0),
+            desc = 'Calculating the surface impedance (q-term)')
         for jf, kf in enumerate(k0): # scan all frequencies
             error = 1000
             iteration = 1
@@ -206,8 +210,12 @@ class ImpedanceDeductionQterm(object):
                     error = np.abs(fZg)
                 iteration += 1
             self.Zs_q_pp[jf] = Zg
-            bar.next()
-        bar.finish()
+                bar.update(1)
+            bar.close()
+# =============================================================================
+#             bar.next()
+#         bar.finish()
+# =============================================================================
         self.Vp_q_pp = (self.Zs_q_pp - 1) / (self.Zs_q_pp + 1)
         self.alpha_q_pp = 1 - (np.abs(self.Vp_q_pp)) ** 2
         return self.Vp_q_pp, self.Zs_q_pp, self.alpha_q_pp
@@ -240,7 +248,8 @@ class ImpedanceDeductionQterm(object):
         # allocate memory for the estimated impedance
         self.Zs_q_pu = np.zeros(len(k0), dtype = complex)
         # setup progressbar
-        bar = ChargingBar('Calculating the surface impedance (q-term)', max=len(k0), suffix='%(percent)d%%')
+        bar = tqdm(total = len(self.controls.k0),
+            desc = 'Calculating the surface impedance (q-term)')
         for jf, kf in enumerate(k0): # scan all frequencies
             error = 1000
             iteration = 1
@@ -275,8 +284,8 @@ class ImpedanceDeductionQterm(object):
                     error = np.abs(fZg)
                 iteration += 1
             self.Zs_q_pu[jf] = Zg
-            bar.next()
-        bar.finish()
+            bar.update(1)
+        bar.close()
         self.Vp_q_pu = (self.Zs_q_pu*np.cos(theta) - 1) / (self.Zs_q_pu*np.cos(theta) + 1)
         self.alpha_q_pu = 1 - (np.abs(self.Vp_q_pu)) ** 2
         # return self.Vp_q_pp, self.Zs_q_pp, self.alpha_q_pp
