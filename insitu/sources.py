@@ -99,7 +99,7 @@ class Source():
         """
         # Define theta and phi discretization
         directions = RayInitialDirections()
-        directions, _ = directions.isotropic_rays(Nrays = ns)
+        directions, _, _ = directions.isotropic_rays(Nrays = ns)
         #print('The number of sources is: {}'.format(n_waves))
         if plot:
             directions.plot_points()

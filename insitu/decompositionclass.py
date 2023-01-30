@@ -163,7 +163,7 @@ class Decomposition(object):
                 whether to use only half a sphere - used in radiation problems only
         """
         directions = RayInitialDirections()
-        self.dir, self.n_waves = directions.isotropic_rays(Nrays = int(n_waves))
+        self.dir, self.n_waves,_ = directions.isotropic_rays(Nrays = int(n_waves))
         if halfsphere:
             _, theta, _ = cart2sph(self.dir[:,0],self.dir[:,1],self.dir[:,2])
             theta_inc_id, theta_ref_id = get_hemispheres(theta)
@@ -488,16 +488,22 @@ class Decomposition(object):
         fig = plt.figure()
         fig.canvas.set_window_title('Scatter plot of |P(k)| for freq {} Hz'.format(self.controls.freq[id_f]))
         ax = fig.gca(projection='3d')
+        vmin = 0
+        vmax = 1
         if db:
             color_par = 20*np.log10(np.abs(self.pk[:,id_f])/np.amax(np.abs(self.pk[:,id_f])))
             id_outofrange = np.where(color_par < -dinrange)
             color_par[id_outofrange] = -dinrange
+            vmin = -dinrange
+            vmax = 0
         else:
             color_par = np.abs(self.pk[:,id_f])/np.amax(np.abs(self.pk[:,id_f]))
         if travel:
-            p=ax.scatter(self.dir[:,0], self.dir[:,1], -self.dir[:,2], c = color_par)
+            p=ax.scatter(self.dir[:,0], self.dir[:,1], -self.dir[:,2], c = color_par,
+                         vmin = vmin, vmax = vmax)
         else:
-            p=ax.scatter(self.dir[:,0], self.dir[:,1], self.dir[:,2], c = color_par)
+            p=ax.scatter(self.dir[:,0], self.dir[:,1], self.dir[:,2], c = color_par,
+                         vmin = vmin, vmax = vmax)
         fig.colorbar(p)
         ax.set_xlabel('X axis')
         ax.set_ylabel('Y axis')

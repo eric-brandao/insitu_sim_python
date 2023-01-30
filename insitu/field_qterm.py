@@ -7,7 +7,7 @@ import scipy.integrate as integrate
 import scipy as spy
 import time
 import sys
-from progress.bar import Bar, IncrementalBar, FillingCirclesBar, ChargingBar
+#from progress.bar import Bar, IncrementalBar, FillingCirclesBar, ChargingBar
 import pickle
 from controlsair import plot_spk
 
@@ -68,7 +68,8 @@ class LocallyReactiveInfSph(object):
         Load a simulation object.
     """
 
-    def __init__(self, air, controls, material, sources, receivers):
+    def __init__(self, air, controls, material, sources, receivers,
+                 bar_mode = 'terminal'):
         """
 
         Parameters
@@ -95,6 +96,11 @@ class LocallyReactiveInfSph(object):
         self.beta = (self.air.rho0 * self.air.c0) / self.material.Zs  # normalized surface admitance
         self.pres_s = []
         self.uz_s = []
+        if bar_mode == 'notebook':
+            from tqdm.notebook import trange, tqdm
+        else:
+            from tqdm import tqdm
+        self.tqdm = tqdm
 
     def p_loc(self, upper_int_limit = 20):
         """ Calculates the sound pressure spectrum for all sources and receivers
@@ -115,7 +121,9 @@ class LocallyReactiveInfSph(object):
                 r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
                 # setup progressbar
                 print('Calculate sound pressure for source {} and receiver {}'.format(js+1, jrec+1))
-                bar = ChargingBar('Processing sound pressure (q-term)', max=len(self.controls.k0), suffix='%(percent)d%%')
+                #bar = ChargingBar('Processing sound pressure (q-term)', max=len(self.controls.k0), suffix='%(percent)d%%')
+                bar = self.tqdm(total = len(self.controls.k0),
+                           desc = 'Processing sound pressure (q-term)')
                 # pres = []
                 for jf, k0 in enumerate(self.controls.k0):
                     f_qr = lambda q: np.real((np.exp(-q * k0 * self.beta[jf])) *
@@ -133,8 +141,8 @@ class LocallyReactiveInfSph(object):
                     # pres.append((np.exp(-1j * k0 * r1) / r1) +
                     #     (np.exp(-1j * k0 * r2) / r2) - 2 * k0 * self.beta[jf] * Iq)
                     # Progress bar stuff
-                    bar.next()
-                bar.finish()
+                    bar.update(1)
+                bar.close()
             self.pres_s.append(pres_rec)
 
     def uz_loc(self, upper_int_limit = 20):
@@ -155,8 +163,10 @@ class LocallyReactiveInfSph(object):
                 r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5
                 r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
                 print('Calculate particle vel. (z-dir) for source {} and receiver {}'.format(js+1, jrec+1))
-                bar = ChargingBar('Processing particle velocity z-dir (q-term)',
-                    max=len(self.controls.k0), suffix='%(percent)d%%')
+                # bar = ChargingBar('Processing particle velocity z-dir (q-term)',
+                #     max=len(self.controls.k0), suffix='%(percent)d%%')
+                bar = self.tqdm(total = len(self.controls.k0),
+                           desc = 'Processing particle velocity z-dir (q-term)')
                 for jf, k0 in enumerate(self.controls.k0):
                     # f_qr = lambda q: np.real((np.exp(-q * k0 * self.beta[jf])) *
                     #     ((np.exp(-1j * k0 * (r**2 + (hs + zr - 1j*q)**2)**0.5)) /
@@ -185,8 +195,8 @@ class LocallyReactiveInfSph(object):
                     # pres.append((np.exp(-1j * k0 * r1) / r1) +
                     #     (np.exp(-1j * k0 * r2) / r2) - 2 * k0 * self.beta[jf] * Iq)
                     # Progress bar stuff
-                    bar.next()
-                bar.finish()
+                    bar.update(1)
+                bar.close()
             self.uz_s.append(uz_rec)
 
     def p_mult(self, upper_int_limit = 10, randomize = False, amp_min = 0.0002, amp_max = 20):
@@ -220,7 +230,9 @@ class LocallyReactiveInfSph(object):
             r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
             # setup progressbar
             print('Calculate sound pressure for receiver {}'.format(jrec+1))
-            bar = ChargingBar('Processing sound pressure (NLR)', max=len(self.controls.k0), suffix='%(percent)d%%')
+            # bar = ChargingBar('Processing sound pressure (NLR)', max=len(self.controls.k0), suffix='%(percent)d%%')
+            bar = self.tqdm(total = len(self.controls.k0),
+                           desc = 'Processing diffuse sound pressure')
             # seed randomizition
             np.random.seed(0)
             # self.q = np.zeros((len(self.controls.freq), len(self.sources.coord)), dtype = complex)
@@ -246,8 +258,8 @@ class LocallyReactiveInfSph(object):
                 # Pressure
                 pres_rec[jrec, jf] = (np.sum(qs * (np.exp(-1j * k0 * r1) / r1 + np.exp(-1j * k0 * r2) / r2)) -\
                     2 * k0 * self.beta[jf] * Iq)
-                bar.next()
-            bar.finish()
+                bar.update(1)
+            bar.close()
         self.pres_s.append(pres_rec)
 
     def add_noise(self, snr = 30, uncorr = False):

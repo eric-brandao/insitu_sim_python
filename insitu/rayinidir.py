@@ -73,7 +73,7 @@ class RayInitialDirections():
         self.vinit = np.array(self.vinit, dtype=np.float32)
         self.Nrays = self.vinit.shape[0]
         # log.info(self.Nrays)
-        return self.vinit, self.Nrays
+        return self.vinit, self.Nrays, self.indices
 
     def conical_rays(self, Nrays, radius, direction=(1, 0, 0), tol = 1e-5):
         '''

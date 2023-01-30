@@ -13,11 +13,12 @@ from controlsair import cart2sph, sph2cart
 import gmsh
 import meshio
 
+import plotly.express as px
 import plotly.graph_objects as go
 import plotly.figure_factory as ff
 import plotly.io as pio
-import plotly.figure_factory as ff
-import plotly.graph_objs as go
+#import plotly.figure_factory as ff
+#import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 
 
@@ -346,17 +347,19 @@ def pre_balloon_list(all_coords, receiver_indexes, conectivities, pressure, pres
 
 
 def plot_3d_polar(coords, conectivities, pressure, dinrange = 18,
-                  color_method = 'dB',
-                  radius_method = 'normalized'):#, axis):
-    # balloon_data = pre_balloon_list(all_coords, receiver_indexes, conectivities,
-    #                                 pressure, pressure_lim, arc_theta)
+                  color_method = 'dB', radius_method = 'normalized',
+                  color_code = 'jet', view = 'iso_z', eye = None,
+                  renderer = 'notebook', remove_axis = False):#, axis):
     
+    # renderer
+    pio.renderers.default = renderer
+    # Balloon data
     x, y, z, color_data, color_limits = pre_balloon(coords,
          pressure, dinrange = dinrange,
          color_method = color_method,
          radius_method = radius_method)
     
-    colorbar_dict = {'title': 'SPL [dB]',
+    colorbar_dict = {'title': color_method,
                      'titlefont': {'color': 'black'},
                      'title_side': 'right',
                      'tickangle': -90,
@@ -364,26 +367,118 @@ def plot_3d_polar(coords, conectivities, pressure, dinrange = 18,
                      'tickfont': {'color': 'black'},
                      'x': -0.1}
     
-    fig = go.Figure()
-
-    # for i in range(len(balloon_data["x"])):      
-    #     fig.add_trace(go.Mesh3d(x=balloon_data["x"][i], y=balloon_data["y"][i], z=balloon_data["z"][i],
-    #                             i=balloon_data["elements"][i].T[0, :], j=balloon_data["elements"][i].T[1, :],
-    #                             k=balloon_data["elements"][i].T[2, :], intensity=balloon_data["intensity"][i],
-    #                             colorscale='jet', intensitymode='vertex', showlegend=False,
-    #                             visible=True, opacity=1,
-    #                             showscale=True, colorbar=colorbar_dict, cmin=-18, cmax=0))
-    
-       
-    fig.add_trace(go.Mesh3d(x=x, y=y, z=z,
+    fig = go.Figure()   
+    trace = go.Mesh3d(x=x, y=y, z=z,
                             i=conectivities.T[0, :], j=conectivities.T[1, :],
                             k=conectivities.T[2, :], intensity=color_data,
-                            colorscale='inferno', intensitymode='vertex', showlegend=False,
+                            colorscale=color_code, intensitymode='vertex', showlegend=False,
                             visible=True, opacity=1,
                             showscale=True, colorbar=colorbar_dict, 
-                            cmin=color_limits[0], cmax=color_limits[1]))
+                            cmin=color_limits[0], cmax=color_limits[1])
+    fig.add_trace(trace)
+    # fig = px.scatter_3d(x=x, y=y, z=z, color = color_data)
+    # trace = 0
     
-    #fig = remove_bg_and_axis(fig, 1)
-    #fig = set_all_cameras(fig, 1, axis=axis)
+    eye = set_camera_eye(fig, view = view, eye_user = eye)
+    camera = dict(eye=eye)
 
+    fig.update_layout(font=dict(family="Times New Roman", size=14),
+                      scene_camera = camera)
+    
+    if remove_axis:
+        fig = remove_bg_and_axis(fig, 1)
+    #fig = set_all_cameras(fig, 1, axis='z')
+    return fig, trace
+
+def plot_3d_polar2(coords, conectivities, pressure, dinrange = 18,
+                  color_method = 'dB', radius_method = 'normalized',
+                  color_code = 'jet', view = 'iso_z', eye = None,
+                  figsize = (7,5)):
+    # Balloon data
+    x, y, z, color_data, color_limits = pre_balloon(coords,
+         pressure, dinrange = dinrange,
+         color_method = color_method,
+         radius_method = radius_method)
+    # set colormap
+    my_cmap = plt.get_cmap(color_code)
+    
+    # set color limits
+    if radius_method == 'dB':
+        vmax = dinrange
+        cbar_ticks = np.linspace(0, vmax, 4)
+        cbar_ticks_label = cbar_ticks-dinrange 
+    else:
+        vmax = 1
+        cbar_ticks = np.linspace(0, vmax, 4)
+        cbar_ticks_label = cbar_ticks
+        
+    # Figure
+    fig = plt.figure(figsize = figsize)
+    ax = fig.add_subplot(111, projection='3d')
+    trisurf = ax.plot_trisurf(x, y, z, triangles=conectivities,
+                    cmap = my_cmap, antialiased = False, shade = False,
+                    linewidth = 0, edgecolor='Gray', vmin = 0, vmax = vmax)
+    
+    
+    cbar = fig.colorbar(trisurf, shrink=0.7, aspect=50, 
+                 ticks = cbar_ticks)
+    cbar.ax.set_yticklabels(cbar_ticks_label)
+    ax.set_xlim(-vmax/2, vmax/2)
+    ax.set_ylim(-vmax/2, vmax/2)
+    ax.set_zlim(0, vmax)
+    # View
+    if eye != None:
+        r_view, theta_view, phi_view = cart2sph(eye['x'],eye['y'],eye['z'])
+        ax.view_init(np.rad2deg(theta_view), np.rad2deg(phi_view))
+    
+    return fig, ax
+    
+
+def remove_bg_and_axis(fig, len_scene):
+    for ic in range(len_scene):
+        scene_text = f'scene{ic + 1}' if ic > 0 else 'scene'
+        fig.layout[scene_text]['xaxis']['showbackground'] = False
+        fig.layout[scene_text]['xaxis']['visible'] = False
+        fig.layout[scene_text]['yaxis']['showbackground'] = False
+        fig.layout[scene_text]['yaxis']['visible'] = False
+        fig.layout[scene_text]['zaxis']['showbackground'] = False
+        fig.layout[scene_text]['zaxis']['visible'] = False
+    return fig
+
+def set_camera_eye(fig, view = 'iso_z', eye_user = None):
+    """Set a view
+    """
+    if view == 'iso_z':
+        eye = dict(x=1.2, y=-1.1, z=0.5)
+    elif view == 'z':
+        eye = dict(x=0, y=0, z=2)
+    elif view == 'x':
+        eye = dict(x=0, y=-2, z=1)
+    elif view == 'y':
+        eye = dict(x=-2, y=0, z=1)
+    else:
+        eye = dict(x=1.2, y=-1.1, z=0.5)
+    if eye != None:
+        eye = eye_user
+    return eye
+
+def set_all_cameras(fig, len_scene, camera_dict=None, axis='z'):
+    eye_dict = {'x': [0., 0., -1.75],
+                'y': [0., 0., -1.75],
+                'z': [-0.5, -1.5, 0],
+                "iso_z": [-1.2, -1.1, 0.4]}
+
+    up_dict = {'x': [1, 0., 0.],
+               'y': [0, 1, 0.],
+               'z': [0., 0., 1],
+               'iso_z': [0., 0., 1]}
+
+    if camera_dict is None:
+        camera_dict = dict(eye=dict(x=eye_dict[axis][0], y=eye_dict[axis][1], z=eye_dict[axis][2]),
+                           up=dict(x=up_dict[axis][0], y=up_dict[axis][1], z=up_dict[axis][2]),
+                           center=dict(x=0, y=0, z=0), projection_type="perspective")
+
+    for ic in range(len_scene):
+        scene_text = f'scene{ic + 1}_camera' if ic > 0 else 'scene_camera'
+        fig.layout[scene_text] = camera_dict
     return fig

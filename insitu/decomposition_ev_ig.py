@@ -32,6 +32,7 @@ import utils_insitu
 import gmsh
 import meshio
 
+import plotly.io as pio
 
 SMALL_SIZE = 11
 BIGGER_SIZE = 18
@@ -185,16 +186,84 @@ class DecompositionEv2(object):
                 whether you plot or not the directions in space (bool)
         """
         directions = RayInitialDirections()
-        directions, n_sph = directions.isotropic_rays(Nrays = int(n_waves))
+        directions, n_sph, elements = directions.isotropic_rays(Nrays = int(n_waves))
+        # elements = directions.indices
         id_dir = np.where(directions[:,2]>=0)
+        self.id_dir = id_dir
         self.pdir = directions[id_dir[0],:]
+        self.pdir_all = directions
         self.n_prop = len(self.pdir[:,0])
+        self.conectivities_all = elements
+        self.conectivity_correction()
+        
         if plot:
             fig = plt.figure()
             fig.canvas.set_window_title('Dir test')
             ax = fig.gca(projection='3d')
-            p=ax.scatter(self.pdir[:,0], self.pdir[:,1], self.pdir[:,2])
+            ax.scatter(self.pdir[:,0], self.pdir[:,1], self.pdir[:,2])
+    
+    def conectivity_correction(self,):
+        self.sign_vec = np.array([self.pdir_all[self.conectivities_all[:,0], 2],
+                             self.pdir_all[self.conectivities_all[:,1], 2],
+                             self.pdir_all[self.conectivities_all[:,2], 2]])
+        self.sign_z = np.sign(self.sign_vec)
+        n_rows = np.sum(self.sign_z.T < 0 , 1)
+        self.p_rows = np.where(n_rows == 0)[0]
+        self.conectivities = self.conectivities_all[self.p_rows,:]
+        self.delta = self.id_dir[0]-np.arange(self.pdir.shape[0])
+        
+        
+        # conectivities2 = np.zeros(self.conectivities.shape, dtype = int)
+        for jrow in np.arange(self.conectivities.shape[0]):
+            for jcol in np.arange(self.conectivities.shape[1]):
+                id_jc = np.where(self.id_dir[0] == self.conectivities[jrow, jcol])[0]
+                delta = self.delta[id_jc]
+                self.conectivities[jrow, jcol] = self.conectivities[jrow, jcol] - delta
+        
+        # self.conectivities = conectivities2
+        
+        # flattened_conectivities = self.conectivities.flatten()
+        # sorted_fc = np.sort(flattened_conectivities)
+        # fc_idx = np.argsort(flattened_conectivities) #  indices that would sort an array
+        
+        # sorted_fc_idx = np.argsort(sorted_fc) #  indices that would sort an array
+        # count_repetitions = np.bincount(sorted_fc)
+        
+        # # loop through id_dir
+        # delta_array = np.zeros(len(sorted_fc), dtype = int)
+        # start = 0
+        # for jid, iddir in enumerate(self.id_dir[0]):
+        #     n_reps = count_repetitions[iddir]
+        #     # delta_array.append(np.repeat(self.delta[jid], n_reps))
+        #     stop = start + n_reps - 1
+        #     delta_array[start: stop+1] = self.delta[jid]
+        #     start = stop + 1
             
+            
+        # conectivities_corrected_flattend = sorted_fc - delta_array
+        # self.conectivities2 = np.reshape(flattened_conectivities[sorted_fc_idx],
+        #                                  (self.conectivities.shape[0],3), order='F')
+        # # print(flattened_conectivities)
+        # print(flattened_conectivities[sorted_fc_idx]-flattened_conectivities)
+        # print(sorted_fc)
+        # print(sorted_fc_idx)
+        # print(np.array(delta_array, dtype=object))
+        # print(flattened_conectivities[sorted_fc_idx])
+        
+        # for jc in np.arange(self.conectivities.shape[1]-1):
+        #     for jv in np.arange(self.pdir_all.shape[0]):
+        #         id_val = np.where(self.conectivities[:,jc] == jv)[0]
+        #         print(id_val)
+                # if id_val.size != 0:
+                #     self.conectivities[:,id_val] = self.conectivities[:,id_val]-100
+            
+        # sort a column of conectivities
+        # sorted_column_idx = np.argsort(self.conectivities[:,0])
+        # ndx = sorted_column_idx[np.searchsorted(self.conectivities[sorted_column_idx,0], 
+        #                       self.id_dir[0])]
+        # print(self.conectivities[sorted_column_idx,0])
+        # print(sorted_column_idx)
+        # print(ndx)
     def prop_dir_gmsh(self, n_waves = 642, radius = 50, plot = False):
         """ Create the propagating wave number directions (hemisphere)
         
@@ -322,6 +391,7 @@ class DecompositionEv2(object):
             recs_ref = np.array([self.receivers.coord[:,0], self.receivers.coord[:,1],
                 self.receivers.coord[:,2]-self.zp]).T
             # Forming the sensing matrix
+            # fz_ref = np.sqrt(k0/np.abs(k_vec_inc[:,2]))
             psi_inc = np.exp(-1j * recs_inc @ k_vec_inc.T)
             psi_ref = np.exp(-1j * recs_ref @ k_vec_ref.T)
             h_mtx = np.hstack((psi_inc, psi_ref))
@@ -908,9 +978,10 @@ class DecompositionEv2(object):
 
     def plot_directivity(self, freq = 1000, dinrange = 20,
         save = False, fig_title = '', path = '', fname='', color_code = 'viridis',
-        plot_incident = True, dpi = 600, figsize=(8, 8), fileformat='png',
-        color_method = 'dB',
-        radius_method = 'dB'):
+        true_directivity = True, dpi = 600, figsize=(8, 8), fileformat='png',
+        color_method = 'dB', radius_method = 'dB',
+        view = 'iso_z', eye = None, renderer = 'notebook',
+        remove_axis = False):
         """ Plot directivity as a 3D maps (vs. kx and ky)
 
         Plot the magnitude of the propagating wave number spectrum (WNS) as 
@@ -949,6 +1020,7 @@ class DecompositionEv2(object):
             figsize : tuple
                 size of the figure
         """
+        # pio.renderers.default = renderer
         # get freq index
         id_f = utils_insitu.find_freq_index(self.controls.freq, freq)
         
@@ -962,21 +1034,16 @@ class DecompositionEv2(object):
         
         # Directivity k-space (reflected)
         pk_r = pk[int(len(pk)/2):int(len(pk)/2)+self.n_prop] # reflected
-        pk_r2 = (directions[:,2]/k0) * pk_r
-        
-        #arc_theta = []
-        # x, y, z, conectivities, r, plot_pressure = utils_insitu.pre_balloon(directions, 
-        #     self.receiver_indexes, self.conectivities, pk_r, 50)
-        
-        # balloon_data = utils_insitu.pre_balloon_list(directions, 
-        #      self.receiver_indexes, self.conectivities, pk_r, 50, 
-        #      arc_theta)
+        if true_directivity:
+            pk_r = (directions[:,2]) * pk_r
         
         #return balloon_data #x, y, z, conectivities, r, plot_pressure
-        fig = utils_insitu.plot_3d_polar(self.pdir, self.conectivities,
-             pk_r2, dinrange = dinrange, color_method = color_method,
-             radius_method = radius_method)
-        return fig
+        fig, trace = utils_insitu.plot_3d_polar(self.pdir, self.conectivities,
+             pk_r, dinrange = dinrange, 
+             color_method = color_method, radius_method = radius_method,
+             color_code = color_code, view = view, eye = eye, renderer = renderer,
+             remove_axis = remove_axis)
+        return fig, trace
 # =============================================================================
 #         # theta phi representation of original spherical points
 #         _, theta, phi = cart2sph(directions[:,0], directions[:,1], directions[:,2])
