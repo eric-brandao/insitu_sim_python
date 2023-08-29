@@ -21,6 +21,7 @@ from scipy import linalg # for svd
 from sklearn.linear_model import Ridge
 from scipy import optimize
 import warnings
+import cvxpy as cvx
 
 def curvature(lambd, sig, beta, xi):
     """ computes the NEGATIVE of the curvature.
@@ -121,7 +122,7 @@ def l_corner(rho,eta,reg_param,u,sig,bm):
         print('I will fail. Too few data points for L-curve analysis')
     Nm, Nu = u.shape
     p = sig.shape
-    beta = (np.conj(u)) @ bm 
+    beta = (np.conj(u).T) @ bm 
     beta = np.reshape(beta[0:int(p[0])], beta.shape[0])
     b0 = (bm - (beta.T @ u).T)
     xi = np.divide(beta[0:int(p[0])], sig)
@@ -204,7 +205,7 @@ def l_cuve(u, sig, bm, plotit = False):
     # Initialization.
     Nm, Nu = u.shape
     p = sig.shape
-    beta = np.conjugate(u) @ bm
+    beta = np.conjugate(u).T @ bm
     beta2 = np.linalg.norm(bm) ** 2 - np.linalg.norm(beta)**2
     s = sig
     beta = np.reshape(beta[0:int(p[0])], beta.shape[0])
@@ -230,7 +231,7 @@ def l_cuve(u, sig, bm, plotit = False):
     # want to plot the L curve?
     if plotit:
         fig = plt.figure()
-        fig.canvas.set_window_title("L-curve")
+        # fig.canvas.set_window_title("L-curve")
         plt.loglog(rho, eta, label='Reg. par: ' + "%.6f" % lam_opt)
         plt.xlabel(r'Residual norm $||Ax - b||_2$')
         plt.ylabel(r'Solution norm $||x||_2$')
@@ -238,6 +239,73 @@ def l_cuve(u, sig, bm, plotit = False):
         plt.grid(linestyle = '--', which='both')
         plt.tight_layout()
     return lam_opt
+
+def gcv_lambda(u,s,bm, print_gcvfun = False):
+    """ Estimates the optimal regularization parameter via Generalized Cross val.
+    
+    Parameters
+    ----------
+        u : numpy ndarray
+            left singular vectors from csvd
+        sig : numpy 1darray
+            singular values from csvd
+        bm : numpy 1darray
+            measured vector
+    Returns
+    -------
+        lambda : float
+            estimated regularization parameter
+    """
+    # Set defaults.
+    npoints = 200  # Number of points on the L-curve
+    smin_ratio = 16*np.finfo(float).eps  # Smallest regularization parameter.
+    # Initialization.
+    m, n = u.shape
+    p = len(s)
+    beta = np.conjugate(u).T @ bm
+    #print(p)
+    #print(beta.shape)
+    beta2 = np.linalg.norm(bm) ** 2 - np.linalg.norm(beta)**2
+    #print(beta2)
+    # Vector of regularization parameters.
+    reg_param = np.zeros(npoints)
+    G = np.zeros(npoints)
+    s2 = s**2
+    reg_param[-1] = np.amax([s[-1], s[0]*smin_ratio])
+    ratio = (s[0]/reg_param[-1])**(1/(npoints-1))
+    #print(ratio)
+    for i in np.arange(start=npoints-2, step=-1, stop = -1):
+        reg_param[i] = ratio*reg_param[i+1]
+    #print(reg_param)
+    # Intrinsic residual.
+    delta0 = 0
+    if (m > n and beta2 > 0):
+        delta0 = beta2
+    # Vector of GCV-function values.
+    for i in np.arange(npoints):
+        G[i] = gcvfun(reg_param[i], s2, beta[:p], delta0, 
+                      compute_mn = True, mn = m-n)
+    #print(G)
+    if print_gcvfun:
+        plt.figure(figsize = (6,4))
+        plt.loglog(reg_param , G)
+        plt.xlabel(r'$\lambda$')
+        plt.ylabel(r'$G(\lambda)$')
+        plt.title('GCV function')
+        plt.grid()
+        plt.tight_layout()
+        
+def gcvfun(lam, s2, beta, delta0, compute_mn = True, mn = 0):
+    """ Auxiliary routine for gcv.  PCH, IMM, Feb. 24, 2008.
+
+        Note: f = 1 - filter-factors.
+    """
+    if compute_mn:
+        f = (lam ** 2)/(s2 + lam**2)
+    else:
+       f = lam/(s2 + lam)
+    G = (np.linalg.norm(f * beta)**2 + delta0)/(mn + np.sum(f))**2
+    return G
 
 def tikhonov(u,s,v,b,lambd_value):
     """ Tikhonov regularization. Needs some work
@@ -352,4 +420,147 @@ def direct_solver(h_mtx,bm,lambd_value):
 # x_lambda = tikhonov(u, sig, v, p, 0.3)
 # print(x_lambda)
 
+def cvx_solver(A, b, noise_norm, l_norm = 2):
+    """ Solves regularized problem by convex optmization.
+
+    Parameters
+    ----------
+        A : numpy ndarray
+            sensing matrix (MxL)
+        b: numpy 1darray
+            your measurement vector (size: M x 1)
+        noise_norm : float
+            norm of the noise (to set constraint)
+        l_norm : int
+            Type of norm to minimize x
+    Returns
+    -------
+        x : numpy 1darray
+            estimated solution to inverse problem
+    """
+    # Create variable to be solved for.
+    m, l = A.shape
+    x = cvx.Variable(shape = l)
     
+    # Create constraint.
+    constraints = [cvx.norm(A @ x - b, 2) <= noise_norm]
+    
+    # Form objective.
+    obj = cvx.Minimize(cvx.norm(x, l_norm))
+    
+    # Form and solve problem.
+    prob = cvx.Problem(obj, constraints)
+    prob.solve();
+    return x.value
+
+def tsvd(u,s,v,b,k):
+    """ Estimates truncated SVD regularized solution
+    
+    Parameters
+    ----------
+        u : numpy ndarray
+            left singular vectors from csvd
+        s : numpy 1darray
+            singular values from csvd
+        v : numpy ndarray
+            right singular vectors from csvd
+        s : numpy 1darray
+            measured vector
+        k : int
+            number of singular values to include
+    Returns
+    -------
+        x_k : numpy 1darray
+            estimated solution to inverse problem
+    """
+    n,p = v.shape
+    #lk = length(k);
+    if k > p:
+      warnings.warn('Illegal truncation parameter k. Setting k = p')
+      k = p
+    
+    #eta = zeros(lk,1); rho = zeros(lk,1);
+    beta = np.conj(u[:,0:p]).T @ b
+    xi = beta/s
+    v = np.conj(v).T    
+    x_k = v[:,0:k] @ xi[0:k]
+    return x_k
+
+def ssvd(u,s,v,b,tau):
+    """ Estimates selective SVD regularized solution
+    
+    Parameters
+    ----------
+        u : numpy ndarray
+            left singular vectors from csvd
+        s : numpy 1darray
+            singular values from csvd
+        v : numpy ndarray
+            right singular vectors from csvd
+        s : numpy 1darray
+            measured vector
+        tau : float
+            Threshhold
+    Returns
+    -------
+        x_k : numpy 1darray
+            estimated solution to inverse problem
+    """
+    n,p = v.shape
+        
+    beta_full = np.conj(u).T @ b
+    idbeta = np.where(np.abs(beta_full) > tau)[0]
+    beta = beta_full[idbeta]
+    xi = beta/s[idbeta]
+    v = np.conj(v).T
+    v = v[:,idbeta]    
+    x_tau = v @ xi
+    return x_tau
+
+
+    
+
+def plot_colvecs(U, rows = 4, cols = 4, figsize = (8,5), ylim = (-0.2,0.2)):
+    """ Plot the column vectors
+    """
+    fig, axs = plt.subplots(rows, cols, figsize = (8,5), sharex=True, sharey=True)
+    j = 0
+    for row in np.arange(rows):
+        for col in np.arange(cols):
+            axs[row,col].plot(U[:,j])
+            axs[row,col].set_ylim(ylim)
+            j += 1
+            axs[rows-1,col].set_xlabel(r'$i$')
+        axs[row,0].set_ylabel(r'$u$')
+    plt.tight_layout()
+    
+def plot_picard(U,s,b, noise_norm = None,figsize = (5,4)):
+    """ Make Picard plot
+    """
+    # condition number
+    cond_number = s[0]/s[-1]
+    
+    # beta
+    beta = np.abs(U.T @ b)
+    
+    # Figure
+    plt.figure(figsize = figsize)
+    plt.semilogy(np.abs(s), '+k', label = r'$\sigma$')
+    plt.semilogy(beta, 'xr', label = r'$|U^T b|$')
+    plt.semilogy(beta/s, '.b', label = r'$|U^T b|/\sigma$')
+    plt.semilogy(np.finfo(float).eps*s[0]*np.ones(len(s)), '--', linewidth = 2, 
+                 color = 'Grey', label = r'eps$\cdot \sigma_1$')
+    if noise_norm is not None:
+        plt.semilogy((noise_norm/np.linalg.norm(b))*s[0]*np.ones(len(s)), '--', linewidth = 2, 
+                     color = 'Grey', 
+                     label = r'$\left\|n\right\|_2/\left\|b\right\|_2 \cdot \sigma_1$')
+    plt.legend(loc = 'lower left')
+    plt.ylim((0.1*s[-1], 100*s[0]))
+    plt.xlabel(r'$i$')
+    plt.ylabel(r'$\sigma_i$, $|U^Tb|$, $|U^Tb|/\sigma_i$')
+    plt.title('cond(A) = {0:.2f}'.format(cond_number), loc='right')
+    plt.grid()
+    
+def nmse(x_sol, x_truth):
+    nmse = (np.linalg.norm(x_sol-x_truth)/np.linalg.norm(x_truth))**2
+    return nmse
