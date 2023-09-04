@@ -23,6 +23,31 @@ from scipy import optimize
 import warnings
 import cvxpy as cvx
 
+
+def csvd(A):
+    """ Computes the SVD based on the size of A.
+
+    Parameters
+    ----------
+        A : numpy ndarray
+            sensing matrix (Nm x Nu). Nm are the number of measurements
+            and Nu the number of unknowns
+    Returns
+    -------
+        u : numpy ndarray
+            left singular vectors
+        sig : numpy 1darray
+            singular values
+        v : numpy ndarray
+            right singular vectors
+    """
+    Nm, Nu = A.shape
+    if Nm >= Nu: # more measurements than unknowns
+        u, sig, v = np.linalg.svd(A, full_matrices=False)
+    else:
+        v, sig, u = np.linalg.svd(np.conjugate(A.T), full_matrices=False)
+    return u, sig, v
+
 def curvature(lambd, sig, beta, xi):
     """ computes the NEGATIVE of the curvature.
 
@@ -85,9 +110,10 @@ def curvature(lambd, sig, beta, xi):
     # curvature.
     curv = - np.divide((dlogrho * ddlogeta - ddlogrho * dlogeta),
         (dlogrho**2 + dlogeta**2)**(1.5))
+    
     return curv
 
-def l_corner(rho,eta,reg_param,u,sig,bm):
+def l_corner(rho,eta,reg_param,u,sig,bm, plot_curv=False):
     """ Computes the corner of the L-curve.
 
     Uses the function "curvature"
@@ -128,6 +154,14 @@ def l_corner(rho,eta,reg_param,u,sig,bm):
     xi = np.divide(beta[0:int(p[0])], sig)
     # Call curvature calculator
     curv = curvature(reg_param, sig, beta, xi) # ok
+    
+    if plot_curv:
+        plt.figure(figsize = (6,4))
+        plt.semilogx(reg_param, -curv)
+        plt.xlabel(r'$\lambda$')
+        plt.ylabel(r'$c(\lambda)$')
+        plt.grid()
+        plt.tight_layout()
     # Minimize 1
     curv_id = np.argmin(curv)
     x1 = reg_param[int(np.amin([curv_id+1, len(curv)-1]))]
@@ -152,31 +186,7 @@ def l_corner(rho,eta,reg_param,u,sig,bm):
             rho_c = np.sqrt(rho_c ** 2 + np.linalg.norm(b0)**2)
     return reg_c
 
-def csvd(A):
-    """ Computes the SVD based on the size of A.
-
-    Parameters
-    ----------
-        A : numpy ndarray
-            sensing matrix (Nm x Nu). Nm are the number of measurements
-            and Nu the number of unknowns
-    Returns
-    -------
-        u : numpy ndarray
-            left singular vectors
-        sig : numpy 1darray
-            singular values
-        v : numpy ndarray
-            right singular vectors
-    """
-    Nm, Nu = A.shape
-    if Nm >= Nu: # more measurements than unknowns
-        u, sig, v = np.linalg.svd(A, full_matrices=False)
-    else:
-        v, sig, u = np.linalg.svd(np.conjugate(A.T), full_matrices=False)
-    return u, sig, v
-
-def l_cuve(u, sig, bm, plotit = False):
+def l_cuve(u, sig, bm, plotit = False, plot_curv=False):
     """ Find the optimal regularizatin parameter.
 
     This function uses the L-curve and computes its curvature in
@@ -227,10 +237,10 @@ def l_cuve(u, sig, bm, plotit = False):
     if (Nm > Nu and beta2 > 0):
         rho = np.sqrt(rho ** 2 + beta2)
     # Compute the corner of the L-curve (optimal regularization parameter)
-    lam_opt = l_corner(rho,eta,reg_param,u,sig,bm)
+    lam_opt = l_corner(rho,eta,reg_param,u,sig,bm, plot_curv=plot_curv)
     # want to plot the L curve?
     if plotit:
-        fig = plt.figure()
+        fig = plt.figure(figsize = (6,4))
         # fig.canvas.set_window_title("L-curve")
         plt.loglog(rho, eta, label='Reg. par: ' + "%.6f" % lam_opt)
         plt.xlabel(r'Residual norm $||Ax - b||_2$')
@@ -285,15 +295,38 @@ def gcv_lambda(u,s,bm, print_gcvfun = False):
     for i in np.arange(npoints):
         G[i] = gcvfun(reg_param[i], s2, beta[:p], delta0, 
                       compute_mn = True, mn = m-n)
+    
+    # plt.figure(figsize = (6,4))
+    # plt.loglog(reg_param , G)
+    # minimization
+    min_g = np.amin(G)
+    min_g_id = np.where(G == min_g)[0][0]
+    # print(min_g)
+    # print(min_g_id)
+    x1 = reg_param[int(np.amin(np.array([min_g_id + 1, npoints])))]
+    x2 = reg_param[int(np.amax([min_g_id - 2, 0]))]
+    # print(x1)
+    # print(x2)
+
+    # Minimize 2 - set tolerance first (new versions of scipy need that)
+    tolerance = np.amin([x1/50, x2/50, 1e-5])
+    reg_min = optimize.fminbound(gcvfun, x1, x2, 
+                               args = (s2, beta[:p], delta0, True,  m-n), 
+                               xtol=tolerance, full_output=False, disp=False)
+    minG = gcvfun(reg_min, s2, beta[:p], delta0, True, m-n)
+    # print(minG)
     #print(G)
     if print_gcvfun:
         plt.figure(figsize = (6,4))
         plt.loglog(reg_param , G)
+        plt.loglog(reg_min, minG, '*r')
         plt.xlabel(r'$\lambda$')
         plt.ylabel(r'$G(\lambda)$')
-        plt.title('GCV function')
+        plt.title(r'GCV function: $\lambda = {}$'.format(reg_min))
         plt.grid()
         plt.tight_layout()
+    
+    return reg_min
         
 def gcvfun(lam, s2, beta, delta0, compute_mn = True, mn = 0):
     """ Auxiliary routine for gcv.  PCH, IMM, Feb. 24, 2008.
@@ -306,6 +339,244 @@ def gcvfun(lam, s2, beta, delta0, compute_mn = True, mn = 0):
        f = lam/(s2 + lam)
     G = (np.linalg.norm(f * beta)**2 + delta0)/(mn + np.sum(f))**2
     return G
+
+
+def discrep(U, s, V, b, delta, x_0=None):
+    m = U.shape[0]
+    n = V.shape[0]
+    p = len(s)
+    ps = 1
+    ld = 1
+    x_delta = np.zeros((n, ld))
+    lambda_val = np.zeros(ld)
+    rho = np.zeros(p)
+    
+    if np.min(delta) < 0:
+        raise ValueError("Illegal inequality constraint delta")
+    
+    if x_0 is None:
+        x_0 = np.zeros(n)
+    
+    if ps == 1:
+        omega = np.dot(V.T, x_0)
+    else:
+        omega = np.linalg.solve(V, x_0)
+    
+    beta = np.dot(U.T, b)
+    delta_0 = np.linalg.norm(b - np.dot(U, beta))
+    rho[p - 1] = delta_0 ** 2
+    
+    if ps == 1:
+        for i in range(p - 1, 0, -1):
+            rho[i - 1] = rho[i] + (beta[i] - s[i] * omega[i]) ** 2
+    else:
+        for i in range(0, p - 1):
+            rho[i + 1] = rho[i] + (beta[i] - s[i, 0] * omega[i]) ** 2
+    
+    if np.min(delta) < delta_0:
+        raise ValueError("Irrelevant delta < || (I - U*U'')*b ||")
+    
+    if ps == 1:
+        s2 = s ** 2
+        for k in range(ld):
+            if delta ** 2 >= np.linalg.norm(beta - s * omega) ** 2 + delta_0 ** 2:
+                x_delta[:, k] = x_0
+            else:
+                kmin = np.argmin(np.abs(rho - delta ** 2))
+                lambda_0 = s[kmin]
+                lambda_val[k] = newton(lambda_0, delta, s, beta, omega, delta_0)
+                e = s / (s2 + lambda_val[k] ** 2)
+                f = s * e
+                x_delta[:, k] = np.dot(V[:, :p], e * beta + (1 - f) * omega)
+    elif m >= n:
+        omega = omega[:p]
+        gamma = s[:, 0] / s[:, 1]
+        x_u = np.dot(V[:, p:n], beta[p:n])
+        for k in range(ld):
+            if delta[k] ** 2 >= np.linalg.norm(beta[:p] - s[:, 0] * omega) ** 2 + delta_0 ** 2:
+                x_delta[:, k] = np.dot(V, np.hstack((omega, np.dot(U[:, p:n].T, b))))
+            else:
+                kmin = np.argmin(np.abs(rho - delta[k] ** 2))
+                lambda_0 = gamma[kmin]
+                lambda_val[k] = newton(lambda_0, delta[k], s, beta[:p], omega, delta_0)
+                e = gamma / (gamma ** 2 + lambda_val[k] ** 2)
+                f = gamma * e
+                x_delta[:, k] = np.dot(V[:, :p], (e * beta[:p] / s[:, 1]) + (1 - f) * s[:, 1] * omega) + x_u
+    else:
+        omega = omega[:p]
+        gamma = s[:, 0] / s[:, 1]
+        x_u = np.dot(V[:, p:m], beta[p:m])
+        for k in range(ld):
+            if delta[k] ** 2 >= np.linalg.norm(beta[:p] - s[:, 0] * omega) ** 2 + delta_0 ** 2:
+                x_delta[:, k] = np.dot(V, np.hstack((omega, np.dot(U[:, p:m].T, b))))
+            else:
+                kmin = np.argmin(np.abs(rho - delta[k] ** 2))
+                lambda_0 = gamma[kmin]
+                lambda_val[k] = newton(lambda_0, delta[k], s, beta[:p], omega, delta_0)
+                e = gamma / (gamma ** 2 + lambda_val[k] ** 2)
+                f = gamma * e
+                x_delta[:, k] = np.dot(V[:, :p], (e * beta[:p] / s[:, 1]) + (1 - f) * s[:, 1] * omega) + x_u
+    
+    return x_delta, lambda_val
+
+def newton(lambda_0, delta, s, beta, omega, delta_0):
+    thr = np.sqrt(np.finfo(float).eps)
+    it_max = 50
+    
+    if lambda_0 < 0:
+        raise ValueError("Initial guess lambda_0 must be nonnegative")
+    
+    p = len(s)
+    ps = 1
+    
+    if ps == 2:
+        sigma = s[:, 0]
+        s = s[:, 0] / s[:, 1]
+    
+    s2 = s ** 2
+    lambda_val = lambda_0
+    step = 1
+    it = 0
+    
+    while (abs(step) > thr * lambda_val and abs(step) > thr and it < it_max):
+        it += 1
+        f = s2 / (s2 + lambda_val ** 2)
+        
+        if ps == 1:
+            r = (1 - f) * (beta - s * omega)
+            z = f * r
+        else:
+            r = (1 - f) * (beta - sigma * omega)
+            z = f * r
+        
+        step = (lambda_val / 4) * (np.dot(r.T, r) + (delta_0 + delta) * (delta_0 - delta)) / np.dot(z.T, r)
+        lambda_val -= step
+        
+        if lambda_val < 0:
+            lambda_val = 0.5 * lambda_0
+            lambda_0 = 0.5 * lambda_0
+    
+    if abs(step) > thr * lambda_val and abs(step) > thr:
+        raise ValueError("Max. number of iterations ({}) reached".format(it_max))
+    
+    return lambda_val
+
+
+# from scipy.optimize import minimize_scalar
+
+def ncp(U, s, b, method='Tikh', printncp = False):
+    m = U.shape[0]
+    p = len(s)
+    ps = 1
+    beta = np.dot(U.T, b)
+    
+    if ps == 2:
+        s = s[p-1::-1, 0] / s[p-1::-1, 1]
+        beta = beta[p-1::-1]
+    
+    npoints = 200
+    nNCPs = 20
+    smin_ratio = 16 * np.finfo(float).eps
+    
+    reg_param = np.zeros(npoints)
+    reg_param[npoints - 1] = max([s[p - 1], s[0] * smin_ratio])
+    ratio = (s[0] / reg_param[npoints - 1]) ** (1 / (npoints - 1))
+    for i in range(npoints - 2, -1, -1):
+        reg_param[i] = ratio * reg_param[i + 1]
+    
+    dists = np.zeros(npoints)
+    if np.isrealobj(beta):
+        q = m // 2
+    else:
+        q = m - 1
+    cp = np.zeros((q, npoints))
+    
+    for i in range(npoints):
+        # dists[i], cp[:, i] = ncpfun(reg_param[i], s, beta[:p], U[:, :p])
+        dists[i] = ncpfun(reg_param[i], s, beta[:p], U[:, :p])
+        cp[:, i], _ = ncpfun_cp(reg_param[i], s, beta[:p], U[:, :p])
+    # print(cp)
+    minGi = np.argmin(dists)
+    # print(minGi)
+    
+    # minimization
+    min_g = np.amin(dists)
+    min_g_id = np.where(dists == min_g)[0][0]
+    # print(min_g)
+    # print(min_g_id)
+    x1 = dists[int(np.amin(np.array([min_g_id + 1, npoints])))]
+    x2 = dists[int(np.amax([min_g_id - 2, 0]))]
+    # print(x1)
+    # print(x2)
+    # reg_min_result = minimize_scalar(lambda reg: ncpfun(reg, s, beta[:p], U[:, :p]), 
+    #                                   bounds=(x1, x2), 
+    #                                   method='bounded')
+    tolerance = np.amin([x1/50, x2/50, 1e-5])
+    # print(U[:, :p])
+    reg_min_result = optimize.fminbound(ncpfun, x1, x2, 
+                                args = (s[:p], beta[:p], U[:, :p]), 
+                                xtol=tolerance, full_output=False, disp=False)
+    # print(reg_min_result)
+    # reg_min = reg_min_result.x
+    dist = ncpfun(reg_min_result, s[:p],  beta[:p], U[:, :p])
+    cp_opt, cp_white =  ncpfun_cp(reg_min_result, s, beta[:p], U[:, :p])
+    if printncp:
+        stp = int(npoints/nNCPs)
+        plt.figure(figsize = (6,4))
+        plt.plot(cp[:,0:npoints:stp], '-.', linewidth = 0.5)
+        plt.plot(cp_opt, '-r', linewidth = 2, label = r'optimal $c$')
+        plt.plot(cp_white, '-k', linewidth = 2, label = r'white $c$')
+        plt.legend()
+        plt.grid()
+        plt.xlabel('i')
+        plt.ylabel(r'$c$')
+        plt.title(r'$\lambda = {}$'.format(reg_min_result))
+        plt.tight_layout()
+    
+    return reg_min_result, dist
+
+
+def ncpfun(lambda_val, s, beta, U, dsvd=False):
+    if not dsvd:
+        f = (lambda_val ** 2) / (s ** 2 + lambda_val ** 2)
+    else:
+        f = lambda_val / (s + lambda_val)
+    
+    r = np.dot(U, f * beta)
+    m = len(r)
+    
+    if np.isrealobj(beta):
+        q = m // 2
+    else:
+        q = m - 1
+    
+    D = np.abs(np.fft.fft(r)) ** 2
+    D = D[1:q + 1]
+    v = np.arange(1, q + 1) / q
+    cp = np.cumsum(D) / np.sum(D)
+    
+    dist = np.linalg.norm(cp - v)
+    # print(dist)
+    return dist #, cp
+
+def ncpfun_cp(lambda_val, s, beta, U, dsvd=False):
+    if not dsvd:
+        f = (lambda_val ** 2) / (s ** 2 + lambda_val ** 2)
+    else:
+        f = lambda_val / (s + lambda_val)
+    r = np.dot(U, f * beta)
+    m = len(r)
+    if np.isrealobj(beta):
+        q = m // 2
+    else:
+        q = m - 1
+    D = np.abs(np.fft.fft(r)) ** 2
+    D = D[1:q + 1]
+    v = np.arange(1, q + 1) / q  
+    cp = np.cumsum(D) / np.sum(D)
+    #dist = np.linalg.norm(cp - v)
+    return cp, v
+
 
 def tikhonov(u,s,v,b,lambd_value):
     """ Tikhonov regularization. Needs some work
@@ -453,6 +724,37 @@ def cvx_solver(A, b, noise_norm, l_norm = 2):
     prob.solve();
     return x.value
 
+def cvx_tikhonov(A, b, lam, l_norm = 2):
+    """ Solves regularized problem by convex optmization.
+
+    Parameters
+    ----------
+        A : numpy ndarray
+            sensing matrix (MxL)
+        b: numpy 1darray
+            your measurement vector (size: M x 1)
+        noise_norm : float
+            norm of the noise (to set constraint)
+        l_norm : int
+            Type of norm to minimize x
+    Returns
+    -------
+        x : numpy 1darray
+            estimated solution to inverse problem
+    """
+    # Create variable to be solved for.
+    m, l = A.shape
+    x = cvx.Variable(shape = l)
+    
+  
+    # Form objective.
+    obj = cvx.Minimize(cvx.norm(A @ x - b, 2) + (lam)*cvx.norm(x, l_norm))
+    
+    # Form and solve problem.
+    prob = cvx.Problem(obj)
+    prob.solve();
+    return x.value
+
 def tsvd(u,s,v,b,k):
     """ Estimates truncated SVD regularized solution
     
@@ -464,7 +766,7 @@ def tsvd(u,s,v,b,k):
             singular values from csvd
         v : numpy ndarray
             right singular vectors from csvd
-        s : numpy 1darray
+        b : numpy 1darray
             measured vector
         k : int
             number of singular values to include
