@@ -15,7 +15,8 @@ from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 unused import
 # from scipy import linalg # for svd
 # from scipy import signal
 from scipy.sparse.linalg import lsqr, lsmr
-from lcurve_functions import csvd, l_cuve, tikhonov, ridge_solver, direct_solver
+# from lcurve_functions import csvd, l_cuve, tikhonov, ridge_solver, direct_solver
+import lcurve_functions as lc
 import pickle
 from receivers import Receiver
 from material import PorousAbsorber
@@ -119,7 +120,8 @@ class Decomposition(object):
         Load a simulation object.
     """
 
-    def __init__(self, p_mtx = None, controls = None, material = None, receivers = None):
+    def __init__(self, p_mtx = None, controls = None, material = None, receivers = None,
+                 regu_par = 'L-curve'):
         """
 
         Parameters
@@ -141,7 +143,15 @@ class Decomposition(object):
         self.receivers = receivers
         self.pres_s = p_mtx
         self.flag_oct_interp = False
-
+        if regu_par == 'L-curve' or regu_par == 'l-curve':
+            self.regu_par_fun = lc.l_curve
+            print("You choose L-curve to find optimal regularization parameter")
+        elif regu_par == 'gcv' or regu_par == 'GCV':
+            self.regu_par_fun = lc.gcv_lambda
+            print("You choose GCV to find optimal regularization parameter")
+        else: 
+            print("Returning to default L-curve to find optimal regularization parameter")
+            
     def wavenum_dir(self, n_waves = 642, plot = False, halfsphere = False):
         """ Create the propagating wave number directions
 
@@ -172,7 +182,18 @@ class Decomposition(object):
             self.n_waves = len(self.dir)
         print('The number of created waves is: {}'.format(self.n_waves))
         if plot:
-            directions.plot_points()
+            # directions.plot_points()
+            fig = plt.figure()
+            ax = plt.axes(projection ="3d")
+            ax.scatter(self.dir[:,0], self.dir[:,1], self.dir[:,2],
+                color='blue')
+            ax.set_xlabel(r'$k_x$')
+            ax.set_ylabel(r'$k_y$')
+            ax.set_zlabel(r'$k_z$')
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_zticks([])
+            plt.show()
 
     def pk_tikhonov(self, method = 'direct', plot_l = False):
         """ Wave number spectrum estimation using Tikhonov inversion
@@ -217,9 +238,12 @@ class Decomposition(object):
             # measured data
             pm = self.pres_s[:,jf].astype(complex)
             # compute SVD of the sensing matix
-            u, sig, v = csvd(h_mtx)
+            u, sig, v = lc.csvd(h_mtx)
             # compute the regularization parameter (L-curve)
-            lambd_value = l_cuve(u, sig, pm, plotit=plot_l)
+            # lambd_value = lc.l_cuve(u, sig, pm, plotit=plot_l)
+            #lambd_value = lc.gcv_lambda(u, sig, pm, print_gcvfun = plot_l)
+            lambd_value = self.regu_par_fun(u, sig, pm, plot_l)
+            # lambd_value = lc.ncp(u, sig, pm, method='Tikh', printncp = plot_l)
             ## Choosing the method to find the P(k)
             if method == 'scipy':
                 x = lsqr(h_mtx, self.pres_s[:,jf], damp=lambd_value)
@@ -228,10 +252,10 @@ class Decomposition(object):
                 Hm = np.matrix(h_mtx)
                 self.pk[:,jf] = Hm.getH() @ np.linalg.inv(Hm @ Hm.getH() + (lambd_value**2)*np.identity(len(pm))) @ pm
             elif method == 'Ridge':
-                x = ridge_solver(h_mtx,pm,lambd_value)
+                x = lc.ridge_solver(h_mtx,pm,lambd_value)
                 self.pk[:,jf] = x
             elif method == 'Tikhonov':
-                x = tikhonov(u.T,sig,v,pm,lambd_value)
+                x = lc.tikhonov(u,sig,v,pm,lambd_value)
                 self.pk[:,jf] = x
 # =============================================================================
 #                 # Form a real H2 matrix and p2 measurement
@@ -486,8 +510,7 @@ class Decomposition(object):
         id_f = np.where(self.controls.freq <= freq)
         id_f = id_f[0][-1]
         fig = plt.figure()
-        fig.canvas.set_window_title('Scatter plot of |P(k)| for freq {} Hz'.format(self.controls.freq[id_f]))
-        ax = fig.gca(projection='3d')
+        ax = plt.axes(projection ="3d")
         vmin = 0
         vmax = 1
         if db:
@@ -505,9 +528,9 @@ class Decomposition(object):
             p=ax.scatter(self.dir[:,0], self.dir[:,1], self.dir[:,2], c = color_par,
                          vmin = vmin, vmax = vmax)
         fig.colorbar(p)
-        ax.set_xlabel('X axis')
-        ax.set_ylabel('Y axis')
-        ax.set_zlabel('Z axis')
+        ax.set_xlabel(r'$k_x$ axis')
+        ax.set_ylabel(r'$k_y$ axis')
+        ax.set_zlabel(r'$k_z$ axis')
         plt.title('|P(k)| at ' + str(self.controls.freq[id_f]) + 'Hz - ' + name)
         plt.tight_layout()
         if save:
@@ -555,8 +578,6 @@ class Decomposition(object):
             id_f = np.where(self.controls.freq <= freq)
         id_f = id_f[0][-1]
         fig = plt.figure()
-        #plt.subplot(projection="aitoff")
-        fig.canvas.set_window_title('Interpolated map of |P(k)| for freq {} Hz'.format(self.controls.freq[id_f]))
         if db:
             color_par = 20*np.log10(np.abs(self.grid_pk[id_f])/np.amax(np.abs(self.grid_pk[id_f])))
             color_range = np.linspace(-dinrange, 0, dinrange+1)

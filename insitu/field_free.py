@@ -131,7 +131,7 @@ class FreeField(object):
             pres_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
             for jrec, r_coord in enumerate(self.receivers.coord):
                 r = np.linalg.norm(r_coord - s_coord) # distance source-receiver
-                pres_rec[jrec, :] = (np.exp(-1j * self.controls.k0 * r)) / r
+                pres_rec[jrec, :] = (np.exp(1j * self.controls.k0 * r)) / r
             self.pres_s.append(pres_rec)
 
     def mirrorsource(self, sources):
@@ -213,8 +213,8 @@ class FreeField(object):
             An advice is to choose a value bigger than the sample's largest dimension.
         """
         fig = plt.figure()
-        fig.canvas.set_window_title("Measurement scene")
-        ax = fig.gca(projection='3d')
+        # fig.canvas.set_window_title("Measurement scene")
+        ax = plt.axes(projection ="3d")
         vertices = np.array([[-vsam_size/2, -vsam_size/2, 0.0],
             [vsam_size/2, -vsam_size/2, 0.0],
             [vsam_size/2, vsam_size/2, 0.0],

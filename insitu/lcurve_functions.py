@@ -44,8 +44,10 @@ def csvd(A):
     Nm, Nu = A.shape
     if Nm >= Nu: # more measurements than unknowns
         u, sig, v = np.linalg.svd(A, full_matrices=False)
+        # v = np.conjugate(v.T)
     else:
         v, sig, u = np.linalg.svd(np.conjugate(A.T), full_matrices=False)
+        u = np.conjugate(u.T)
     return u, sig, v
 
 def curvature(lambd, sig, beta, xi):
@@ -113,7 +115,7 @@ def curvature(lambd, sig, beta, xi):
     
     return curv
 
-def l_corner(rho,eta,reg_param,u,sig,bm, plot_curv=False):
+def l_corner(rho,eta,reg_param,u,sig,bm):
     """ Computes the corner of the L-curve.
 
     Uses the function "curvature"
@@ -155,13 +157,6 @@ def l_corner(rho,eta,reg_param,u,sig,bm, plot_curv=False):
     # Call curvature calculator
     curv = curvature(reg_param, sig, beta, xi) # ok
     
-    if plot_curv:
-        plt.figure(figsize = (6,4))
-        plt.semilogx(reg_param, -curv)
-        plt.xlabel(r'$\lambda$')
-        plt.ylabel(r'$c(\lambda)$')
-        plt.grid()
-        plt.tight_layout()
     # Minimize 1
     curv_id = np.argmin(curv)
     x1 = reg_param[int(np.amin([curv_id+1, len(curv)-1]))]
@@ -184,9 +179,9 @@ def l_corner(rho,eta,reg_param,u,sig,bm, plot_curv=False):
         rho_c = np.linalg.norm((1-f) * beta[0:len(f)])
         if Nm > Nu:
             rho_c = np.sqrt(rho_c ** 2 + np.linalg.norm(b0)**2)
-    return reg_c
+    return reg_c, reg_param, curv
 
-def l_cuve(u, sig, bm, plotit = False, plot_curv=False):
+def l_curve(u, sig, bm, plotit = False):
     """ Find the optimal regularizatin parameter.
 
     This function uses the L-curve and computes its curvature in
@@ -237,17 +232,25 @@ def l_cuve(u, sig, bm, plotit = False, plot_curv=False):
     if (Nm > Nu and beta2 > 0):
         rho = np.sqrt(rho ** 2 + beta2)
     # Compute the corner of the L-curve (optimal regularization parameter)
-    lam_opt = l_corner(rho,eta,reg_param,u,sig,bm, plot_curv=plot_curv)
+    lam_opt, reg_param, curv = l_corner(rho,eta,reg_param,u,sig,bm)
     # want to plot the L curve?
     if plotit:
         fig = plt.figure(figsize = (6,4))
         # fig.canvas.set_window_title("L-curve")
-        plt.loglog(rho, eta, label='Reg. par: ' + "%.6f" % lam_opt)
+        plt.loglog(rho, eta)
+        plt.title('Reg. par: ' + "%.6f" % lam_opt)
         plt.xlabel(r'Residual norm $||Ax - b||_2$')
         plt.ylabel(r'Solution norm $||x||_2$')
-        plt.legend(loc = 'best')
+        # plt.legend(loc = 'best')
         plt.grid(linestyle = '--', which='both')
         plt.tight_layout()
+        ax2 = fig.add_axes([0.65, 0.58, 0.3, 0.3])
+        ax2.semilogx(reg_param, -curv, 'k')
+        ax2.semilogx(lam_opt, np.amax(-curv), '*r')
+        ax2.axvline(lam_opt, color='grey',linestyle = '--', linewidth = 2, alpha = 0.4)
+        ax2.grid()
+        ax2.set_xlabel(r'$\lambda$')
+        ax2.set_ylabel(r'$c(\lambda)$')
     return lam_opt
 
 def gcv_lambda(u,s,bm, print_gcvfun = False):
