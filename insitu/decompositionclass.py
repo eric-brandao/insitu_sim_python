@@ -233,7 +233,7 @@ class Decomposition(object):
             # get the scaled version of the propagating directions
             k_vec = k0 * self.dir
             # Form the sensing matrix
-            h_mtx = np.exp(1j*self.receivers.coord @ k_vec.T)
+            h_mtx = np.exp(-1j*self.receivers.coord @ k_vec.T)
             self.cond_num[jf] = np.linalg.cond(h_mtx)
             # measured data
             pm = self.pres_s[:,jf].astype(complex)
@@ -428,7 +428,7 @@ class Decomposition(object):
             # get the scaled version of the propagating directions
             k_p = k0 * self.dir
             # Form the new sensing matrix
-            h_mtx = np.exp(1j*receivers.coord @ k_p.T)
+            h_mtx = np.exp(-1j*receivers.coord @ k_p.T)
             # compute P and U
             self.p_recon[:,jf] = h_mtx @ self.pk[:,jf]
             self.uz_recon[:,jf] = -((np.divide(k_p[:,2], k0)) * h_mtx) @ self.pk[:,jf]
@@ -584,7 +584,7 @@ class Decomposition(object):
         else:
             color_par = np.abs(self.grid_pk[id_f])/np.amax(np.abs(self.grid_pk[id_f]))
             color_range = np.linspace(0, 1, 21)
-        p=plt.contourf(np.rad2deg(self.grid_phi), 90-np.rad2deg(self.grid_theta), color_par,
+        p=plt.contourf(np.rad2deg(self.grid_phi), np.rad2deg(self.grid_theta), color_par,
             color_range, extend='both', cmap = color_code)
         fig.colorbar(p)
         plt.xlabel(r'$\phi$ (azimuth) [deg]')

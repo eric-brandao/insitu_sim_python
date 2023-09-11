@@ -111,9 +111,9 @@ class FreeField(object):
                     kze = (kxe**2 + kye**2 - k0**2)**0.5
                     # Evanescent pressure
                     p_ev = (np.exp(-kze * r_coord[2])) * (np.exp(-1j * (kxe * r_coord[0] + kye * r_coord[1])))
-                    pres_rec[jrec, jf] = Ap * np.exp(1j * np.dot(k_vec, r_coord)) + Ae * p_ev
+                    pres_rec[jrec, jf] = Ap * np.exp(-1j * np.dot(k_vec, r_coord)) + Ae * p_ev
                 else:
-                    pres_rec[jrec, jf] = Ap * np.exp(1j * np.dot(k_vec, r_coord))
+                    pres_rec[jrec, jf] = Ap * np.exp(-1j * np.dot(k_vec, r_coord))
         self.pres_s.append(pres_rec)
 
     def monopole_ff(self, sources):
@@ -131,7 +131,7 @@ class FreeField(object):
             pres_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
             for jrec, r_coord in enumerate(self.receivers.coord):
                 r = np.linalg.norm(r_coord - s_coord) # distance source-receiver
-                pres_rec[jrec, :] = (np.exp(1j * self.controls.k0 * r)) / r
+                pres_rec[jrec, :] = (np.exp(-1j * self.controls.k0 * r)) / r
             self.pres_s.append(pres_rec)
 
     def mirrorsource(self, sources):
