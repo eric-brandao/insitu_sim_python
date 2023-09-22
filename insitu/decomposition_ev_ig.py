@@ -18,7 +18,7 @@ from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 unused import
 # from scipy import linalg # for svd
 # from scipy import signal
 # from scipy.sparse.linalg import lsqr, lsmr
-from lcurve_functions import csvd, l_cuve, tikhonov, ridge_solver, direct_solver
+import lcurve_functions as lc
 import pickle
 from receivers import Receiver
 from material import PorousAbsorber
@@ -143,7 +143,8 @@ class DecompositionEv2(object):
         Load a simulation object.
     """
 
-    def __init__(self, p_mtx = None, controls = None, material = None, receivers = None):
+    def __init__(self, p_mtx = None, controls = None, material = None, receivers = None,
+                 regu_par = 'L-curve'):
         """
 
         Parameters
@@ -165,6 +166,15 @@ class DecompositionEv2(object):
         self.receivers = receivers
         self.pres_s = p_mtx
         # self.flag_oct_interp = False
+        if regu_par == 'L-curve' or regu_par == 'l-curve':
+            self.regu_par_fun = lc.l_curve
+            print("You choose L-curve to find optimal regularization parameter")
+        elif regu_par == 'gcv' or regu_par == 'GCV':
+            self.regu_par_fun = lc.gcv_lambda
+            print("You choose GCV to find optimal regularization parameter")
+        else:
+            self.regu_par_fun = lc.l_curve
+            print("Returning to default L-curve to find optimal regularization parameter")
 
     def prop_dir(self, n_waves = 642, plot = False):
         """ Create the propagating wave number directions (reflected part)
@@ -370,7 +380,8 @@ class DecompositionEv2(object):
         ky_e = ky_grid.flatten()
         # Initialize variables
         self.cond_num = np.zeros(len(self.controls.k0))
-        self.pk = []
+        self.lambd_value_vec = np.zeros(len(self.controls.k0))
+        self.pk = []        
         # Initializa bar
         bar = tqdm(total = len(self.controls.k0),
             desc = 'Calculating Tikhonov inversion (with evanescent waves and irregular grid)...')
@@ -399,17 +410,18 @@ class DecompositionEv2(object):
             # Measured data
             pm = self.pres_s[:,jf].astype(complex)
             # Compute SVD
-            u, sig, v = csvd(h_mtx)
+            u, sig, v = lc.csvd(h_mtx)
             # u, sig, v = np.linalg.svd(h_mtx, full_matrices=False)
             # Find the optimal regularization parameter.
-            lambd_value = l_cuve(u, sig, pm, plotit=plot_l)
+            lambd_value = self.regu_par_fun(u, sig, pm, plot_l)
+            self.lambd_value_vec[jf] = lambd_value
             # Matrix inversion
             if method == 'Ridge':
-                x = ridge_solver(h_mtx,pm,lambd_value)
+                x = lc.ridge_solver(h_mtx,pm,lambd_value)
             elif method == 'Tikhonov':
-                x = tikhonov(u.T,sig,v,pm,lambd_value)
+                x = lc.tikhonov(u,sig,v,pm,lambd_value)
             else:
-                x = direct_solver(h_mtx,pm,lambd_value)         
+                x = lc.direct_solver(h_mtx,pm,lambd_value)         
             self.pk.append(x)
             bar.update(1)
         bar.close()
@@ -1232,7 +1244,8 @@ class ZsArrayEvIg(DecompositionEv2):
         Load a simulation object.
     """
 
-    def __init__(self, p_mtx = None, controls = None, material = None, receivers = None):
+    def __init__(self, p_mtx = None, controls = None, material = None, receivers = None,
+                 regu_par = 'L-curve'):
         """
 
         Parameters
@@ -1249,8 +1262,8 @@ class ZsArrayEvIg(DecompositionEv2):
 
         The objects are stored as attributes in the class (easier to retrieve).
         """
-        DecompositionEv2.__init__(self, p_mtx, controls, material, receivers)
-        super().__init__(p_mtx, controls, material, receivers)
+        DecompositionEv2.__init__(self, p_mtx, controls, material, receivers, regu_par)
+        super().__init__(p_mtx, controls, material, receivers, regu_par)
 
     def zs(self, Lx = 0.1, Ly = 0.1, n_x = 21, n_y = 21, theta = [0], avgZs = True):
         """ Reconstruct the surface impedance and estimate the absorption

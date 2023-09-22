@@ -306,7 +306,7 @@ def gcv_lambda(u,s,bm, print_gcvfun = False):
     min_g_id = np.where(G == min_g)[0][0]
     # print(min_g)
     # print(min_g_id)
-    x1 = reg_param[int(np.amin(np.array([min_g_id + 1, npoints])))]
+    x1 = reg_param[int(np.amin(np.array([min_g_id + 1, npoints-1])))]
     x2 = reg_param[int(np.amax([min_g_id - 2, 0]))]
     # print(x1)
     # print(x2)
@@ -747,7 +747,7 @@ def cvx_tikhonov(A, b, lam, l_norm = 2):
     """
     # Create variable to be solved for.
     m, l = A.shape
-    x = cvx.Variable(shape = l)
+    x = cvx.Variable(shape = l, complex = True)
     
   
     # Form objective.

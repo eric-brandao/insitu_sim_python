@@ -149,7 +149,8 @@ class Decomposition(object):
         elif regu_par == 'gcv' or regu_par == 'GCV':
             self.regu_par_fun = lc.gcv_lambda
             print("You choose GCV to find optimal regularization parameter")
-        else: 
+        else:
+            self.regu_par_fun = lc.l_curve
             print("Returning to default L-curve to find optimal regularization parameter")
             
     def wavenum_dir(self, n_waves = 642, plot = False, halfsphere = False):
@@ -227,6 +228,7 @@ class Decomposition(object):
         bar = tqdm(total = len(self.controls.k0), desc = 'Calculating Tikhonov inversion...')
         # Initialize variables
         self.pk = np.zeros((self.n_waves, len(self.controls.k0)), dtype=complex)
+        self.lambd_value_vec = np.zeros(len(self.controls.k0))
         self.cond_num = np.zeros(len(self.controls.k0))
         # loop over frequencies
         for jf, k0 in enumerate(self.controls.k0):
@@ -243,6 +245,7 @@ class Decomposition(object):
             # lambd_value = lc.l_cuve(u, sig, pm, plotit=plot_l)
             #lambd_value = lc.gcv_lambda(u, sig, pm, print_gcvfun = plot_l)
             lambd_value = self.regu_par_fun(u, sig, pm, plot_l)
+            self.lambd_value_vec[jf] = lambd_value
             # lambd_value = lc.ncp(u, sig, pm, method='Tikh', printncp = plot_l)
             ## Choosing the method to find the P(k)
             if method == 'scipy':
@@ -257,28 +260,9 @@ class Decomposition(object):
             elif method == 'Tikhonov':
                 x = lc.tikhonov(u,sig,v,pm,lambd_value)
                 self.pk[:,jf] = x
-# =============================================================================
-#                 # Form a real H2 matrix and p2 measurement
-#                 H2 = np.vstack((np.hstack((h_mtx.real, -h_mtx.imag)),
-#                     np.hstack((h_mtx.imag, h_mtx.real))))
-#                 p2 = np.vstack((pm.real,pm.imag)).flatten()
-#                 # form Ridge regressor using the regularization from L-curve
-#                 regressor = Ridge(alpha=lambd_value, fit_intercept = False, solver = 'svd')
-#                 x2 = regressor.fit(H2, p2).coef_
-#                 self.pk[:,jf] = x2[:h_mtx.shape[1]]+1j*x2[h_mtx.shape[1]:]
-# =============================================================================
-                # # separate propagating from evanescent
-                # self.pk[:,jf] = x[0:self.n_waves]
-            #### Performing the Tikhonov inversion with cvxpy #########################
-            else:
-                H = h_mtx.astype(complex)
-                x = cp.Variable(h_mtx.shape[1], complex = True)
-                lambd = cp.Parameter(nonneg=True)
-                lambd.value = lambd_value[0]
-                # Create the problem and solve
-                problem = cp.Problem(cp.Minimize(objective_fn(H, pm, x, lambd)))
-                problem.solve(solver=cp.SCS, verbose=False) # Fast but gives some warnings
-                self.pk[:,jf] = x.value
+            elif method == 'cvx':
+                x = lc.cvx_tikhonov(h_mtx.astype(complex), pm, lambd_value, l_norm = 2)
+                self.pk[:,jf] = x
             bar.update(1)
         bar.close()
         return self.pk
