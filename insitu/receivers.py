@@ -1,6 +1,7 @@
 import numpy as np
 #import toml
-from controlsair import load_cfg, sph2cart
+from controlsair import load_cfg, sph2cart, cart2sph
+from rayinidir import RayInitialDirections
 
 class Receiver():
     """ A receiver class to initialize many types of receivers
@@ -297,8 +298,8 @@ class Receiver():
         self.coord[:, 1] = yr
         self.coord[:, 2] = self.z_grid.flatten()
 
-    def spherical_array(self, radius = 0.1, n_rec = 32, center_dist = 0.5):
-        """ Initializes a spherical array of receivers. To be done.
+    def hemispherical_array(self, radius = 1, n_rec_target = 32):
+        """ Initializes a hemispherical array of receivers (icosahedron).
 
         The method will overwrite self.coord to be a matrix where each line
         gives a 3D coordinate for each receiver
@@ -313,9 +314,29 @@ class Receiver():
             center_dist : float
                 distance from the origin to the center of the array
         """
-        pass
+        directions = RayInitialDirections()
+        directions, n_sph, elements = directions.isotropic_rays(Nrays = int(n_rec_target))
+        # elements = directions.indices
+        id_dir = np.where(directions[:,2]>=0)
+        self.id_dir = id_dir
+        self.coord = directions[id_dir[0],:]
+        r, theta, phi = cart2sph(self.coord[:,0], self.coord[:,1], self.coord[:,2])
+        r = radius*r
+        self.coord[:,0], self.coord[:,1], self.coord[:,2] = sph2cart(r,theta,phi)
+        self.pdir_all = directions
+        self.n_rec = len(self.coord[:,0])
+        self.conectivities_all = elements
+        self.conectivity_correction()
 
-
+    def conectivity_correction(self,):
+        self.sign_vec = np.array([self.pdir_all[self.conectivities_all[:,0], 2],
+                             self.pdir_all[self.conectivities_all[:,1], 2],
+                             self.pdir_all[self.conectivities_all[:,2], 2]])
+        self.sign_z = np.sign(self.sign_vec)
+        n_rows = np.sum(self.sign_z.T < 0 , 1)
+        self.p_rows = np.where(n_rows == 0)[0]
+        self.conectivities = self.conectivities_all[self.p_rows,:]
+        self.delta = self.id_dir[0]-np.arange(self.coord.shape[0])
 
 # class Receivers():
 #     def __init__(self, config_file):

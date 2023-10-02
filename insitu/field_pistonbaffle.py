@@ -10,7 +10,7 @@ from scipy import integrate
 import time
 import sys
 from tqdm import tqdm
-from progress.bar import Bar, IncrementalBar, FillingCirclesBar, ChargingBar
+#from progress.bar import Bar, IncrementalBar, FillingCirclesBar, ChargingBar
 import pickle
 
 
@@ -42,11 +42,11 @@ class PistonOnBaffle(object):
             # r = np.linalg.norm(r_coord) # distance source-receiver
             for jf, k0 in enumerate(self.controls.k0):
                 # integrand - real part
-                fxy_r = lambda yl, xl: np.real(np.exp(1j * k0 * np.sqrt((r_coord[0]-xl)**2 +\
+                fxy_r = lambda yl, xl: np.real(np.exp(-1j * k0 * np.sqrt((r_coord[0]-xl)**2 +\
                 (r_coord[1]-yl)**2 + (r_coord[2])**2))/\
                 np.sqrt((r_coord[0]-xl)**2 + (r_coord[1]-yl)**2 + (r_coord[2])**2))
                 # integrand - imag part
-                fxy_i = lambda yl, xl: np.imag(np.exp(1j * k0 * np.sqrt((r_coord[0]-xl)**2 +\
+                fxy_i = lambda yl, xl: np.imag(np.exp(-1j * k0 * np.sqrt((r_coord[0]-xl)**2 +\
                 (r_coord[1]-yl)**2 + (r_coord[2])**2))/\
                 np.sqrt((r_coord[0]-xl)**2 + (r_coord[1]-yl)**2 + (r_coord[2])**2))
                 # integrals
@@ -55,6 +55,7 @@ class PistonOnBaffle(object):
                 self.pres_s[jrec, jf] = ((1j*self.air.rho0 *self.air.c0*k0)/(2*np.pi))*\
                     (Ir[0] + 1j*Ii[0])
                 bar.update(1)
+        bar.close()
         # self.pres_s.append(pres_rec)
 
     def uz_rigid_squared(self, ):
@@ -88,6 +89,7 @@ class PistonOnBaffle(object):
                 self.uz_s[jrec, jf] = ((1j*self.air.rho0 *self.air.c0*k0)/(2*np.pi))*\
                     (Ir[0] + 1j*Ii[0])
                 bar.update(1)
+        bar.close()
 
     def p_trav(self, w = 1, m=1, Lx = 0.2, Ly = 0.2):
         '''
@@ -121,6 +123,7 @@ class PistonOnBaffle(object):
                 self.pres_s[jrec, jf] = ((1j*self.air.rho0 *self.air.c0*k0)/(2*np.pi))*\
                     (Ir[0] + 1j*Ii[0])
                 bar.update(1)
+        bar.close()
 
     def add_noise(self, snr = 30, uncorr = True):
         '''
@@ -158,8 +161,7 @@ class PistonOnBaffle(object):
         a simple plot of the scene using matplotlib - not redered
         '''
         fig = plt.figure()
-        fig.canvas.set_window_title("Measurement scene")
-        ax = fig.gca(projection='3d')
+        ax = plt.axes(projection ="3d")
         vertices = np.array([[-self.Lx/2, -self.Ly/2, 0.0],
             [self.Lx/2, -self.Ly/2, 0.0],
             [self.Lx/2, self.Ly/2, 0.0],
@@ -168,7 +170,20 @@ class PistonOnBaffle(object):
                 vertices[:,1], vertices[:,2]))]
         # patch plot
         collection = Poly3DCollection(verts,
-            linewidths=2, alpha=0.9, edgecolor = 'black', zorder=2)
+            linewidths=2, alpha=0.5, edgecolor = 'black', zorder=2)
+        collection.set_facecolor('gold')
+        ax.add_collection3d(collection)
+        
+        # Baffle
+        vertices = np.array([[-vsam_size/2, -vsam_size/2, 0.0],
+            [vsam_size/2, -vsam_size/2, 0.0],
+            [vsam_size/2, vsam_size/2, 0.0],
+            [-vsam_size/2, vsam_size/2, 0.0]])
+        verts = [list(zip(vertices[:,0],
+                vertices[:,1], vertices[:,2]))]
+        # patch plot
+        collection = Poly3DCollection(verts,
+            linewidths=2, alpha=0.5, edgecolor = 'silver', zorder=2)
         collection.set_facecolor('silver')
         ax.add_collection3d(collection)
         # plot receiver
@@ -181,15 +196,15 @@ class PistonOnBaffle(object):
         # plt.yticks([], [])
         ax.set_zlabel('Z axis')
         # ax.grid(linestyle = ' ', which='both')
-        # ax.set_xlim((-vsam_size/2, vsam_size/2))
-        # ax.set_ylim((-vsam_size/2, vsam_size/2))
-        # ax.set_zlim((0, 1))
+        ax.set_xlim((-vsam_size/2, vsam_size/2))
+        ax.set_ylim((-vsam_size/2, vsam_size/2))
+        ax.set_zlim((0, np.amax([vsam_size, np.amax(self.receivers.coord[:,2])])))
         # ax.set_zticks((0, 1.2*np.amax(np.linalg.norm(self.sources.coord))))
         ax.view_init(elev=30, azim=-50)
         # ax.invert_zaxis()
         plt.show() # show plot
 
-    def save(self, filename = 'piston', path = '/home/eric/research/insitu_arrays/evanescent_benchmarks/'):
+    def save(self, filename = 'piston', path = ''):
         '''
         This method is used to save the simulation object
         '''
@@ -199,7 +214,7 @@ class PistonOnBaffle(object):
         pickle.dump(self.__dict__, f, 2)
         f.close()
 
-    def load(self, filename = 'piston', path = '/home/eric/research/insitu_arrays/evanescent_benchmarks/'):
+    def load(self, filename = 'piston', path = ''):
         '''
         This method is used to load a simulation object. You build a empty object
         of the class and load a saved one. It will overwrite the empty one.

@@ -717,10 +717,44 @@ def cvx_solver(A, b, noise_norm, l_norm = 2):
     x = cvx.Variable(shape = l)
     
     # Create constraint.
-    constraints = [cvx.norm(A @ x - b, 2) <= noise_norm]
+    #constraints = [cvx.pnorm(b - cvx.matmul(A, x), p=2) <= noise_norm]
+    constraints = [cvx.pnorm(A @ x - b, p = 2) <= noise_norm]
     
     # Form objective.
     obj = cvx.Minimize(cvx.norm(x, l_norm))
+    
+    # Form and solve problem.
+    prob = cvx.Problem(obj, constraints)
+    prob.solve();
+    return x.value
+
+def cvx_solver_c(A, b, noise_norm, l_norm = 2):
+    """ Solves regularized problem by convex optmization.
+
+    Parameters
+    ----------
+        A : numpy ndarray
+            sensing matrix (MxL)
+        b: numpy 1darray
+            your measurement vector (size: M x 1)
+        noise_norm : float
+            norm of the noise (to set constraint)
+        l_norm : int
+            Type of norm to minimize x
+    Returns
+    -------
+        x : numpy 1darray
+            estimated solution to inverse problem
+    """
+    # Create variable to be solved for.
+    m, l = A.shape
+    x = cvx.Variable(shape = l, complex = True, value = np.zeros(l))
+    
+    # Create constraint.
+    #constraints = [cvx.norm(A @ x - b, 2) <= noise_norm]
+    constraints = [cvx.pnorm(b - cvx.matmul(A, x), p=2) <= noise_norm]
+    # Form objective.
+    obj = cvx.Minimize(cvx.pnorm(x, p = l_norm))
     
     # Form and solve problem.
     prob = cvx.Problem(obj, constraints)

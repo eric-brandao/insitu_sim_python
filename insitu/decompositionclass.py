@@ -295,7 +295,7 @@ class Decomposition(object):
             # get the scaled version of the propagating directions
             k_vec = k0 * self.dir
             # Form the sensing matrix
-            h_mtx = np.exp(1j*self.receivers.coord @ k_vec.T)
+            h_mtx = np.exp(-1j*self.receivers.coord @ k_vec.T)
             H = h_mtx.astype(complex) # cvxpy does not accept floats, apparently
             # measured data
             pm = self.pres_s[:,jf].astype(complex)
@@ -331,6 +331,7 @@ class Decomposition(object):
             Apply some headroom to the noise level to compute "e". 
         """
         # Initialize
+        import cvxpy as cvx
         self.pk = np.zeros((self.n_waves, len(self.controls.k0)), dtype=np.csingle)
         # loop over frequencies
         bar = tqdm(total = len(self.controls.k0), desc = 'Calculating Constrained Optim.')
@@ -339,19 +340,22 @@ class Decomposition(object):
             # get the scaled version of the propagating directions
             k_vec = k0 * self.dir
             # Form the sensing matrix
-            h_mtx = np.exp(1j*self.receivers.coord @ k_vec.T)
+            h_mtx = np.exp(-1j*self.receivers.coord @ k_vec.T)
             H = h_mtx.astype(complex)
             # measured data
             pm = self.pres_s[:,jf].astype(complex)
+            epsilon = 10**(-(snr-headroom)/10)
+            # x_cvx = lc.cvx_solver_c(H, pm, epsilon, l_norm = 2)
             # Performing constrained optmization cvxpy
-            x_cvx = cp.Variable(h_mtx.shape[1], complex = True)
+            x_cvx = cvx.Variable(h_mtx.shape[1], complex = True)
             # Create the problem
             epsilon = 10**(-(snr-headroom)/10)
-            objective = cp.Minimize(cp.pnorm(x_cvx, p=1))
-            constraints = [cp.pnorm(pm - cp.matmul(H, x_cvx), p=2) <= epsilon]#[H*x == pm]
+            objective = cvx.Minimize(cvx.pnorm(x_cvx, p=1))
+            constraints = [cvx.pnorm(pm - cvx.matmul(H, x_cvx), p=2) <= epsilon]#[H*x == pm]
             # Create the problem and solve
-            problem = cp.Problem(objective, constraints)
-            problem.solve(solver=cp.SCS, verbose=True) 
+            problem = cvx.Problem(objective, constraints)
+            problem.solve(solver=cvx.SCS, verbose=False) 
+            #problem.solve() 
             self.pk[:,jf] = x_cvx.value
             bar.update(1)
         bar.close()

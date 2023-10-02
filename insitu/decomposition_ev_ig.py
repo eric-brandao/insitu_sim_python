@@ -208,8 +208,7 @@ class DecompositionEv2(object):
         
         if plot:
             fig = plt.figure()
-            fig.canvas.set_window_title('Dir test')
-            ax = fig.gca(projection='3d')
+            ax = plt.axes(projection ="3d")
             ax.scatter(self.pdir[:,0], self.pdir[:,1], self.pdir[:,2])
     
     def conectivity_correction(self,):

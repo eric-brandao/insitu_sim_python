@@ -17,13 +17,13 @@ import cvxpy as cp
 # from scipy import linalg # for svd
 # from scipy import signal
 from scipy.sparse.linalg import lsqr, lsmr
-from lcurve_functions import csvd, l_cuve, tikhonov
+import lcurve_functions as lc
 import pickle
 from receivers import Receiver
 from material import PorousAbsorber
 from controlsair import cart2sph, sph2cart, cart2sph, update_progress, compare_alpha, compare_zs
 from rayinidir import RayInitialDirections
-from parray_estimation import octave_freq, octave_avg, get_hemispheres, get_inc_ref_dirs
+#from parray_estimation import octave_freq, octave_avg, get_hemispheres, get_inc_ref_dirs
 from decompositionclass import filter_evan
 
 SMALL_SIZE = 11
@@ -141,7 +141,8 @@ class DecompositionEv(object):
         Load a simulation object.
     """
 
-    def __init__(self, p_mtx = None, controls = None, material = None, receivers = None):
+    def __init__(self, p_mtx = None, controls = None, material = None, receivers = None,
+                 regu_par = 'L-curve'):
         """
 
         Parameters
@@ -166,6 +167,15 @@ class DecompositionEv(object):
         self.receivers = receivers
         self.pres_s = p_mtx
         self.flag_oct_interp = False
+        if regu_par == 'L-curve' or regu_par == 'l-curve':
+            self.regu_par_fun = lc.l_curve
+            print("You choose L-curve to find optimal regularization parameter")
+        elif regu_par == 'gcv' or regu_par == 'GCV':
+            self.regu_par_fun = lc.gcv_lambda
+            print("You choose GCV to find optimal regularization parameter")
+        else:
+            self.regu_par_fun = lc.l_curve
+            print("Returning to default L-curve to find optimal regularization parameter")
 
     def create_kx_ky(self, n_kx = 20, n_ky = 20, plot=False, freq = 1000):
         """ Create a regular grid of kx and ky.
@@ -197,7 +207,6 @@ class DecompositionEv(object):
         if plot:
             k0 = 2*np.pi*freq / self.controls.c0
             fig = plt.figure()
-            fig.canvas.set_window_title('Non filtered evanescent waves')
             plt.plot(self.kx_f, self.ky_f, 'o')
             plt.plot(k0*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
                 k0*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'r')
@@ -205,7 +214,8 @@ class DecompositionEv(object):
             plt.ylabel('ky')
             plt.show()
 
-    def pk_tikhonov_ev(self, method = 'direct', f_ref = 1.0, f_inc = 1.0, factor = 1, z0 = 1.5, plot_l = False):
+    def pk_tikhonov_ev(self, method = 'direct', f_ref = 1.0, f_inc = 1.0, 
+                       factor = 1, z0 = 1.5, plot_l = False):
         """ Wave number spectrum estimation using Tikhonov inversion
 
         Estimate the wave number spectrum using regularized Tikhonov inversion.
@@ -265,6 +275,7 @@ class DecompositionEv(object):
         self.kx_ef = [] # Filtered version
         self.ky_ef = [] # Filtered version
         self.pk_ev = []
+        self.lambd_value_vec = np.zeros(len(self.controls.k0))
         # Initializa bar
         bar = tqdm(total = len(self.controls.k0),
             desc = 'Calculating Tikhonov inversion (with evanescent waves)...')
@@ -296,36 +307,27 @@ class DecompositionEv(object):
             # Measured data
             pm = self.pres_s[:,jf].astype(complex)
             # Compute SVD
-            u, sig, v = csvd(h_mtx)
+            u, sig, v = lc.csvd(h_mtx)
             # Find the optimal regularization parameter.
-            lambd_value = l_cuve(u, sig, pm, plotit=plot_l)
+            lambd_value = self.regu_par_fun(u, sig, pm, plot_l)
+            self.lambd_value_vec[jf] = lambd_value
             # Choosing the method to find the P(k)
+            ## Choosing the method to find the P(k)
             if method == 'scipy':
-                from scipy.sparse.linalg import lsqr, lsmr
-                x = lsqr(h_mtx, self.pres_s[:,jf], damp=lambd_value)[0]
+                x = lsqr(h_mtx, self.pres_s[:,jf], damp=lambd_value)
+                self.pk[:,jf] = x[0]
             elif method == 'direct':
                 Hm = np.matrix(h_mtx)
-                x = Hm.getH() @ np.linalg.inv(Hm @ Hm.getH() + (lambd_value**2)*np.identity(len(pm))) @ pm
+                self.pk[:,jf] = Hm.getH() @ np.linalg.inv(Hm @ Hm.getH() + (lambd_value**2)*np.identity(len(pm))) @ pm
             elif method == 'Ridge':
-                # Form a real H2 matrix and p2 measurement
-                H2 = np.vstack((np.hstack((h_mtx.real, -h_mtx.imag)),
-                    np.hstack((h_mtx.imag, h_mtx.real))))
-                p2 = np.vstack((pm.real,pm.imag)).flatten()
-                regressor = Ridge(alpha=lambd_value, fit_intercept = False, solver = 'svd')
-                x2 = regressor.fit(H2, p2).coef_
-                x = x2[:h_mtx.shape[1]]+1j*x2[h_mtx.shape[1]:]
-            # Performing the Tikhonov inversion with cvxpy #########################
-            else:
-                H = h_mtx.astype(complex)
-                x_cvx = cp.Variable(h_mtx.shape[1], complex = True)
-                lambd = cp.Parameter(nonneg=True)
-                lambd.value = lambd_value[0]
-                # Create the problem and solve
-                problem = cp.Problem(cp.Minimize(objective_fn(H, pm, x_cvx, lambd)))
-                problem.solve(solver=cp.SCS, verbose=False) # Fast but gives some warnings
-                x = x_cvx.value
-            # Get correct complex wave number spk
-            self.pk[:,jf] = x
+                x = lc.ridge_solver(h_mtx,pm,lambd_value)
+                self.pk[:,jf] = x
+            elif method == 'Tikhonov':
+                x = lc.tikhonov(u,sig,v,pm,lambd_value)
+                self.pk[:,jf] = x
+            elif method == 'cvx':
+                x = lc.cvx_tikhonov(h_mtx.astype(complex), pm, lambd_value, l_norm = 2)
+                self.pk[:,jf] = x
             bar.update(1)
         bar.close()
 
@@ -495,7 +497,6 @@ class DecompositionEv(object):
         # Figure
         fig = plt.figure(figsize=(8, 8))
         # fig = plt.figure()
-        fig.canvas.set_window_title('2D plot of wavenumber spectrum')
         # Incident
         plt.subplot(2, 1, 1)
         plt.title('Incident field')
@@ -575,7 +576,6 @@ class DecompositionEv(object):
         # Figure
         fig = plt.figure(figsize=(8, 8))
         # fig = plt.figure()
-        fig.canvas.set_window_title('2D plot of wavenumber spectrum - PE')
         # Incident
         plt.subplot(2, 1, 1)
         plt.title('Incident field')
@@ -726,7 +726,6 @@ class DecompositionEv(object):
         y = self.ky_f
         triang = tri.Triangulation(x, y)
         fig = plt.figure()
-        fig.canvas.set_window_title('Filtered evanescent waves')
         plt.plot(k0*np.cos(np.arange(0, 2*np.pi+0.01, 0.01)),
             k0*np.sin(np.arange(0, 2*np.pi+0.01, 0.01)), 'r')
         if contourplot:
@@ -800,8 +799,7 @@ def form_kz(k0, kx_f, ky_f, plot=False):
     kz_f[ide] = -1j*np.sqrt(kx_f[ide]**2+ky_f[ide]**2-k0**2)
     if plot:
         fig = plt.figure()
-        fig.canvas.set_window_title('Scatter plot of wave-number directions (half)')
-        ax = fig.gca(projection='3d')
+        ax = plt.axes(projection ="3d")
         ax.scatter(kx_f[idp], ky_f[idp], np.real(kz_f[idp]))
         ax.scatter(kx_f[ide], ky_f[ide])
         ax.set_xlabel(r'$k_x$ [rad/m]')
