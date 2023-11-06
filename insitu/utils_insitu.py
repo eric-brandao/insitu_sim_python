@@ -482,3 +482,79 @@ def set_all_cameras(fig, len_scene, camera_dict=None, axis='z'):
         scene_text = f'scene{ic + 1}_camera' if ic > 0 else 'scene_camera'
         fig.layout[scene_text] = camera_dict
     return fig
+
+# Diffusion coefficients
+
+def diffusion_coef_equiang(frequency, ps_abs):
+    """ computes diffusion coefficient for a hemisphere sampled with equi solid angles (no area correction need)
+    
+    Inputs:
+    ------------------
+    frequency : numpy1dArray
+        frequency vector
+    ps_abs : numpyndArray
+        absolute of scattered pressure with shape Nrecs x Nfreqs
+    """
+    d_coef = np.zeros(len(frequency))
+    num_of_recs = ps_abs.shape[0]
+    
+    for ic in range(len(frequency)):     
+        d_coef[ic] = (np.sum((ps_abs[:,ic])**2)**2 - np.sum(((ps_abs[:,ic])**2) ** 2)) /\
+            ((num_of_recs - 1) * np.sum(((ps_abs[:,ic])**2) ** 2))        
+    d_coef[d_coef < 0] = 0  
+    return d_coef
+
+def area_factors(receivers):
+    # Cartesian to spherical coords
+    r, theta, phi = cart2sph(receivers[:, 0], receivers[:, 1], receivers[:, 2])
+    theta_deg = 90-np.round(np.rad2deg(theta), decimals=0)
+    phi_deg = np.round(np.rad2deg(phi), decimals=0)
+    
+    theta = np.deg2rad(theta_deg)
+    phi = np.deg2rad(phi_deg)
+    # dtheta
+    theta_shifted = np.roll(theta, 1)
+    d_theta_vec = np.abs(theta_shifted[1:]-theta[1:])
+    
+    d_theta = np.amax(d_theta_vec)
+    #dphi
+    d_phi = np.abs(phi[-1] - phi[-2])
+    
+    #theta = np.pi/2-theta
+    # Me
+    n_imag = np.cos(theta)/np.cos(np.deg2rad(85)) - 1
+    
+    # ISO
+    ai = np.zeros(len(theta))
+    ai = 2*np.sin(theta)*np.sin(d_theta/2)
+    ai[theta_deg == 0] = (4*np.pi/d_phi)*(np.sin(d_theta/4))**2
+    ai[theta_deg == 90] = np.sin(d_theta/2)
+    n_i_areas = ai / np.amin(ai)
+
+    return n_imag, n_i_areas
+
+def diffusion_coef_gauss(frequency, ps_abs, receivers):
+    """ computes diffusion coefficient for a hemisphere sampled with gaussian grid (area correction need)
+    
+    Inputs:
+    ------------------
+    frequency : numpy1dArray
+        frequency vector
+    ps_abs : numpyndArray
+        absolute of scattered pressure with shape Nrecs x Nfreqs
+    """
+    _, ni = area_factors(receivers)
+    d_coef = np.zeros(len(frequency))
+    num_of_recs = ps_abs.shape[0]
+    
+    for ic in range(len(frequency)):     
+        d_coef[ic] = (np.sum(ni*(ps_abs[:,ic])**2)**2 - np.sum(ni*((ps_abs[:,ic])**2) ** 2)) /\
+            ((np.sum(ni)-1) * np.sum(ni*((ps_abs[:,ic])**2) ** 2))        
+    d_coef[d_coef < 0] = 0  
+    return d_coef
+
+def diffusion_coef_norm(d_coef_sample, d_coef_ref):
+    """ Computes normalized diffusion coefficient
+    """
+    norm_gamma = (d_coef_sample - d_coef_ref)/(1-d_coef_ref)
+    return norm_gamma

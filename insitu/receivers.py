@@ -320,13 +320,13 @@ class Receiver():
         id_dir = np.where(directions[:,2]>=0)
         self.id_dir = id_dir
         self.coord = directions[id_dir[0],:]
-        r, theta, phi = cart2sph(self.coord[:,0], self.coord[:,1], self.coord[:,2])
-        r = radius*r
-        self.coord[:,0], self.coord[:,1], self.coord[:,2] = sph2cart(r,theta,phi)
         self.pdir_all = directions
-        self.n_rec = len(self.coord[:,0])
+        self.n_prop = len(self.coord[:,0])
         self.conectivities_all = elements
         self.conectivity_correction()
+        # r, theta, phi = cart2sph(self.coord[:,0], self.coord[:,1], self.coord[:,2])
+        # r = radius*r
+        # self.coord[:,0], self.coord[:,1], self.coord[:,2] = sph2cart(r,theta,phi)
 
     def conectivity_correction(self,):
         self.sign_vec = np.array([self.pdir_all[self.conectivities_all[:,0], 2],
@@ -338,6 +338,14 @@ class Receiver():
         self.conectivities = self.conectivities_all[self.p_rows,:]
         self.delta = self.id_dir[0]-np.arange(self.coord.shape[0])
 
+    def hemispherical_array2(self, radius = 1, n_rec_target = 32):
+        from decomposition_ev_ig import DecompositionEv2
+        pk = DecompositionEv2()
+        pk.prop_dir(n_waves = n_rec_target, plot = False)
+        self.coord = pk.pdir
+        self.conectivities = pk.conectivities
+        
+        
 # class Receivers():
 #     def __init__(self, config_file):
 #         '''

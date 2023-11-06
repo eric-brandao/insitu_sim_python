@@ -21,7 +21,10 @@ from scipy import linalg # for svd
 from sklearn.linear_model import Ridge
 from scipy import optimize
 import warnings
-import cvxpy as cvx
+try:
+    import cvxpy as cvx
+except:
+    print("Not possible to use cvx")
 
 
 def csvd(A):
@@ -44,7 +47,7 @@ def csvd(A):
     Nm, Nu = A.shape
     if Nm >= Nu: # more measurements than unknowns
         u, sig, v = np.linalg.svd(A, full_matrices=False)
-        # v = np.conjugate(v.T)
+        v = np.conjugate(v.T)
     else:
         v, sig, u = np.linalg.svd(np.conjugate(A.T), full_matrices=False)
         u = np.conjugate(u.T)
@@ -152,7 +155,8 @@ def l_corner(rho,eta,reg_param,u,sig,bm):
     p = sig.shape
     beta = (np.conj(u).T) @ bm 
     beta = np.reshape(beta[0:int(p[0])], beta.shape[0])
-    b0 = (bm - (beta.T @ u).T)
+    # b0 = (bm - (beta.T @ u).T)
+    b0 = bm - u @ beta
     xi = np.divide(beta[0:int(p[0])], sig)
     # Call curvature calculator
     curv = curvature(reg_param, sig, beta, xi) # ok
@@ -682,17 +686,11 @@ def direct_solver(h_mtx,bm,lambd_value):
                                          (lambd_value**2)*np.identity(len(bm))) @ bm
     return x_lambda   
 
-# np.random.seed(0)
-# H = np.random.randn(7, 10)
-# p = np.random.randn(7)
-# u, sig, v = csvd(H)
-# lambd_value = l_cuve(u, sig, p, plotit=False)
-# tikhonov(u, sig, v, p, lambd_value)
-# H = np.array([[1, 7, 10],[2.3, 5.4, 13.2]])
-# p = np.array([1.4, 8.54])
-# u, sig, v = csvd(H)
-# x_lambda = tikhonov(u, sig, v, p, 0.3)
-# print(x_lambda)
+def least_sq_solver(h_mtx, bm):
+    """ least squares solver
+    """
+    x_lsq = np.linalg.lstsq(h_mtx, bm)[0]
+    return x_lsq
 
 def cvx_solver(A, b, noise_norm, l_norm = 2):
     """ Solves regularized problem by convex optmization.
@@ -820,8 +818,7 @@ def tsvd(u,s,v,b,k):
     
     #eta = zeros(lk,1); rho = zeros(lk,1);
     beta = np.conj(u[:,0:p]).T @ b
-    xi = beta/s
-    v = np.conj(v).T    
+    xi = beta/s    
     x_k = v[:,0:k] @ xi[0:k]
     return x_k
 
@@ -851,7 +848,6 @@ def ssvd(u,s,v,b,tau):
     idbeta = np.where(np.abs(beta_full) > tau)[0]
     beta = beta_full[idbeta]
     xi = beta/s[idbeta]
-    v = np.conj(v).T
     v = v[:,idbeta]    
     x_tau = v @ xi
     return x_tau
@@ -894,12 +890,64 @@ def plot_picard(U,s,b, noise_norm = None,figsize = (5,4)):
                      color = 'Grey', 
                      label = r'$\left\|n\right\|_2/\left\|b\right\|_2 \cdot \sigma_1$')
     plt.legend(loc = 'lower left')
-    plt.ylim((0.1*s[-1], 100*s[0]))
+    minval = np.amin([0.1*s[-1], 0.1*np.finfo(float).eps*s[0]])
+    plt.ylim((minval, 100*s[0]))
     plt.xlabel(r'$i$')
     plt.ylabel(r'$\sigma_i$, $|U^Tb|$, $|U^Tb|/\sigma_i$')
     plt.title('cond(A) = {0:.2f}'.format(cond_number), loc='right')
     plt.grid()
+    plt.tight_layout()
     
 def nmse(x_sol, x_truth):
+    """ returns the NMSE (normalized mean squared error)
+
+    Parameters
+    ----------
+        x_sol : numpy 1darray
+            solution
+        x_sol : numpy 1darray
+            ground truth
+    Returns
+    -------
+        nnse : float
+            estimated NMSE
+    """
     nmse = (np.linalg.norm(x_sol-x_truth)/np.linalg.norm(x_truth))**2
     return nmse
+
+def mae(x_sol, x_truth):
+    """ returns the MAE (nmean absolute error)
+
+    Parameters
+    ----------
+        x_sol : numpy 1darray
+            solution
+        x_sol : numpy 1darray
+            ground truth
+    Returns
+    -------
+        mae : float
+            estimated MAE
+    """
+    mae = np.linalg.norm(x_sol-x_truth)
+    return mae
+
+def nmse_freq(x_sol, x_truth):
+    """ returns the NMSE vs freq (normalized mean squared error)
+
+    Parameters
+    ----------
+        x_sol : numpy ndarray
+            solution arraged in Nvals x Nfreq 
+        x_sol : numpy ndarray
+            ground truth arraged in Nvals x Nfreq 
+    Returns
+    -------
+        nnse : nympy 1dArray
+            estimated NMSE vs freq
+    """
+    _, nfreq = x_sol.shape
+    nmse_freq = np.zeros(nfreq)
+    for jf in np.arange(nfreq):
+        nmse_freq[jf] = nmse(x_sol[:,jf], x_truth[:,jf])
+    return nmse_freq
