@@ -84,7 +84,7 @@ class Decomposition_QDT(object):
     """
 
     def __init__(self, p_mtx=None, controls=None, receivers=None, source_coord=None, quad_order=51,
-                 a = 0, b = 70, retraction = 0):
+                 a = 0, b = 70, retraction = 0, image_source_on = False):
         """
         Parameters
         ----------
@@ -93,14 +93,21 @@ class Decomposition_QDT(object):
             Each column is a set of sound pressure at all receivers for a frequency.
         controls : object (AlgControls)
             Controls of the decomposition (frequency spam)
-        material : object (PorousAbsorber)
-            Contains the material properties (surface impedance).
+
         receivers : object (Receiver)
             The receivers in the field
-        source_coord : tuple
+        source_coord : 1dArray
             The source coordinates in the field
         quad_order : int
             The quadrature order
+        a : float
+            bottom limit of integral
+        b : float
+            upper limit of integral
+        retraction : float
+            retraction of sound source (maybe use for better regularization)
+        image_source_on : bool
+            whether to include or not an image source. If True, we will have one.
 
         The objects are stored as attributes in the class (easier to retrieve).
         """
@@ -114,11 +121,15 @@ class Decomposition_QDT(object):
         self.b = b
         self.retraction = retraction
         self.hs = self.source_coord[2] + self.retraction  # source height with retraction
-        #self.pk = []
+        self.image_source_on = image_source_on
+        if self.image_source_on:
+            self.num_cols = 2 + self.quad_order
+        else:
+            self.num_cols = 1 + self.quad_order
 
         #np.warnings.filterwarnings('ignore', category=np.VisibleDeprecationWarning)
     
-    def get_roots_weights(self,):
+    def gauss_legendre_sampling(self,):
         """ Compute roots and weights of Gaussian quad
         """
         # Initialize variables
@@ -126,11 +137,22 @@ class Decomposition_QDT(object):
         self.q = ((self.b - self.a) / 2) * self.roots + ((self.a + self.b) / 2)  # variable interval change
         
     def uniform_sampling(self,):
-        """ Compute roots and weights of Gaussian quad
+        """ Compute roots and weights for uniform sampling
         """
         # Initialize variables
         self.roots = np.linspace(-1, 1, self.quad_order) 
-        self.weights = (1/self.quad_order) * np.ones(self.quad_order)
+        # self.weights = (1/self.quad_order) * np.ones(self.quad_order)
+        self.weights = ((self.b-self.a)/self.quad_order) * np.ones(self.quad_order)
+        self.q = ((self.b - self.a) / 2) * self.roots + ((self.a + self.b) / 2)  # variable interval change
+        
+        
+    def mid_point_sampling(self,):
+        """ Compute roots and weights for mid-point rule
+        """
+        # Initialize variables
+        # Dx = 2/self.quad_order
+        self.roots = np.linspace(-1 + 2/self.quad_order, 1 - 2/self.quad_order, self.quad_order) 
+        self.weights = ((self.b-self.a)/self.quad_order) * np.ones(self.quad_order)
         self.q = ((self.b - self.a) / 2) * self.roots + ((self.a + self.b) / 2)  # variable interval change
         
     def get_rec_parameters(self, receivers):
@@ -143,11 +165,82 @@ class Decomposition_QDT(object):
              (self.source_coord[1] - receivers.coord[:,1]) ** 2) ** 0.5  # Horizontal distance (S-R)
         zr = receivers.coord[:,2]  # Receiver height
         r1 = (r ** 2 + (self.hs - zr) ** 2) ** 0.5  # Euclidean dist. related to the real source
+        r2 = (r ** 2 + (self.hs + zr) ** 2) ** 0.5  # Euclidean dist. related to the image source
         
         rq = np.zeros((receivers.coord.shape[0], self.quad_order), dtype = complex)
+        hz_q = np.zeros((receivers.coord.shape[0], self.quad_order), dtype = complex)  # image source height
         for jrec, r_coord in enumerate(receivers.coord):
             rq[jrec,:] = (r[jrec] ** 2 + (self.hs + zr[jrec] - 1j * self.q) ** 2) ** 0.5  # Euclidean dist. related to the image sources
-        return r, zr, r1, rq
+            hz_q[jrec,:] = self.hs + zr[jrec] - 1j * self.q  # image source height
+        return r, zr, r1, r2, rq, hz_q
+    
+    def build_hmtx_p(self, shape_h, k0, r1, r2, rq, weights_mtx):
+        """ build h_mtx for pressure
+        Parameters
+        ----------
+        shape_h : tuple of 2
+            shape of matrix rows vs cols
+        k0 : float
+            magnitude of wave number in rad/s
+        r1 : 1dArray
+            Arrays with distances from source to receivers
+        r2 : 1dArray
+            Arrays with distances from image-source to receivers    
+        rq : ndArray
+            Matrix with distances of complex sources to receivers
+        weights_mtx : ndArray
+            Matrix with integration weights
+        """
+        # Forming the sensing matrix (M x (1 + ng))
+        h_mtx_p = np.zeros(shape_h, dtype=complex)  # sensing matrix
+        start_index_iq = 1
+        # Model with image source
+        if self.image_source_on:
+            # Image source
+            h_mtx_p[:,1] = (np.exp(-1j * k0 * r2)) / r2
+            start_index_iq = 2
+            
+        # Incident part
+        h_mtx_p[:,0] = (np.exp(-1j * k0 * r1)) / r1  # Incident pressure
+        # Reflected part - Terms of integral - Iq is a M x (1 x ng) matrix
+        h_mtx_p[:,start_index_iq:] = ((self.b - self.a) / (2)) * weights_mtx * kernel_p(k0, rq)
+        return h_mtx_p
+    
+    def build_hmtx_uz(self, shape_h, k0, r1, r2, zr, rq, hz_q, weights_mtx):
+        """ build h_mtx for  uz vel
+        Parameters
+        ----------
+        shape_h : tuple of 2
+            shape of matrix rows vs cols
+        k0 : float
+            magnitude of wave number in rad/s
+        r1 : 1dArray
+            Arrays with distances from source to receivers
+        r2 : 1dArray
+            Arrays with distances from image-source to receivers
+        zr : 1dArray
+            Arrays with heights of receivers
+        rq : ndArray
+            Matrix with distances of complex sources to receivers
+        hz_q : ndArray
+            Matrix with vertical distances of complex sources to receivers
+        weights_mtx : ndArray
+            Matrix with integration weights
+        """
+        # Forming the sensing matrix (M x (1 + ng))
+        h_mtx_uz = np.zeros(shape_h, dtype=complex)  # sensing matrix
+        start_index_iq = 1
+        # Model with image source
+        if self.image_source_on:
+            # Image source
+            h_mtx_uz[:,1] = -((np.exp(-1j * k0 * r2)) / r2) * ((self.hs + zr) / r2) * (1 + (1 / (1j * k0 * r2)))
+            start_index_iq = 2
+            
+        # Incident part
+        h_mtx_uz[:,0] = ((np.exp(-1j * k0 * r1)) / r1) * ((self.hs - zr) / r1) * (1 + (1 / (1j * k0 * r1)))
+        # Reflected part - Terms of integral - Iq is a M x (1 x ng) matrix
+        h_mtx_uz[:,start_index_iq:] = -((self.b - self.a) / (2)) * weights_mtx * kernel_uz(k0, rq, hz_q)
+        return h_mtx_uz
     
     def pk_tikhonov(self, plot_l=False, method='direct'):
         """ Wave number spectrum estimation using Tikhonov inversion.
@@ -187,22 +280,18 @@ class Decomposition_QDT(object):
         """
 
         # Get receiver data (frequency independent)
-        r, zr, r1, rq = self.get_rec_parameters(self.receivers) # r, zr, and r1 are vectors (M), rq is a M x (ng) matrix
+        r, zr, r1, r2, rq, _ = self.get_rec_parameters(self.receivers) # r, zr, and r1 are vectors (M), rq is a M x (ng) matrix
         # Get weights matrix (frequency independent)
         weights_mtx = np.repeat(np.array([self.weights]), self.receivers.coord.shape[0], axis = 0) #M x (ng)
         # Initialize pk
-        self.pk = np.zeros((self.quad_order+1, len(self.controls.k0)), dtype=complex)
+        self.pk = np.zeros((self.num_cols, len(self.controls.k0)), dtype=complex)
         # Initialize bar
         bar = tqdm(total=len(self.controls.k0),
                    desc='Calculating Tikhonov inversion (for the Quadrature Method)...', ascii=False)
         # Freq loop
         for jf, k0 in enumerate(self.controls.k0):
-            # Forming the sensing matrix (M x (1 + ng))
-            h_mtx = np.zeros((self.receivers.coord.shape[0], (1 + self.quad_order)), dtype=complex)  # sensing matrix
-            # Incident part
-            h_mtx[:,0] = (np.exp(-1j * k0 * r1)) / r1  # Incident pressure
-            # Reflected part - Terms of integral - Iq is a M x (1 x ng) matrix
-            h_mtx[:,1:] = ((self.b - self.a) / (2)) * weights_mtx * kernel_p(k0, rq)
+            # Forming the sensing matrix
+            h_mtx = self.build_hmtx_p((self.receivers.coord.shape[0], self.num_cols), k0, r1, r2, rq, weights_mtx)
             # Measured data
             pm = self.pres_s[:, jf].astype(complex)
             # Compute SVD
@@ -246,7 +335,7 @@ class Decomposition_QDT(object):
             The reflected reconstructed pressure.
         """
         # Get receiver data (frequency independent)
-        r, zr, r1, rq = self.get_rec_parameters(receivers) # r, zr, and r1 are vectors (M), rq is a M x (ng) matrix
+        r, zr, r1, r2, rq, _ = self.get_rec_parameters(receivers) # r, zr, and r1 are vectors (M), rq is a M x (ng) matrix
         # Get weights matrix (frequency independent)
         weights_mtx = np.repeat(np.array([self.weights]), receivers.coord.shape[0], axis = 0) #M x (ng)
         
@@ -259,12 +348,8 @@ class Decomposition_QDT(object):
         bar = tqdm(total=len(self.controls.k0), desc='Calculating the reconstructed pressure (p_recon)...')
         # Freq loop
         for jf, k0 in enumerate(self.controls.k0):
-            # Forming the reconstruction matrix (M x (1 + ng))
-            h_mtx = np.zeros((receivers.coord.shape[0], (1 + self.quad_order)), dtype=complex)  # sensing matrix
-            # Incident part
-            h_mtx[:,0] = (np.exp(-1j * k0 * r1)) / r1  # Incident pressure
-            # Reflected part  - Terms of integral - Iq is a M x (1 x ng) matrix
-            h_mtx[:,1:] = ((self.b - self.a) / (2)) * weights_mtx * kernel_p(k0, rq)
+            # Forming the reconstruction matrix
+            h_mtx = self.build_hmtx_p((receivers.coord.shape[0], self.num_cols), k0, r1, r2, rq, weights_mtx)
             # pressure reconstruction
             self.p_recon[:,jf] = h_mtx @ self.pk[:,jf]  # total pressure
             self.p_recon_inc[:,jf] = h_mtx[:, 0] * self.pk[0,jf]   # incident pressure
@@ -290,7 +375,7 @@ class Decomposition_QDT(object):
         """
 
         # Get receiver data (frequency independent)
-        r, zr, r1, rq = self.get_rec_parameters(receivers) # r, zr, and r1 are vectors (M), rq is a M x (ng) matrix
+        r, zr, r1, r2, rq, hz_q = self.get_rec_parameters(receivers) # r, zr, and r1 are vectors (M), rq is a M x (ng) matrix
         # Get weights matrix (frequency independent)
         weights_mtx = np.repeat(np.array([self.weights]), receivers.coord.shape[0], axis = 0) #M x (ng)
         # Initialize variables
@@ -301,24 +386,8 @@ class Decomposition_QDT(object):
         bar = tqdm(total=len(self.controls.k0), desc='Calculating the reconstructed particle velocity (uz_recon)...')
         # Freq loop
         for jf, k0 in enumerate(self.controls.k0):
-            # Forming the reconstruction matrix (M x (1 + ng))
-            h_mtx = np.zeros((receivers.coord.shape[0], (1 + self.quad_order)), dtype=complex)  # sensing matrix
-            # loop over receivers
-            for jrec, g_coord in enumerate(receivers.coord):
-                # r1 = (r[jrec] ** 2 + (self.hs - zr[jrec]) ** 2) ** 0.5  # Euclidean dist. related to the real source
-                hz_q = self.hs + zr[jrec] - 1j * self.q  # image source height
-                rq = ((r[jrec] ** 2) + (hz_q ** 2)) ** 0.5  # Euclidean dist. related to the image sources
-                Iq = ((self.b - self.a) / 2) * weights_mtx[jrec,:] * kernel_uz(k0, rq, hz_q)  # Integral related to the quadrature
-                uz_inc = ((np.exp(-1j * k0 * r1[jrec])) / r1[jrec]) * ((self.hs - zr[jrec]) / r1[jrec]) *\
-                    (1 + (1 / (1j * k0 * r1[jrec])))  # Incident uz
-                # Forming the sensing matrix (M x (1 + ng))
-                h_mtx[jrec] = np.concatenate((uz_inc, -Iq), axis=None)
-            
-            
-            # Incident part
-            # h_mtx[:,0] = ((np.exp(-1j * k0 * r1)) / r1) * ((self.hs - zr) / r1) * (1 + (1 / (1j * k0 * r1)))
-            # Reflected part  - Terms of integral - Iq is a M x (1 x ng) matrix
-            # h_mtx[:,1:] = ((self.b - self.a) / (2)) * weights_mtx * kernel_uz(k0, rq, self.hs + zr - 1j * self.q)
+            # Forming the reconstruction matrix
+            h_mtx = self.build_hmtx_uz((receivers.coord.shape[0], self.num_cols), k0, r1, r2, zr, rq, hz_q, weights_mtx)
             # particle velocity reconstruction
             self.uz_recon[:, jf] = h_mtx @ self.pk[:,jf]  # total particle velocity
             self.uz_recon_inc[:, jf] = h_mtx[:, 0] * self.pk[0,jf]   # incident particle velocity
@@ -363,13 +432,9 @@ class Decomposition_QDT(object):
         self.p_s, _, _ = self.reconstruct_p(grid)
         self.uz_s, _, _ = self.reconstruct_uz(grid)
 
-        
-
         # Allocate some memory prior to loop
         self.Zs = np.zeros(len(self.controls.k0), dtype=complex)
         self.alpha = np.zeros((len(theta), len(self.controls.k0)))
-        # self.p_s = np.zeros((len(grid.coord), len(self.controls.k0)), dtype=complex)
-        # self.uz_s = np.zeros((len(grid.coord), len(self.controls.k0)), dtype=complex)
 
         # Initialize bar
         bar = tqdm(total=len(self.controls.k0), desc='Calculating the surface impedance (Zs)...', ascii=False)
@@ -392,228 +457,230 @@ class Decomposition_QDT(object):
                                                           (self.Zs * np.cos(dtheta) + 1)))) ** 2
         return self.alpha
 
-    def plot_colormap(self, press=None, freq=None, name='', dinrange=20):
-        """Plots a color map of the pressure field.
+    # def plot_colormap(self, press=None, freq=None, name='', dinrange=20):
+    #     """Plots a color map of the pressure field.
 
-        Parameters
-        ----------
-        press : list
-            spectrum of the sound pressure for all receivers.
-        freq : float
-            desired frequency of the color map. If the frequency does not exist
-            on the simulation, then it will choose the frequency just before the target.
-        name : str
-            pressure characteristic name. Measured or reconstructed
-        dinrange : float
-            Dynamic range of the color map
+    #     Parameters
+    #     ----------
+    #     press : list
+    #         spectrum of the sound pressure for all receivers.
+    #     freq : float
+    #         desired frequency of the color map. If the frequency does not exist
+    #         on the simulation, then it will choose the frequency just before the target.
+    #     name : str
+    #         pressure characteristic name. Measured or reconstructed
+    #     dinrange : float
+    #         Dynamic range of the color map
 
-        Returns
-        ---------
-        plt : Figure object
-        """
+    #     Returns
+    #     ---------
+    #     plt : Figure object
+    #     """
 
-        # Set the grid plane used to the plot
-        receivers = Receiver()
-        receivers.planar_xz(x_len=0.1, n_x=21, z0=0, z_len=0.1, n_z=21, yr=0.0)
+    #     # Set the grid plane used to the plot
+    #     receivers = Receiver()
+    #     receivers.planar_xz(x_len=0.1, n_x=21, z0=0, z_len=0.1, n_z=21, yr=0.0)
 
-        # Initialize variables
-        self.fpts = receivers
-        id_f = np.where(self.controls.freq <= freq)
+    #     # Initialize variables
+    #     self.fpts = receivers
+    #     id_f = np.where(self.controls.freq <= freq)
 
-        id_f = id_f[0][-1]
-        color_par = 20 * np.log10(np.abs(press[:, id_f]) / np.amax(np.abs(press[:, id_f])))
+    #     id_f = id_f[0][-1]
+    #     color_par = 20 * np.log10(np.abs(press[:, id_f]) / np.amax(np.abs(press[:, id_f])))
 
-        # Create triangulation
-        triang = tri.Triangulation(self.fpts.coord[:, 0], self.fpts.coord[:, 2])
+    #     # Create triangulation
+    #     triang = tri.Triangulation(self.fpts.coord[:, 0], self.fpts.coord[:, 2])
 
-        # Figure
-        fig = plt.figure()
-        plt.title(str(self.controls.freq[id_f]) + ' [Hz] - |P(f)| ' + name)
-        p = plt.tricontourf(triang, color_par, np.linspace(-dinrange, 0, int(dinrange)), cmap=plt.get_cmap('jet'))
-        fig.colorbar(p)
-        plt.xlabel(r'$x$ [m]')
-        plt.ylabel(r'$z$ [m]')
+    #     # Figure
+    #     fig = plt.figure()
+    #     plt.title(str(self.controls.freq[id_f]) + ' [Hz] - |P(f)| ' + name)
+    #     p = plt.tricontourf(triang, color_par, np.linspace(-dinrange, 0, int(dinrange)), cmap=plt.get_cmap('jet'))
+    #     fig.colorbar(p)
+    #     plt.xlabel(r'$x$ [m]')
+    #     plt.ylabel(r'$z$ [m]')
 
-        return plt
+    #     return plt
 
-    def plot_colormap2(self, press=None, name='', dinrange=20):
-        """Plots a color map of the pressure field for all frequencies at once.
+    # def plot_colormap2(self, press=None, name='', dinrange=20):
+    #     """Plots a color map of the pressure field for all frequencies at once.
 
-        Parameters
-        ----------
-        press : list
-            spectrum of the sound pressure for all receivers.
-        name : str
-            pressure characteristic name. Measured or reconstructed
-        dinrange : float
-            Dynamic range of the color map
+    #     Parameters
+    #     ----------
+    #     press : list
+    #         spectrum of the sound pressure for all receivers.
+    #     name : str
+    #         pressure characteristic name. Measured or reconstructed
+    #     dinrange : float
+    #         Dynamic range of the color map
 
-        Returns
-        ---------
-        plt : Figure object
-        """
+    #     Returns
+    #     ---------
+    #     plt : Figure object
+    #     """
 
-        # Set the grid plane used to the plot
-        receivers = Receiver()
-        receivers.planar_xz(x_len=0.1, n_x=21, z0=0, z_len=0.1, n_z=21, yr=0.0)
+    #     # Set the grid plane used to the plot
+    #     receivers = Receiver()
+    #     receivers.planar_xz(x_len=0.1, n_x=21, z0=0, z_len=0.1, n_z=21, yr=0.0)
 
-        self.fpts = receivers
+    #     self.fpts = receivers
 
-        for n in range(len(self.controls.freq)):
+    #     for n in range(len(self.controls.freq)):
 
-            id_f = n
-            color_par = 20*np.log10(np.abs(press[:, id_f])/np.amax(np.abs(press[:, id_f])))
+    #         id_f = n
+    #         color_par = 20*np.log10(np.abs(press[:, id_f])/np.amax(np.abs(press[:, id_f])))
 
-            # Create triangulation
-            triang = tri.Triangulation(self.fpts.coord[:, 0], self.fpts.coord[:, 2])
+    #         # Create triangulation
+    #         triang = tri.Triangulation(self.fpts.coord[:, 0], self.fpts.coord[:, 2])
 
-            # Figure
-            fig = plt.figure()
-            plt.title(str(self.controls.freq[n]) + ' [Hz] - |P(f)| ' + name)
-            p = plt.tricontourf(triang, color_par, np.linspace(-dinrange, 0, int(dinrange)), cmap=plt.get_cmap('jet'))
-            fig.colorbar(p)
-            plt.xlabel(r'$x$ [m]')
-            plt.ylabel(r'$z$ [m]')
-        return plt
+    #         # Figure
+    #         fig = plt.figure()
+    #         plt.title(str(self.controls.freq[n]) + ' [Hz] - |P(f)| ' + name)
+    #         p = plt.tricontourf(triang, color_par, np.linspace(-dinrange, 0, int(dinrange)), cmap=plt.get_cmap('jet'))
+    #         fig.colorbar(p)
+    #         plt.xlabel(r'$x$ [m]')
+    #         plt.ylabel(r'$z$ [m]')
+    #     return plt
 
-    def gradient(self, pres_s=None, r_coord=None):
-        """ Reconstruct pressure.
+    # def gradient(self, pres_s=None, r_coord=None):
+    #     """ Reconstruct pressure.
 
-                The reconstruction is done at a grid of points.
+    #             The reconstruction is done at a grid of points.
 
-                Parameters
-                ----------
-                pres_s : list
-                    spectrum of the sound pressure for all receivers
-                r_coord : ndarray
-                    the coordinates of the microphones to calculate the pressure gradient
-                """
+    #             Parameters
+    #             ----------
+    #             pres_s : list
+    #                 spectrum of the sound pressure for all receivers
+    #             r_coord : ndarray
+    #                 the coordinates of the microphones to calculate the pressure gradient
+    #             """
 
-        # Initialize variables
-        r_norm = np.linalg.norm(r_coord[1] - r_coord[0])
+    #     # Initialize variables
+    #     r_norm = np.linalg.norm(r_coord[1] - r_coord[0])
 
-        # Allocate some memory prior to loop
-        self.uz_grad = np.zeros((1, len(self.controls.k0)), dtype=complex)
+    #     # Allocate some memory prior to loop
+    #     self.uz_grad = np.zeros((1, len(self.controls.k0)), dtype=complex)
 
-        # Initialize bar
-        bar = tqdm(total=len(self.controls.k0), desc='Calculating the gradient...')
+    #     # Initialize bar
+    #     bar = tqdm(total=len(self.controls.k0), desc='Calculating the gradient...')
 
-        # Freq loop
-        for jf, k0 in enumerate(self.controls.k0):
-            # particle velocity - gradient
-            self.uz_grad[0, jf] = (1 / 1j*k0*r_norm)*(pres_s[1][jf] - pres_s[0][jf])
-            bar.update(1)
-        bar.close()
+    #     # Freq loop
+    #     for jf, k0 in enumerate(self.controls.k0):
+    #         # particle velocity - gradient
+    #         self.uz_grad[0, jf] = (1 / 1j*k0*r_norm)*(pres_s[1][jf] - pres_s[0][jf])
+    #         bar.update(1)
+    #     bar.close()
 
-    def zs_wd(self, a=-1, b=1, Lx=0.1, n_x=21, Ly=0.1, n_y=21, theta=None, avgZs=True, retraction=0,
-              direction=None, overlap=0.5, n_moves=1):
-        """ Reconstruct the surface impedance and estimate the absorption
+    # def zs_wd(self, a=-1, b=1, Lx=0.1, n_x=21, Ly=0.1, n_y=21, theta=None, avgZs=True, retraction=0,
+    #           direction=None, overlap=0.5, n_moves=1):
+    #     """ Reconstruct the surface impedance and estimate the absorption
 
-        Reconstruct pressure and particle velocity at a grid of points on the
-        surface of the absorber (z = 0.0). The absorption coefficient is also calculated.
+    #     Reconstruct pressure and particle velocity at a grid of points on the
+    #     surface of the absorber (z = 0.0). The absorption coefficient is also calculated.
 
-        Parameters
-        ----------
-        a : int
-            lower bond of the integral
-        b : float
-            upper bound of the integral
-        Lx : float
-            The length of calculation aperture
-        Ly : float
-            The width of calculation aperture
-        n_x : int
-            The number of calculation points in x
-        n_y : int
-            The number of calculation points in y
-        theta : list
-            Target angles to calculate the absorption from reconstructed impedance
-        avgZs : bool
-            Whether to average over <Zs> (default - True) or over <p>/<uz> (if False).
-        retraction : float
-            Retraction value of the source height. Default is 1 cm.
+    #     Parameters
+    #     ----------
+    #     a : int
+    #         lower bond of the integral
+    #     b : float
+    #         upper bound of the integral
+    #     Lx : float
+    #         The length of calculation aperture
+    #     Ly : float
+    #         The width of calculation aperture
+    #     n_x : int
+    #         The number of calculation points in x
+    #     n_y : int
+    #         The number of calculation points in y
+    #     theta : list
+    #         Target angles to calculate the absorption from reconstructed impedance
+    #     avgZs : bool
+    #         Whether to average over <Zs> (default - True) or over <p>/<uz> (if False).
+    #     retraction : float
+    #         Retraction value of the source height. Default is 1 cm.
 
-        Returns
-        -------
-        alpha : (N_theta x N_freq) numpy ndarray
-            The absorption coefficients for each target incident angle.
-        """
+    #     Returns
+    #     -------
+    #     alpha : (N_theta x N_freq) numpy ndarray
+    #         The absorption coefficients for each target incident angle.
+    #     """
 
-        if theta is None:
-            theta = [0]
+    #     if theta is None:
+    #         theta = [0]
 
-        # Set the grid used to reconstruct the surface impedance
-        grid = Receiver()
-        grid.moving_planar_array(x_len=Lx, n_x=n_x, y_len=Ly, n_y=n_y, zr=0.0,
-                                 direction=direction, overlap=overlap, n_moves=n_moves)
+    #     # Set the grid used to reconstruct the surface impedance
+    #     grid = Receiver()
+    #     grid.moving_planar_array(x_len=Lx, n_x=n_x, y_len=Ly, n_y=n_y, zr=0.0,
+    #                              direction=direction, overlap=overlap, n_moves=n_moves)
 
-        # Initialize variables
-        roots, weights = roots_legendre(self.quad_order)  # roots and weights of G-L polynomials
-        q = (((b - a) / 2) * roots + ((a + b) / 2))  # variable interval change
-        h_mtx = np.zeros((grid.coord.shape[0], (1 + self.quad_order)), dtype=np.clongdouble)
-        h_mtx_uz = np.zeros((grid.coord.shape[0], (1 + self.quad_order)), dtype=np.clongdouble)
-        hs = self.source_coord[2] + retraction  # source height with retraction
+    #     # Initialize variables
+    #     roots, weights = roots_legendre(self.quad_order)  # roots and weights of G-L polynomials
+    #     q = (((b - a) / 2) * roots + ((a + b) / 2))  # variable interval change
+    #     h_mtx = np.zeros((grid.coord.shape[0], (1 + self.quad_order)), dtype=np.clongdouble)
+    #     h_mtx_uz = np.zeros((grid.coord.shape[0], (1 + self.quad_order)), dtype=np.clongdouble)
+    #     hs = self.source_coord[2] + retraction  # source height with retraction
 
-        # Allocate some memory prior to loop
-        self.Zs = np.zeros(len(self.controls.k0), dtype=complex)
-        alpha = np.zeros((len(theta), len(self.controls.k0)))
-        self.p_s = np.zeros((len(grid.coord), len(self.controls.k0)), dtype=complex)
-        self.uz_s = np.zeros((len(grid.coord), len(self.controls.k0)), dtype=complex)
-        self.alphas_wd = []
+    #     # Allocate some memory prior to loop
+    #     self.Zs = np.zeros(len(self.controls.k0), dtype=complex)
+    #     alpha = np.zeros((len(theta), len(self.controls.k0)))
+    #     self.p_s = np.zeros((len(grid.coord), len(self.controls.k0)), dtype=complex)
+    #     self.uz_s = np.zeros((len(grid.coord), len(self.controls.k0)), dtype=complex)
+    #     self.alphas_wd = []
 
-        # Initialize bar
-        bar = tqdm(total=len(self.controls.k0), desc='Calculating the surface impedance (Zs)...', ascii=False)
+    #     # Initialize bar
+    #     bar = tqdm(total=len(self.controls.k0), desc='Calculating the surface impedance (Zs)...', ascii=False)
 
-        # Initialize bar
-        for n in (range(0, len(grid.wd_array))):
-            # Freq loop
-            for jf, k0 in enumerate(self.controls.k0):
-                # loop over receivers
-                for jrec, g_coord in enumerate(grid.wd_array[n]):
-                    r = ((self.source_coord[0] - g_coord[0]) ** 2 + (
-                            self.source_coord[1] - g_coord[1]) ** 2) ** 0.5  # horizontal distance (S-R)
-                    zr = g_coord[2]  # receiver height
-                    r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5  # Euclidean dist. related to the real source
-                    hz_q = hs + zr - 1j * q  # image source height
-                    rq = ((r ** 2) + (hz_q ** 2)) ** 0.5  # Euclidean dist. related to the image sources
+    #     # Initialize bar
+    #     for n in (range(0, len(grid.wd_array))):
+    #         # Freq loop
+    #         for jf, k0 in enumerate(self.controls.k0):
+    #             # loop over receivers
+    #             for jrec, g_coord in enumerate(grid.wd_array[n]):
+    #                 r = ((self.source_coord[0] - g_coord[0]) ** 2 + (
+    #                         self.source_coord[1] - g_coord[1]) ** 2) ** 0.5  # horizontal distance (S-R)
+    #                 zr = g_coord[2]  # receiver height
+    #                 r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5  # Euclidean dist. related to the real source
+    #                 hz_q = hs + zr - 1j * q  # image source height
+    #                 rq = ((r ** 2) + (hz_q ** 2)) ** 0.5  # Euclidean dist. related to the image sources
 
-                    Iq_p = (b - a) / 2 * weights * kernel_p(k0, rq)  # Integral related to the quadrature - Pressure
-                    Iq_uz = (b - a) / 2 * weights * kernel_uz(k0, rq, hz_q)  # Integral related to the quadrature - Uz
+    #                 Iq_p = (b - a) / 2 * weights * kernel_p(k0, rq)  # Integral related to the quadrature - Pressure
+    #                 Iq_uz = (b - a) / 2 * weights * kernel_uz(k0, rq, hz_q)  # Integral related to the quadrature - Uz
 
-                    p_inc = (np.exp(-1j * k0 * r1)) / r1  # Incident pressure
-                    uz_inc = ((np.exp(-1j * k0 * r1)) / r1) * ((hs - zr) / r1) * (1 + (1 / (1j * k0 * r1)))  # Incident uz
+    #                 p_inc = (np.exp(-1j * k0 * r1)) / r1  # Incident pressure
+    #                 uz_inc = ((np.exp(-1j * k0 * r1)) / r1) * ((hs - zr) / r1) * (1 + (1 / (1j * k0 * r1)))  # Incident uz
 
-                    # Forming the sensing matrix (M x (1 + ng))
-                    h_mtx[jrec] = np.concatenate((p_inc, Iq_p), axis=None)  # pressure sensing matrix
-                    h_mtx_uz[jrec] = np.concatenate((uz_inc, -Iq_uz), axis=None)  # uz sensing matrix
+    #                 # Forming the sensing matrix (M x (1 + ng))
+    #                 h_mtx[jrec] = np.concatenate((p_inc, Iq_p), axis=None)  # pressure sensing matrix
+    #                 h_mtx_uz[jrec] = np.concatenate((uz_inc, -Iq_uz), axis=None)  # uz sensing matrix
 
-                # complex amplitudes of all waves
-                x = self.pk[jf]
+    #             # complex amplitudes of all waves
+    #             x = self.pk[jf]
 
-                # reconstruct pressure and particle velocity at surface
-                p_surf_mtx = h_mtx @ x
-                uz_surf_mtx = h_mtx_uz @ x
+    #             # reconstruct pressure and particle velocity at surface
+    #             p_surf_mtx = h_mtx @ x
+    #             uz_surf_mtx = h_mtx_uz @ x
 
-                self.p_s[:, jf] = p_surf_mtx
-                self.uz_s[:, jf] = uz_surf_mtx
+    #             self.p_s[:, jf] = p_surf_mtx
+    #             self.uz_s[:, jf] = uz_surf_mtx
 
-                # Average impedance at grid
-                if avgZs:
-                    Zs_pt = np.divide(p_surf_mtx, uz_surf_mtx)
-                    self.Zs[jf] = np.mean(Zs_pt)
-                else:
-                    self.Zs[jf] = np.mean(p_surf_mtx) / (np.mean(uz_surf_mtx))
-                bar.update(1)
-                # bar.next()
-                # bar.finish()
+    #             # Average impedance at grid
+    #             if avgZs:
+    #                 Zs_pt = np.divide(p_surf_mtx, uz_surf_mtx)
+    #                 self.Zs[jf] = np.mean(Zs_pt)
+    #             else:
+    #                 self.Zs[jf] = np.mean(p_surf_mtx) / (np.mean(uz_surf_mtx))
+    #             bar.update(1)
+    #             # bar.next()
+    #             # bar.finish()
 
-            # Calculate the sound absorption coefficient for targeted angles
-            for jtheta, dtheta in enumerate(theta):
-                alpha[jtheta, :] = 1 - (np.abs(np.divide((self.Zs * np.cos(dtheta) - 1),
-                                                              (self.Zs * np.cos(dtheta) + 1)))) ** 2
-            self.alphas_wd.append(alpha)
-            alpha = np.zeros((len(theta), len(self.controls.k0)))
-        return self.alphas_wd
+    #         # Calculate the sound absorption coefficient for targeted angles
+    #         for jtheta, dtheta in enumerate(theta):
+    #             alpha[jtheta, :] = 1 - (np.abs(np.divide((self.Zs * np.cos(dtheta) - 1),
+    #                                                           (self.Zs * np.cos(dtheta) + 1)))) ** 2
+    #         self.alphas_wd.append(alpha)
+    #         alpha = np.zeros((len(theta), len(self.controls.k0)))
+    #     return self.alphas_wd
+    
+    
     # def save(self, filename = 'my_quad_tes', path = '/home/eric/dev/insitu/data/'):
     #     """
     #     This method is used to save the simulation object
