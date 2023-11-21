@@ -22,18 +22,11 @@ plt.rc('xtick', labelsize=BIGGER_SIZE)    # font size of the tick labels
 plt.rc('ytick', labelsize=BIGGER_SIZE)    # font size of the tick labels
 
 
-def kernel_p(k0, rq):  # pressure kernel function
-    iq = (np.exp(-1j * k0 * rq)) / rq
-    return iq
 
-
-def kernel_uz(k0, rq, hz_q):  # particle velocity kernel function
-    iq = ((np.exp(-1j * k0 * rq)) / rq) * (hz_q / rq) * (1 + (1 / (1j * k0 * rq)))
-    return iq
 
 
 class Decomposition_QDT(object):
-    """ Decomposition of the sound field using only propagating waves.
+    """ Decomposition of the sound field using monopoles and integration sampling.
 
     The class has methods to perform sound field decomposition into a set of incident
     spherical waves and by representing the plane-wave reflection coefficient as the
@@ -84,7 +77,7 @@ class Decomposition_QDT(object):
     """
 
     def __init__(self, p_mtx=None, controls=None, receivers=None, source_coord=None, quad_order=51,
-                 a = 0, b = 70, retraction = 0, image_source_on = False):
+                 a = 0, b = 70, retraction = 0, image_source_on = False, regu_par = 'L-curve'):
         """
         Parameters
         ----------
@@ -108,6 +101,10 @@ class Decomposition_QDT(object):
             retraction of sound source (maybe use for better regularization)
         image_source_on : bool
             whether to include or not an image source. If True, we will have one.
+        regu_par : str
+            Automatic choice of regularization parameter. Default is "L-curve". It can
+            be "L-curve" or l-curve for L-curve choice; or "gcv" or "GCV" for generalized
+            cross-validation. Any other choice reverts do default.
 
         The objects are stored as attributes in the class (easier to retrieve).
         """
@@ -128,8 +125,17 @@ class Decomposition_QDT(object):
             self.num_cols = 1 + self.quad_order
         self.compensation = np.ones(self.quad_order) # for gauss-legendre, mid-point and uniform sampling
 
+        if regu_par == 'L-curve' or regu_par == 'l-curve':
+            self.regu_par_fun = lc.l_curve
+            print("You choose L-curve to find optimal regularization parameter")
+        elif regu_par == 'gcv' or regu_par == 'GCV':
+            self.regu_par_fun = lc.gcv_lambda
+            print("You choose GCV to find optimal regularization parameter")
+        else:
+            self.regu_par_fun = lc.l_curve
+            print("Returning to default L-curve to find optimal regularization parameter")
         #np.warnings.filterwarnings('ignore', category=np.VisibleDeprecationWarning)
-    
+        
     def gauss_legendre_sampling(self,):
         """ Compute roots and weights of Gauss-Legendre quadrature
         """
@@ -187,6 +193,15 @@ class Decomposition_QDT(object):
             hz_q[jrec,:] = self.hs + zr[jrec] - 1j * self.q  # image source height
         return r, zr, r1, r2, rq, hz_q
     
+    def kernel_p(self, k0, rq):  # pressure kernel function
+        iq = (np.exp(-1j * k0 * rq)) / rq
+        return iq
+
+
+    def kernel_uz(self, k0, rq, hz_q):  # particle velocity kernel function
+        iq = ((np.exp(-1j * k0 * rq)) / rq) * (hz_q / rq) * (1 + (1 / (1j * k0 * rq)))
+        return iq
+    
     def build_hmtx_p(self, shape_h, k0, r1, r2, rq, weights_mtx, compensation_mtx):
         """ build h_mtx for pressure
         Parameters
@@ -212,14 +227,15 @@ class Decomposition_QDT(object):
         # Model with image source
         if self.image_source_on:
             # Image source
-            h_mtx_p[:,1] = (np.exp(-1j * k0 * r2)) / r2
+            h_mtx_p[:,1] = self.kernel_p(k0, r2) #(np.exp(-1j * k0 * r2)) / r2
             start_index_iq = 2
         
         
         # Incident part
-        h_mtx_p[:,0] = (np.exp(-1j * k0 * r1)) / r1  # Incident pressure
+        h_mtx_p[:,0] = self.kernel_p(k0, r1)  # Incident pressure
         # Reflected part - Terms of integral - Iq is a M x (1 x ng) matrix
-        h_mtx_p[:,start_index_iq:] = ((self.b - self.a) / 2) * weights_mtx * kernel_p(k0, rq) * compensation_mtx
+        h_mtx_p[:,start_index_iq:] = ((self.b - self.a) / 2) * weights_mtx *\
+            self.kernel_p(k0, rq) * compensation_mtx
         return h_mtx_p
     
     def build_hmtx_uz(self, shape_h, k0, r1, r2, zr, rq, hz_q, weights_mtx, compensation_mtx):
@@ -251,13 +267,14 @@ class Decomposition_QDT(object):
         # Model with image source
         if self.image_source_on:
             # Image source
-            h_mtx_uz[:,1] = -((np.exp(-1j * k0 * r2)) / r2) * ((self.hs + zr) / r2) * (1 + (1 / (1j * k0 * r2)))
+            h_mtx_uz[:,1] = -self.kernel_uz(k0, r2, self.hs + zr)
             start_index_iq = 2
             
         # Incident part
-        h_mtx_uz[:,0] = ((np.exp(-1j * k0 * r1)) / r1) * ((self.hs - zr) / r1) * (1 + (1 / (1j * k0 * r1)))
+        h_mtx_uz[:,0] = self.kernel_uz(k0, r1, self.hs - zr)
         # Reflected part - Terms of integral - Iq is a M x (1 x ng) matrix
-        h_mtx_uz[:,start_index_iq:] = -((self.b - self.a) / 2) * weights_mtx * kernel_uz(k0, rq, hz_q) * compensation_mtx
+        h_mtx_uz[:,start_index_iq:] = -((self.b - self.a) / 2) * weights_mtx *\
+            self.kernel_uz(k0, rq, hz_q) * compensation_mtx
         return h_mtx_uz
     
     def pk_tikhonov(self, plot_l=False, method='direct'):
@@ -304,6 +321,7 @@ class Decomposition_QDT(object):
         compensation_mtx = np.repeat(np.array([self.compensation]), self.receivers.coord.shape[0], axis = 0) #M x (ng)
         # Initialize pk
         self.pk = np.zeros((self.num_cols, len(self.controls.k0)), dtype=complex)
+        self.lambd_value_vec = np.zeros(len(self.controls.k0))
         # Initialize bar
         bar = tqdm(total=len(self.controls.k0),
                    desc='Calculating Tikhonov inversion (for the Quadrature Method)...', ascii=False)
@@ -317,7 +335,8 @@ class Decomposition_QDT(object):
             # Compute SVD
             u, sig, v = lc.csvd(h_mtx.astype(complex))
             # Find the optimal regularization parameter.
-            lambd_value = lc.l_curve(u, sig, pm, plotit=plot_l)
+            lambd_value = self.regu_par_fun(u, sig, pm, plot_l)
+            self.lambd_value_vec[jf] = lambd_value
             # Solve system          
             if method == 'direct':
                 Hm = np.matrix(h_mtx)
@@ -334,6 +353,33 @@ class Decomposition_QDT(object):
                 
             bar.update(1)
         bar.close()
+        self.check_decomp()
+        
+    def least_squares_pk(self, ):
+        """ Computes least squares solution - only advised in over-determined case
+        """
+        # Get receiver data (frequency independent)
+        r, zr, r1, r2, rq, _ = self.get_rec_parameters(self.receivers) # r, zr, and r1 are vectors (M), rq is a M x (ng) matrix
+        # Get weights matrix (frequency independent)
+        weights_mtx = np.repeat(np.array([self.weights]), self.receivers.coord.shape[0], axis = 0) #M x (ng)
+        compensation_mtx = np.repeat(np.array([self.compensation]), self.receivers.coord.shape[0], axis = 0) #M x (ng)
+        
+        # Initialize variables
+        self.pk = np.zeros((self.num_cols, len(self.controls.k0)), dtype=complex)
+        # bar
+        bar = tqdm(total = len(self.controls.k0), 
+                   desc = 'Calculating LS solution (for the Quadrature Method)')
+        # loop over frequencies
+        for jf, k0 in enumerate(self.controls.k0):
+            # Forming the sensing matrix
+            h_mtx = self.build_hmtx_p((self.receivers.coord.shape[0], self.num_cols), k0, r1, r2, rq,
+                                      weights_mtx, compensation_mtx)
+            # Measured data
+            pm = self.pres_s[:, jf].astype(complex)
+            self.pk[:,jf] = np.linalg.lstsq(h_mtx, pm, rcond=None)[0]
+            bar.update(1)
+        bar.close()
+        self.check_decomp()
 
     def reconstruct_p(self, receivers):
         """ Reconstruct pressure.
@@ -479,6 +525,22 @@ class Decomposition_QDT(object):
             self.alpha[jtheta, :] = 1 - (np.abs(np.divide((self.Zs * np.cos(dtheta) - 1),
                                                           (self.Zs * np.cos(dtheta) + 1)))) ** 2
         return self.alpha
+    
+    def check_decomp(self,):
+        """ check decomposition quality
+        """
+        pres_recon_check, _, _ = self.reconstruct_p(self.receivers)
+        
+        self.mae = np.zeros(len(self.controls.k0))
+        self.error_db = np.zeros(len(self.controls.k0))
+        bar = tqdm(total = len(self.controls.k0), desc = 'Computing decomposition quality...')
+        # loop over frequencies
+        for jf, k0 in enumerate(self.controls.k0):
+            self.mae[jf] = np.mean(np.abs(pres_recon_check[:,jf] - self.pres_s[:,jf]))
+            self.error_db[jf] = 20*np.log10(self.mae[jf])
+            bar.update(1)
+        bar.close()
+        return self.mae, self.error_db
 
     # def plot_colormap(self, press=None, freq=None, name='', dinrange=20):
     #     """Plots a color map of the pressure field.
