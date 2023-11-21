@@ -4,9 +4,9 @@ from tqdm import tqdm
 import matplotlib.tri as tri
 from receivers import Receiver
 import matplotlib.pyplot as plt
-from sklearn.linear_model import Ridge
+#from sklearn.linear_model import Ridge
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 unused import
-from scipy.special import roots_legendre
+from scipy.special import roots_legendre, roots_laguerre
 #from lcurve_functions_EU import csvd, l_curve, tikhonov
 import lcurve_functions as lc
 
@@ -126,15 +126,28 @@ class Decomposition_QDT(object):
             self.num_cols = 2 + self.quad_order
         else:
             self.num_cols = 1 + self.quad_order
+        self.compensation = np.ones(self.quad_order) # for gauss-legendre, mid-point and uniform sampling
 
         #np.warnings.filterwarnings('ignore', category=np.VisibleDeprecationWarning)
     
     def gauss_legendre_sampling(self,):
-        """ Compute roots and weights of Gaussian quad
+        """ Compute roots and weights of Gauss-Legendre quadrature
         """
         # Initialize variables
         self.roots, self.weights = roots_legendre(self.quad_order)  # roots and weights of G-L polynomials
         self.q = ((self.b - self.a) / 2) * self.roots + ((self.a + self.b) / 2)  # variable interval change
+    
+    def gauss_laguerre_sampling(self,):
+        """ Compute roots and weights of Gauss-Laguerre quadrature.
+        
+        The integral is from 0 to inf.
+        """
+        # Initialize variables
+        self.q, self.weights = roots_laguerre(self.quad_order)  # roots and weights of G-L polynomials      
+        self.compensation = np.exp(self.q)
+        # Correct a and b so that (b-a)/2 = 1
+        self.b = 2 
+        self.a = 0
         
     def uniform_sampling(self,):
         """ Compute roots and weights for uniform sampling
@@ -174,7 +187,7 @@ class Decomposition_QDT(object):
             hz_q[jrec,:] = self.hs + zr[jrec] - 1j * self.q  # image source height
         return r, zr, r1, r2, rq, hz_q
     
-    def build_hmtx_p(self, shape_h, k0, r1, r2, rq, weights_mtx):
+    def build_hmtx_p(self, shape_h, k0, r1, r2, rq, weights_mtx, compensation_mtx):
         """ build h_mtx for pressure
         Parameters
         ----------
@@ -190,6 +203,8 @@ class Decomposition_QDT(object):
             Matrix with distances of complex sources to receivers
         weights_mtx : ndArray
             Matrix with integration weights
+        compensation_mtx : ndArray
+            Matrix with compensation factor. Ones for most cases. For Gauss-laguerre is exp(q)
         """
         # Forming the sensing matrix (M x (1 + ng))
         h_mtx_p = np.zeros(shape_h, dtype=complex)  # sensing matrix
@@ -199,14 +214,15 @@ class Decomposition_QDT(object):
             # Image source
             h_mtx_p[:,1] = (np.exp(-1j * k0 * r2)) / r2
             start_index_iq = 2
-            
+        
+        
         # Incident part
         h_mtx_p[:,0] = (np.exp(-1j * k0 * r1)) / r1  # Incident pressure
         # Reflected part - Terms of integral - Iq is a M x (1 x ng) matrix
-        h_mtx_p[:,start_index_iq:] = ((self.b - self.a) / (2)) * weights_mtx * kernel_p(k0, rq)
+        h_mtx_p[:,start_index_iq:] = ((self.b - self.a) / 2) * weights_mtx * kernel_p(k0, rq) * compensation_mtx
         return h_mtx_p
     
-    def build_hmtx_uz(self, shape_h, k0, r1, r2, zr, rq, hz_q, weights_mtx):
+    def build_hmtx_uz(self, shape_h, k0, r1, r2, zr, rq, hz_q, weights_mtx, compensation_mtx):
         """ build h_mtx for  uz vel
         Parameters
         ----------
@@ -226,6 +242,8 @@ class Decomposition_QDT(object):
             Matrix with vertical distances of complex sources to receivers
         weights_mtx : ndArray
             Matrix with integration weights
+        compensation_mtx : ndArray
+            Matrix with compensation factor. Ones for most cases. For Gauss-laguerre is exp(q)
         """
         # Forming the sensing matrix (M x (1 + ng))
         h_mtx_uz = np.zeros(shape_h, dtype=complex)  # sensing matrix
@@ -239,7 +257,7 @@ class Decomposition_QDT(object):
         # Incident part
         h_mtx_uz[:,0] = ((np.exp(-1j * k0 * r1)) / r1) * ((self.hs - zr) / r1) * (1 + (1 / (1j * k0 * r1)))
         # Reflected part - Terms of integral - Iq is a M x (1 x ng) matrix
-        h_mtx_uz[:,start_index_iq:] = -((self.b - self.a) / (2)) * weights_mtx * kernel_uz(k0, rq, hz_q)
+        h_mtx_uz[:,start_index_iq:] = -((self.b - self.a) / 2) * weights_mtx * kernel_uz(k0, rq, hz_q) * compensation_mtx
         return h_mtx_uz
     
     def pk_tikhonov(self, plot_l=False, method='direct'):
@@ -283,6 +301,7 @@ class Decomposition_QDT(object):
         r, zr, r1, r2, rq, _ = self.get_rec_parameters(self.receivers) # r, zr, and r1 are vectors (M), rq is a M x (ng) matrix
         # Get weights matrix (frequency independent)
         weights_mtx = np.repeat(np.array([self.weights]), self.receivers.coord.shape[0], axis = 0) #M x (ng)
+        compensation_mtx = np.repeat(np.array([self.compensation]), self.receivers.coord.shape[0], axis = 0) #M x (ng)
         # Initialize pk
         self.pk = np.zeros((self.num_cols, len(self.controls.k0)), dtype=complex)
         # Initialize bar
@@ -291,7 +310,8 @@ class Decomposition_QDT(object):
         # Freq loop
         for jf, k0 in enumerate(self.controls.k0):
             # Forming the sensing matrix
-            h_mtx = self.build_hmtx_p((self.receivers.coord.shape[0], self.num_cols), k0, r1, r2, rq, weights_mtx)
+            h_mtx = self.build_hmtx_p((self.receivers.coord.shape[0], self.num_cols), k0, r1, r2, rq,
+                                      weights_mtx, compensation_mtx)
             # Measured data
             pm = self.pres_s[:, jf].astype(complex)
             # Compute SVD
@@ -338,7 +358,7 @@ class Decomposition_QDT(object):
         r, zr, r1, r2, rq, _ = self.get_rec_parameters(receivers) # r, zr, and r1 are vectors (M), rq is a M x (ng) matrix
         # Get weights matrix (frequency independent)
         weights_mtx = np.repeat(np.array([self.weights]), receivers.coord.shape[0], axis = 0) #M x (ng)
-        
+        compensation_mtx = np.repeat(np.array([self.compensation]), receivers.coord.shape[0], axis = 0) #M x (ng)
         # Initialize variables
         self.p_recon = np.zeros((receivers.coord.shape[0], len(self.controls.k0)), dtype=complex)
         self.p_recon_inc = np.zeros((receivers.coord.shape[0], len(self.controls.k0)), dtype=complex)
@@ -349,7 +369,8 @@ class Decomposition_QDT(object):
         # Freq loop
         for jf, k0 in enumerate(self.controls.k0):
             # Forming the reconstruction matrix
-            h_mtx = self.build_hmtx_p((receivers.coord.shape[0], self.num_cols), k0, r1, r2, rq, weights_mtx)
+            h_mtx = self.build_hmtx_p((receivers.coord.shape[0], self.num_cols), k0, r1, r2, rq, 
+                                      weights_mtx, compensation_mtx)
             # pressure reconstruction
             self.p_recon[:,jf] = h_mtx @ self.pk[:,jf]  # total pressure
             self.p_recon_inc[:,jf] = h_mtx[:, 0] * self.pk[0,jf]   # incident pressure
@@ -378,6 +399,7 @@ class Decomposition_QDT(object):
         r, zr, r1, r2, rq, hz_q = self.get_rec_parameters(receivers) # r, zr, and r1 are vectors (M), rq is a M x (ng) matrix
         # Get weights matrix (frequency independent)
         weights_mtx = np.repeat(np.array([self.weights]), receivers.coord.shape[0], axis = 0) #M x (ng)
+        compensation_mtx = np.repeat(np.array([self.compensation]), receivers.coord.shape[0], axis = 0) #M x (ng)
         # Initialize variables
         self.uz_recon = np.zeros((receivers.coord.shape[0], len(self.controls.k0)), dtype=complex)
         self.uz_recon_inc = np.zeros((receivers.coord.shape[0], len(self.controls.k0)), dtype=complex)
@@ -387,7 +409,8 @@ class Decomposition_QDT(object):
         # Freq loop
         for jf, k0 in enumerate(self.controls.k0):
             # Forming the reconstruction matrix
-            h_mtx = self.build_hmtx_uz((receivers.coord.shape[0], self.num_cols), k0, r1, r2, zr, rq, hz_q, weights_mtx)
+            h_mtx = self.build_hmtx_uz((receivers.coord.shape[0], self.num_cols), k0, r1, r2, zr, rq, hz_q, 
+                                       weights_mtx, compensation_mtx)
             # particle velocity reconstruction
             self.uz_recon[:, jf] = h_mtx @ self.pk[:,jf]  # total particle velocity
             self.uz_recon_inc[:, jf] = h_mtx[:, 0] * self.pk[0,jf]   # incident particle velocity
