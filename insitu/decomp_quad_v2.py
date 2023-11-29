@@ -9,6 +9,7 @@ from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 unused import
 from scipy.special import roots_legendre, roots_laguerre
 #from lcurve_functions_EU import csvd, l_curve, tikhonov
 import lcurve_functions as lc
+import utils_insitu as ut_is
 
 SMALL_SIZE = 11
 BIGGER_SIZE = 18
@@ -169,7 +170,6 @@ class Decomposition_QDT(object):
         """ Compute roots and weights for mid-point rule
         """
         # Initialize variables
-        # Dx = 2/self.quad_order
         self.roots = np.linspace(-1 + 2/self.quad_order, 1 - 2/self.quad_order, self.quad_order) 
         self.weights = ((self.b-self.a)/self.quad_order) * np.ones(self.quad_order)
         self.q = ((self.b - self.a) / 2) * self.roots + ((self.a + self.b) / 2)  # variable interval change
@@ -193,6 +193,7 @@ class Decomposition_QDT(object):
             hz_q[jrec,:] = self.hs + zr[jrec] - 1j * self.q  # image source height
         return r, zr, r1, r2, rq, hz_q
     
+    
     def kernel_p(self, k0, rq):  # pressure kernel function
         iq = (np.exp(-1j * k0 * rq)) / rq
         return iq
@@ -201,7 +202,7 @@ class Decomposition_QDT(object):
     def kernel_uz(self, k0, rq, hz_q):  # particle velocity kernel function
         iq = ((np.exp(-1j * k0 * rq)) / rq) * (hz_q / rq) * (1 + (1 / (1j * k0 * rq)))
         return iq
-    
+        
     def build_hmtx_p(self, shape_h, k0, r1, r2, rq, weights_mtx, compensation_mtx):
         """ build h_mtx for pressure
         Parameters
@@ -541,6 +542,113 @@ class Decomposition_QDT(object):
             bar.update(1)
         bar.close()
         return self.mae, self.error_db
+    
+    def get_cos_theta_q(self, theta_deg):
+        """ Get the cosine of theta times q
+        
+        Compute important receiver parameters such as source height, horizontal distance, etc
+        """
+        theta_vec = np.deg2rad(theta_deg)
+        
+        cos_theta_q = np.zeros((len(theta_vec), self.quad_order))
+        for jcos, theta in enumerate(theta_vec):
+            cos_theta_q[jcos, :] = np.cos(theta) * self.q
+        return cos_theta_q
+    
+    def kernel_rp(self, k0, cos_theta_q):
+        """ Kernel for plane-wave reflection coefficient reconstruction
+        """
+        i_rp = np.exp(-k0 * cos_theta_q)
+        return i_rp
+    
+    def build_hmtx_rp(self, shape_h, k0, cos_theta_q, weights_mtx, compensation_mtx):
+        """ build h_mtx for pressure
+        Parameters
+        ----------
+        shape_h : tuple of 2
+            shape of matrix rows vs cols
+        k0 : float
+            magnitude of wave number in rad/s
+        r1 : 1dArray
+            Arrays with distances from source to receivers
+        r2 : 1dArray
+            Arrays with distances from image-source to receivers    
+        rq : ndArray
+            Matrix with distances of complex sources to receivers
+        weights_mtx : ndArray
+            Matrix with integration weights
+        compensation_mtx : ndArray
+            Matrix with compensation factor. Ones for most cases. For Gauss-laguerre is exp(q)
+        """
+        # Forming the sensing matrix (M x (1 + ng))
+        h_mtx_rp = np.zeros(shape_h)  # sensing matrix
+        start_index_iq = 0
+        # Model with image source
+        if self.image_source_on:
+            # Image source
+            h_mtx_rp[:,0] = np.ones(shape_h[0])
+            start_index_iq = 1
+        
+        # Rest of matrix
+        h_mtx_rp[:,start_index_iq:] = ((self.b - self.a) / 2) * weights_mtx *\
+            self.kernel_rp(k0, cos_theta_q) * compensation_mtx
+            
+        return h_mtx_rp
+    
+    def reconstruct_rp(self, theta_deg_i = 0, theta_deg_e = 90, delta_theta = 10):
+        """ Reconstruct plane-wave reflection coefficient.
+
+        The reconstruction with a receiver object. Then, you can be more specific on receiver type in other functions
+
+        Parameters
+        ----------
+        
+        Returns
+        -------
+        
+        """
+        # Get angle data (frequency independent)
+        theta_deg = np.arange(start = theta_deg_i, stop = theta_deg_e + delta_theta, 
+                              step = delta_theta)
+        cos_theta_q = self.get_cos_theta_q(theta_deg)
+        # Get weights matrix (frequency independent)
+        weights_mtx = np.repeat(np.array([self.weights]), len(theta_deg), axis = 0) #M x (ng)
+        compensation_mtx = np.repeat(np.array([self.compensation]), len(theta_deg), axis = 0) #M x (ng)
+        #print(weights_mtx.shape)
+        # Initialize variables
+        self.ref_coef_pw = np.zeros((len(theta_deg), len(self.controls.k0)), dtype=complex)
+        self.alpha_coef_pw = np.zeros((len(theta_deg), len(self.controls.k0)))
+        
+        # h_mtx = np.zeros((grid.coord.shape[0], (1 + self.quad_order)), dtype=np.clongdouble)        
+        # Initialize bar
+        bar = tqdm(total=len(self.controls.k0), desc='Calculating the reconstructed PW ref. coef.')
+        # Freq loop
+        for jf, k0 in enumerate(self.controls.k0):
+            # Forming the reconstruction matrix
+            h_mtx = self.build_hmtx_rp((len(theta_deg), self.num_cols-1), k0, cos_theta_q, 
+                                      weights_mtx, compensation_mtx)
+            
+            #print(h_mtx.shape)
+            # print(self.pk[1:,jf].shape)
+            # pressure reconstruction
+            self.ref_coef_pw[:,jf] = h_mtx @ (self.pk[1:,jf]/self.pk[0,jf])  # ref. coef.
+            self.alpha_coef_pw[:,jf] = 1 - (np.abs(self.ref_coef_pw[:,jf]))**2
+            bar.update(1)
+        bar.close()
+        return self.ref_coef_pw, self.alpha_coef_pw
+    
+    def save(self, filename = 'qdt', path = ''):
+        """ To save the decomposition object as pickle
+        """
+        ut_is.save(self, filename = filename, path = path)
+
+    def load(self, filename = 'qdt', path = ''):
+        """ To load the decomposition object as pickle
+
+        You can instantiate an empty object of the class and load a saved one.
+        It will overwrite the empty object.
+        """
+        ut_is.load(self, filename = filename, path = path)
 
     # def plot_colormap(self, press=None, freq=None, name='', dinrange=20):
     #     """Plots a color map of the pressure field.

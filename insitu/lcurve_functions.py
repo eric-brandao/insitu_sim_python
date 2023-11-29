@@ -656,6 +656,16 @@ def ridge_solver(h_mtx,bm,lambd_value):
             estimated solution to inverse problem
     """
     # Form a real H2 matrix and p2 measurement
+    # H2 = np.zeros((2*h_mtx.shape[0], 2*h_mtx.shape[1]))
+    # H2[0:h_mtx.shape[0], 0:h_mtx.shape[1]] = h_mtx.real
+    # H2[h_mtx.shape[0]:, 0:h_mtx.shape[1]] = -h_mtx.imag
+    # H2[0:h_mtx.shape[0], h_mtx.shape[1]:] = h_mtx.imag
+    # H2[h_mtx.shape[0]:, h_mtx.shape[1]:] = h_mtx.real
+    
+    # p2 = np.zeros(2*len(bm))
+    # p2[0:len(bm)] = bm.real
+    # p2[len(bm):] = bm.imag
+    np.warnings.filterwarnings('ignore', category=np.VisibleDeprecationWarning)
     H2 = np.vstack((np.hstack((h_mtx.real, -h_mtx.imag)),
         np.hstack((h_mtx.imag, h_mtx.real))))
     p2 = np.vstack((bm.real,bm.imag)).flatten()

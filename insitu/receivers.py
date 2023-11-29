@@ -2,6 +2,8 @@ import numpy as np
 #import toml
 from controlsair import load_cfg, sph2cart, cart2sph
 from rayinidir import RayInitialDirections
+import utils_insitu as ut_is
+
 
 class Receiver():
     """ A receiver class to initialize many types of receivers
@@ -345,6 +347,18 @@ class Receiver():
         self.coord = pk.pdir
         self.conectivities = pk.conectivities
         
+    def save(self, filename = 'qdt', path = ''):
+        """ To save the decomposition object as pickle
+        """
+        ut_is.save(self, filename = filename, path = path)
+
+    def load(self, filename = 'qdt', path = ''):
+        """ To load the decomposition object as pickle
+
+        You can instantiate an empty object of the class and load a saved one.
+        It will overwrite the empty object.
+        """
+        ut_is.load(self, filename = filename, path = path)   
         
 # class Receivers():
 #     def __init__(self, config_file):

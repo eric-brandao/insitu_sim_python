@@ -4,6 +4,7 @@ Created on Fri Sep  9 09:56:44 2022
 
 @author: ericb
 """
+import pickle
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
@@ -558,3 +559,38 @@ def diffusion_coef_norm(d_coef_sample, d_coef_ref):
     """
     norm_gamma = (d_coef_sample - d_coef_ref)/(1-d_coef_ref)
     return norm_gamma
+
+def save(obj, filename = 'fname', path = ''):
+    """ To save the decomposition object as pickle
+
+    Parameters
+    ----------
+    filename : str
+        name of the file
+    pathname : str
+        path of folder to save the file
+    """
+    filename = filename# + '_Lx_' + str(self.Lx) + 'm_Ly_' + str(self.Ly) + 'm'
+    path_filename = path + filename + '.pkl'
+    f = open(path_filename, 'wb')
+    pickle.dump(obj.__dict__, f, 2)
+    f.close()
+
+def load(obj, filename = 'fname', path = ''):
+    """ To load the decomposition object as pickle
+
+    You can instantiate an empty object of the class and load a saved one.
+    It will overwrite the empty object.
+
+    Parameters
+    ----------
+    filename : str
+        name of the file
+    pathname : str
+        path of folder to save the file
+    """
+    lpath_filename = path + filename + '.pkl'
+    f = open(lpath_filename, 'rb')
+    tmp_dict = pickle.load(f)
+    f.close()
+    obj.__dict__.update(tmp_dict)

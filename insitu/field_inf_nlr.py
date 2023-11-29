@@ -247,8 +247,7 @@ class NLRInfSph(object):
         a simple plot of the scene using matplotlib - not redered
         '''
         fig = plt.figure()
-        fig.canvas.set_window_title("Measurement scene")
-        ax = fig.gca(projection='3d')
+        ax = plt.axes(projection ="3d")
         # vertexes plot
         vertices = np.array([[-vsam_size/2, -vsam_size/2, 0.0],
             [vsam_size/2, -vsam_size/2, 0.0],
@@ -278,7 +277,7 @@ class NLRInfSph(object):
         ax.set_xlim((-vsam_size/2, vsam_size/2))
         ax.set_ylim((-vsam_size/2, vsam_size/2))
         # ax.set_zlim((0, 1.2*np.amax(np.linalg.norm(self.sources.coord))))
-        ax.set_zlim((0, 1))
+        ax.set_zlim((0, 1.2*np.amax(np.linalg.norm(self.sources.coord[0][2]))))
         ax.set_zticks((0, 1.2*np.amax(np.linalg.norm(self.sources.coord))))
         ax.view_init(elev=5, azim=-55)
         # ax.invert_zaxis()
