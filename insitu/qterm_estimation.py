@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import toml
+#import toml
 # from insitu.controlsair import load_cfg
 import scipy.integrate as integrate
 import scipy as spy
@@ -10,38 +10,23 @@ import sys
 # from insitu.field_calc import LocallyReactive
 from tqdm import tqdm
 import pickle
+import utils_insitu as ut_is
 
 
 class ImpedanceDeductionQterm(object):
     '''
     Impedance deduction class receives two signals (measurement objects)
     '''
-    def __init__(self, sim_field=[], source_num = 0):
+    def __init__(self, p_mtx = None, uz_mtx = None, controls=None, receivers=None, source = None):
         '''
         Init - we first retrive general data, then we process some receiver data
         '''
-        try:
-            self.air = sim_field.air
-            self.controls = sim_field.controls
-            self.material = sim_field.material
-            self.sources = sim_field.sources
-            self.receivers = sim_field.receivers
-            # self.pres_s = sim_field.pres_s[source_num] #FixMe
-        except:
-            self.air = sim_field
-            self.controls = sim_field
-            self.material = sim_field
-            self.sources = sim_field
-            self.receivers = sim_field
-        try:
-            self.pres_s = sim_field.pres_s[source_num] #FixMe
-        except:
-            self.pres_s = []
-        try:
-            self.uz_s = sim_field.uz_s[source_num] #FixMe
-        except:
-            self.uz_s = []
-        # self.r1 = self.receivers.coord[0]
+        
+        self.controls = controls
+        self.sources = source
+        self.receivers = receivers
+        self.pres_s = p_mtx
+        self.uz_s = uz_mtx
 
     def pw_pp(self):
         '''
@@ -210,8 +195,8 @@ class ImpedanceDeductionQterm(object):
                     error = np.abs(fZg)
                 iteration += 1
             self.Zs_q_pp[jf] = Zg
-                bar.update(1)
-            bar.close()
+            bar.update(1)
+        bar.close()
 # =============================================================================
 #             bar.next()
 #         bar.finish()
@@ -312,26 +297,18 @@ class ImpedanceDeductionQterm(object):
         self.alpha_ea_pp = 1 - (np.abs(self.Vp_ea_pp)) ** 2
         # print(self.alpha_ea_pp)
 
-    def save(self, filename = 'qterm_zest', path = '/home/eric/research/insitu_arrays/results/deduction/pu_pp/'):
-        '''
-        This method is used to save the simulation object
-        '''
-        filename = filename# + '_Lx_' + str(self.Lx) + 'm_Ly_' + str(self.Ly) + 'm'
-        self.path_filename = path + filename + '.pkl'
-        f = open(self.path_filename, 'wb')
-        pickle.dump(self.__dict__, f, 2)
-        f.close()
+    def save(self, filename = 'qdt', path = ''):
+        """ To save the decomposition object as pickle
+        """
+        ut_is.save(self, filename = filename, path = path)
 
-    def load(self, filename = 'qterm_zest', path = '/home/eric/research/insitu_arrays/results/deduction/pu_pp/'):
-        '''
-        This method is used to load a simulation object. You build a empty object
-        of the class and load a saved one. It will overwrite the empty one.
-        '''
-        lpath_filename = path + filename + '.pkl'
-        f = open(lpath_filename, 'rb')
-        tmp_dict = pickle.load(f)
-        f.close()
-        self.__dict__.update(tmp_dict)
+    def load(self, filename = 'qdt', path = ''):
+        """ To load the decomposition object as pickle
+
+        You can instantiate an empty object of the class and load a saved one.
+        It will overwrite the empty object.
+        """
+        ut_is.load(self, filename = filename, path = path)
 
 def p_integral(k0, Zg, hs, r, zr):
     '''

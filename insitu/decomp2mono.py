@@ -9,6 +9,7 @@ from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 unused import
 from scipy.special import roots_legendre, roots_laguerre
 #from lcurve_functions_EU import csvd, l_curve, tikhonov
 import lcurve_functions as lc
+import utils_insitu as ut_is
 
 SMALL_SIZE = 11
 BIGGER_SIZE = 18
@@ -76,7 +77,7 @@ class Decomposition_2M(object):
         Plots a color map of the pressure field for all frequencies at once.
     """
 
-    def __init__(self, p_mtx=None, controls=None, receivers=None, source_coord=None, 
+    def __init__(self, p_mtx=None, controls=None, receivers=None, source_coord=[0,0,0], 
                  regu_par = 'L-curve'):
         """
         Parameters
@@ -450,40 +451,18 @@ class Decomposition_2M(object):
         bar.close()
         return self.mae, self.error_db
     
-    def save(self, filename = 'mono2', path = ''):
+    def save(self, filename = 'qdt', path = ''):
         """ To save the decomposition object as pickle
-
-        Parameters
-        ----------
-        filename : str
-            name of the file
-        pathname : str
-            path of folder to save the file
         """
-        filename = filename# + '_Lx_' + str(self.Lx) + 'm_Ly_' + str(self.Ly) + 'm'
-        self.path_filename = path + filename + '.pkl'
-        f = open(self.path_filename, 'wb')
-        pickle.dump(self.__dict__, f, 2)
-        f.close()
+        ut_is.save(self, filename = filename, path = path)
 
-    def load(self, filename = 'mono2', path = ''):
+    def load(self, filename = 'qdt', path = ''):
         """ To load the decomposition object as pickle
 
         You can instantiate an empty object of the class and load a saved one.
         It will overwrite the empty object.
-
-        Parameters
-        ----------
-        filename : str
-            name of the file
-        pathname : str
-            path of folder to save the file
         """
-        lpath_filename = path + filename + '.pkl'
-        f = open(lpath_filename, 'rb')
-        tmp_dict = pickle.load(f)
-        f.close()
-        self.__dict__.update(tmp_dict)
+        ut_is.load(self, filename = filename, path = path)
 
     # def plot_colormap(self, press=None, freq=None, name='', dinrange=20):
     #     """Plots a color map of the pressure field.

@@ -77,7 +77,7 @@ class Decomposition_QDT(object):
         Plots a color map of the pressure field for all frequencies at once.
     """
 
-    def __init__(self, p_mtx=None, controls=None, receivers=None, source_coord=None, quad_order=51,
+    def __init__(self, p_mtx=None, controls=None, receivers=None, source_coord=[0,0,0], quad_order=51,
                  a = 0, b = 70, retraction = 0, image_source_on = False, regu_par = 'L-curve'):
         """
         Parameters

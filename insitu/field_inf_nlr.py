@@ -9,9 +9,10 @@ from scipy import optimize
 import scipy as spy
 import time
 import sys
-#from progress.bar import Bar, IncrementalBar, FillingCirclesBar, ChargingBar
+from tqdm import tqdm
 import pickle
 from controlsair import plot_spk
+import utils_insitu as ut_is
 # import quadpy.line_segment._gauss_lobatto as qp
 
 class NLRInfSph(object):
@@ -62,7 +63,7 @@ class NLRInfSph(object):
         A method to find the singulatities in the integrands. They are independent of source-receiver configuration,
         and the same for pressure and particle velocity
         '''
-        bar = ChargingBar('Finding singularities', max=len(self.controls.k0), suffix='%(percent)d%%')
+        bar = tqdm(total = len(self.controls.k0), desc = 'Finding singularities')
         for jf, k0 in enumerate(self.controls.k0):
             # the denominator
             fs_den = lambda s: (np.sqrt(s**2-1+0j))+self.m[jf]*(np.sqrt(s**2-self.n[jf]**2+0j))*\
@@ -73,8 +74,8 @@ class NLRInfSph(object):
             sol_i = optimize.root_scalar(fs_den_i,x0 = 1, x1 = 1-self.limits[1], method='secant')
             self.singularities_r.append(sol_r.root)
             self.singularities_i.append(sol_i.root)
-            bar.next()
-        bar.finish()
+            bar.update(1)
+        bar.close()
 
     def p_nlr(self, upper_int_limit = 10):
         '''
@@ -91,14 +92,15 @@ class NLRInfSph(object):
         for js, s_coord in enumerate(self.sources.coord):
             hs = s_coord[2] # source height
             pres_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = complex)
+            bar = tqdm(total = len(self.controls.k0)*self.receivers.coord.shape[0], desc = 'Processing sound pressure (NLR)')
             for jrec, r_coord in enumerate(self.receivers.coord):
                 r = ((s_coord[0] - r_coord[0])**2 + (s_coord[1] - r_coord[1])**2)**0.5 # horizontal distance source-receiver
                 zr = r_coord[2]  # receiver height
                 r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5
                 r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
                 # setup progressbar
-                print('Calculate sound pressure for source {} and receiver {}'.format(js+1, jrec+1))
-                bar = ChargingBar('Processing sound pressure (NLR)', max=len(self.controls.k0), suffix='%(percent)d%%')
+                #print('Calculate sound pressure for source {} and receiver {}'.format(js+1, jrec+1))
+                
                 # pres = []
                 for jf, k0 in enumerate(self.controls.k0):
                     # integrand
@@ -121,8 +123,8 @@ class NLRInfSph(object):
                     # Iq_imag = qp(fs_i, [0.0, upper_int_limit])
                     I_nlr = Iq_real[0] + 1j * Iq_imag[0]
                     pres_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1) - (np.exp(-1j * k0 * r2) / r2) + I_nlr
-                    bar.next()
-                bar.finish()
+                    bar.update(1)
+            bar.close()
             self.pres_s.append(pres_rec)
 
     def uz_nlr(self, upper_int_limit = 10):
@@ -140,14 +142,14 @@ class NLRInfSph(object):
         for js, s_coord in enumerate(self.sources.coord):
             hs = s_coord[2] # source height
             uz_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = complex)
+            bar = tqdm(total = len(self.controls.k0)*self.receivers.coord.shape[0], 
+                       desc = 'Processing particle velocity z-dir (NLR)')
             for jrec, r_coord in enumerate(self.receivers.coord):
                 r = ((s_coord[0] - r_coord[0])**2.0 + (s_coord[1] - r_coord[1])**2.0)**0.5 # horizontal distance source-receiver
                 zr = r_coord[2]  # receiver height
                 r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5
                 r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
-                print('Calculate particle vel. (z-dir) for source {} and receiver {}'.format(js+1, jrec+1))
-                bar = ChargingBar('Processing particle velocity z-dir (NLR)',
-                    max=len(self.controls.k0), suffix='%(percent)d%%')
+                #print('Calculate particle vel. (z-dir) for source {} and receiver {}'.format(js+1, jrec+1))
                 for jf, k0 in enumerate(self.controls.k0):
                     # fs = lambda s: ((2*((s**2-1)**0.5)*np.exp(-k0*((s**2-1)**0.5)*(hs+zr)))*k0*s*sp.jv(0,k0*s*r))/\
                     #     (((s**2-1)**0.5)+self.m[jf]*((s**2-self.n[jf]**2)**0.5)*\
@@ -174,8 +176,8 @@ class NLRInfSph(object):
                         (np.exp(-1j * k0 * r2) / r2) *\
                         (1 + (1 / (1j * k0 * r2))) * ((hs + zr)/r2) -(1/1j)*Iq)
 
-                    bar.next()
-                bar.finish()
+                    bar.update(1)
+            bar.close()
             self.uz_s.append(uz_rec)
 
     def p_mult(self, upper_int_limit = 10, randomize = False, amp_min = 0.0002, amp_max = 20):
@@ -205,7 +207,7 @@ class NLRInfSph(object):
             r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
             # setup progressbar
             print('Calculate sound pressure for receiver {}'.format(jrec+1))
-            bar = ChargingBar('Processing sound pressure (NLR)', max=len(self.controls.k0), suffix='%(percent)d%%')
+            bar = tqdm(total = len(self.controls.k0), desc = 'Processing sound pressure (NLR)')
             # seed randomizition
             np.random.seed(0)
             self.q = np.zeros((len(self.controls.freq), len(self.sources.coord)), dtype = complex)
@@ -238,8 +240,8 @@ class NLRInfSph(object):
                 # Iq_imag = qp(fs_i, [0.0, upper_int_limit])
                 I_nlr = Iq_real[0] + 1j * Iq_imag[0]
                 pres_rec[jrec, jf] = (np.sum(q * (np.exp(-1j * k0 * r1) / r1 - np.exp(-1j * k0 * r2) / r2)) + I_nlr)
-                bar.next()
-            bar.finish()
+                bar.update(1)
+            bar.close()
         self.pres_s.append(pres_rec)
 
     def plot_scene(self, vsam_size = 3):
@@ -283,25 +285,18 @@ class NLRInfSph(object):
         # ax.invert_zaxis()
         plt.show() # show plot
 
-    def save(self, filename = 'my_nlr', path = '/home/eric/dev/insitu/data/'):
-        '''
-        This method is used to save the simulation object
-        '''
-        self.path_filename = path + filename + '.pkl'
-        f = open(self.path_filename, 'wb')
-        pickle.dump(self.__dict__, f, 2)
-        f.close()
+    def save(self, filename = 'qdt', path = ''):
+        """ To save the decomposition object as pickle
+        """
+        ut_is.save(self, filename = filename, path = path)
 
-    def load(self, filename = 'my_nlr', path = '/home/eric/dev/insitu/data/'):
-        '''
-        This method is used to load a simulation object. You build a empty object
-        of the class and load a saved one. It will overwrite the empty one.
-        '''
-        lpath_filename = path + filename + '.pkl'
-        f = open(lpath_filename, 'rb')
-        tmp_dict = pickle.load(f)
-        f.close()
-        self.__dict__.update(tmp_dict)
+    def load(self, filename = 'qdt', path = ''):
+        """ To load the decomposition object as pickle
+
+        You can instantiate an empty object of the class and load a saved one.
+        It will overwrite the empty object.
+        """
+        ut_is.load(self, filename = filename, path = path)
         
     def add_noise(self, snr = 30, uncorr = False):
         """ Add gaussian noise to the simulated data.

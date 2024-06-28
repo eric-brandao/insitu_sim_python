@@ -404,7 +404,10 @@ class DecompositionEv2(object):
             # fz_ref = np.sqrt(k0/np.abs(k_vec_inc[:,2]))
             psi_inc = np.exp(-1j * recs_inc @ k_vec_inc.T)
             psi_ref = np.exp(-1j * recs_ref @ k_vec_ref.T)
-            h_mtx = np.hstack((psi_inc, psi_ref))
+            if f_inc == 0:
+                h_mtx = psi_ref
+            else:
+                h_mtx = np.hstack((psi_inc, psi_ref))
             self.cond_num[jf] = np.linalg.cond(h_mtx)
             # Measured data
             pm = self.pres_s[:,jf].astype(complex)
