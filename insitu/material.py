@@ -188,7 +188,6 @@ class PorousAbsorber():
         This method is used to plot the reference absorption coefficient
         '''
         fig = plt.figure()
-        fig.canvas.set_window_title(self.material_scene)
         plt.plot(self.freq, self.alpha, 'k-', label=self.model)
         plt.title(self.material_scene)
         plt.grid(linestyle = '--', which='both')

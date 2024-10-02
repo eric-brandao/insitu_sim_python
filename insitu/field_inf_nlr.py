@@ -261,15 +261,16 @@ class NLRInfSph(object):
                 vertices[:,1], vertices[:,2]))]
         # patch plot
         collection = Poly3DCollection(verts,
-            linewidths=1, alpha=0.9, edgecolor = 'gray')
+            linewidths=1, alpha=0.5, edgecolor = 'gray')
         collection.set_facecolor('silver')
         ax.add_collection3d(collection)
-        for s_coord in self.sources.coord:
-            ax.scatter(s_coord[0], s_coord[1], s_coord[2],
-                color='red',  marker = "o", s=50)
-        for r_coord in self.receivers.coord:
-            ax.scatter(r_coord[0], r_coord[1], r_coord[2],
-                color='blue',  marker = "o")
+
+        ax.scatter(self.sources.coord[:,0], self.sources.coord[:,1],
+                   self.sources.coord[:,2], marker = "o", s=100, 
+                   color='red', label = "Source")
+        ax.scatter(self.receivers.coord[:,0], self.receivers.coord[:,1],
+                   self.receivers.coord[:,2], color='blue',  marker = "o", label = "Receivers")
+        ax.legend()
         ax.set_xlabel('X axis')
         plt.xticks([], [])
         ax.set_ylabel('Y axis')
@@ -281,7 +282,7 @@ class NLRInfSph(object):
         # ax.set_zlim((0, 1.2*np.amax(np.linalg.norm(self.sources.coord))))
         ax.set_zlim((0, 1.2*np.amax(np.linalg.norm(self.sources.coord[0][2]))))
         ax.set_zticks((0, 1.2*np.amax(np.linalg.norm(self.sources.coord))))
-        ax.view_init(elev=5, azim=-55)
+        #ax.view_init(elev=5, azim=-55)
         # ax.invert_zaxis()
         plt.show() # show plot
 

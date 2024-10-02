@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """
 Created on Wed Sep 11 09:38:08 2024
+@author: Eric Brandão
 
-@author: Admin
+Interact with receiver class
 """
 #%%
 from receivers import Receiver
