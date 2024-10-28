@@ -62,5 +62,5 @@ rec.plot_array()
 rec.arc(radius = 20.0, n_recs = 36)
 rec.plot_array()
 #%% Hemisphere
-rec.hemispherical_array(radius = 20, n_rec_target = 100)
-rec.plot_array()
+rec.hemispherical_array(radius = 20, n_rec_target = 642)
+rec.plot_array(x_lim=[-25, 25], y_lim=[-25, 25], z_lim=[0, 25])

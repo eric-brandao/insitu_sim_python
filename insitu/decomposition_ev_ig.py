@@ -34,19 +34,19 @@ import meshio
 
 import plotly.io as pio
 
-SMALL_SIZE = 11
-BIGGER_SIZE = 18
-#plt.rcParams.update({'font.size': 10})
-plt.rcParams.update({'font.family': 'sans-serif'})
-plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
-plt.rc('legend', fontsize=BIGGER_SIZE)
-#plt.rc('title', fontsize=BIGGER_SIZE)
-plt.rc('font', size=BIGGER_SIZE)          # controls default text sizes
-plt.rc('axes', titlesize=BIGGER_SIZE)     # fontsize of the axes title
-plt.rc('axes', labelsize=BIGGER_SIZE)    # fontsize of the x and y labels
-plt.rc('xtick', labelsize=BIGGER_SIZE)    # fontsize of the tick labels
-plt.rc('ytick', labelsize=BIGGER_SIZE)    # fontsize of the tick labels
-plt.rc('figure', titlesize=BIGGER_SIZE)
+# SMALL_SIZE = 11
+# BIGGER_SIZE = 18
+# #plt.rcParams.update({'font.size': 10})
+# plt.rcParams.update({'font.family': 'sans-serif'})
+# plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
+# plt.rc('legend', fontsize=BIGGER_SIZE)
+# #plt.rc('title', fontsize=BIGGER_SIZE)
+# plt.rc('font', size=BIGGER_SIZE)          # controls default text sizes
+# plt.rc('axes', titlesize=BIGGER_SIZE)     # fontsize of the axes title
+# plt.rc('axes', labelsize=BIGGER_SIZE)    # fontsize of the x and y labels
+# plt.rc('xtick', labelsize=BIGGER_SIZE)    # fontsize of the tick labels
+# plt.rc('ytick', labelsize=BIGGER_SIZE)    # fontsize of the tick labels
+# plt.rc('figure', titlesize=BIGGER_SIZE)
 
 
 class DecompositionEv2(object):
@@ -205,9 +205,11 @@ class DecompositionEv2(object):
         self.n_prop = len(self.pdir[:,0])
         self.conectivities_all = elements
         self.conectivity_correction()
+        self.compute_normals()
+        self.correct_normals()
         
         if plot:
-            fig = plt.figure()
+            plt.figure()
             ax = plt.axes(projection ="3d")
             ax.scatter(self.pdir[:,0], self.pdir[:,1], self.pdir[:,2])
     
@@ -229,50 +231,31 @@ class DecompositionEv2(object):
                 delta = self.delta[id_jc]
                 self.conectivities[jrow, jcol] = self.conectivities[jrow, jcol] - delta
         
-        # self.conectivities = conectivities2
-        
-        # flattened_conectivities = self.conectivities.flatten()
-        # sorted_fc = np.sort(flattened_conectivities)
-        # fc_idx = np.argsort(flattened_conectivities) #  indices that would sort an array
-        
-        # sorted_fc_idx = np.argsort(sorted_fc) #  indices that would sort an array
-        # count_repetitions = np.bincount(sorted_fc)
-        
-        # # loop through id_dir
-        # delta_array = np.zeros(len(sorted_fc), dtype = int)
-        # start = 0
-        # for jid, iddir in enumerate(self.id_dir[0]):
-        #     n_reps = count_repetitions[iddir]
-        #     # delta_array.append(np.repeat(self.delta[jid], n_reps))
-        #     stop = start + n_reps - 1
-        #     delta_array[start: stop+1] = self.delta[jid]
-        #     start = stop + 1
+    def compute_normals(self,):
+        """ Compute normals of triangle
+        """
+        self.normals = np.zeros((self.conectivities.shape[0],3))
+        for jrow in np.arange(self.conectivities.shape[0]):
+            pt_1 = self.pdir[self.conectivities[jrow,0]]
+            pt_2 = self.pdir[self.conectivities[jrow,1]]
+            pt_3 = self.pdir[self.conectivities[jrow,2]]
+            u_vec = pt_2 - pt_1
+            v_vec = pt_3 - pt_1
+            nx = u_vec[1]*v_vec[2] - u_vec[2]*v_vec[1]
+            ny = u_vec[2]*v_vec[0] - u_vec[0]*v_vec[2]
+            nz = u_vec[0]*v_vec[1] - u_vec[1]*v_vec[0]
+            self.normals[jrow, :] = np.array([nx, ny, nz])
             
-            
-        # conectivities_corrected_flattend = sorted_fc - delta_array
-        # self.conectivities2 = np.reshape(flattened_conectivities[sorted_fc_idx],
-        #                                  (self.conectivities.shape[0],3), order='F')
-        # # print(flattened_conectivities)
-        # print(flattened_conectivities[sorted_fc_idx]-flattened_conectivities)
-        # print(sorted_fc)
-        # print(sorted_fc_idx)
-        # print(np.array(delta_array, dtype=object))
-        # print(flattened_conectivities[sorted_fc_idx])
+    def correct_normals(self,):
+        """ correct the normals (to point outward)
+        """
+        for jrow in np.arange(self.normals.shape[0]):
+            if self.normals[jrow, 2] < 0:
+                self.normals[jrow, 2] = - self.normals[jrow, 2]
+                self.conectivities[jrow, :] = np.flip(self.conectivities[jrow, :]) 
         
-        # for jc in np.arange(self.conectivities.shape[1]-1):
-        #     for jv in np.arange(self.pdir_all.shape[0]):
-        #         id_val = np.where(self.conectivities[:,jc] == jv)[0]
-        #         print(id_val)
-                # if id_val.size != 0:
-                #     self.conectivities[:,id_val] = self.conectivities[:,id_val]-100
-            
-        # sort a column of conectivities
-        # sorted_column_idx = np.argsort(self.conectivities[:,0])
-        # ndx = sorted_column_idx[np.searchsorted(self.conectivities[sorted_column_idx,0], 
-        #                       self.id_dir[0])]
-        # print(self.conectivities[sorted_column_idx,0])
-        # print(sorted_column_idx)
-        # print(ndx)
+        
+    
     def prop_dir_gmsh(self, n_waves = 642, radius = 50, plot = False):
         """ Create the propagating wave number directions (hemisphere)
         

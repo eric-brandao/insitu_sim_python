@@ -629,7 +629,9 @@ class Receiver():
         r, theta, phi = cart2sph(self.coord[:,0], self.coord[:,1], self.coord[:,2])
         r = radius*r
         self.coord[:,0], self.coord[:,1], self.coord[:,2] = sph2cart(r,theta,phi)
-
+        self.compute_normals()
+        self.correct_normals()
+        
     def conectivity_correction(self,):
         """ Connectivity correction for mesh plotting
         """
@@ -641,7 +643,36 @@ class Receiver():
         self.p_rows = np.where(n_rows == 0)[0]
         self.conectivities = self.conectivities_all[self.p_rows,:]
         self.delta = self.id_dir[0]-np.arange(self.coord.shape[0])
+        
+        for jrow in np.arange(self.conectivities.shape[0]):
+            for jcol in np.arange(self.conectivities.shape[1]):
+                id_jc = np.where(self.id_dir[0] == self.conectivities[jrow, jcol])[0]
+                delta = self.delta[id_jc]
+                self.conectivities[jrow, jcol] = self.conectivities[jrow, jcol] - delta
 
+    def compute_normals(self,):
+        """ Compute normals of triangle
+        """
+        self.normals = np.zeros((self.conectivities.shape[0],3))
+        for jrow in np.arange(self.conectivities.shape[0]):
+            pt_1 = self.coord[self.conectivities[jrow,0]]
+            pt_2 = self.coord[self.conectivities[jrow,1]]
+            pt_3 = self.coord[self.conectivities[jrow,2]]
+            u_vec = pt_2 - pt_1
+            v_vec = pt_3 - pt_1
+            nx = u_vec[1]*v_vec[2] - u_vec[2]*v_vec[1]
+            ny = u_vec[2]*v_vec[0] - u_vec[0]*v_vec[2]
+            nz = u_vec[0]*v_vec[1] - u_vec[1]*v_vec[0]
+            self.normals[jrow, :] = np.array([nx, ny, nz])
+            
+    def correct_normals(self,):
+        """ correct the normals (to point outward)
+        """
+        for jrow in np.arange(self.normals.shape[0]):
+            if self.normals[jrow, 2] < 0:
+                self.normals[jrow, 2] = - self.normals[jrow, 2]
+                self.conectivities[jrow, :] = np.flip(self.conectivities[jrow, :])
+            
     # def hemispherical_array2(self, radius = 1, n_rec_target = 32):
     #     from decomposition_ev_ig import DecompositionEv2
     #     pk = DecompositionEv2()
@@ -733,7 +764,7 @@ class Receiver():
                             [0, 0, 1]])
         return rot_mtx
     
-    def plot_array(self,):
+    def plot_array(self, x_lim = [-1,1], y_lim = [-1,1], z_lim = [0, 1]):
         """ plot the array coordinates as dots in space
         """
         fig = plt.figure()
@@ -749,9 +780,9 @@ class Receiver():
         ax.set_zlabel(r'$z$ [m]')
         #ax.set_zticks([-sample_thickness, 1.0, 2, 3])
         ax.grid(False)
-        ax.set_xlim((-2*np.amax(self.coord[:,0]), 2*np.amax(self.coord[:,0])))
-        ax.set_ylim((-2*np.amax(self.coord[:,1]), 2*np.amax(self.coord[:,1])))
-        ax.set_zlim((-0.05, 2*np.amax(self.coord[:,2])))
+        ax.set_xlim((x_lim[0], x_lim[1]))
+        ax.set_ylim((y_lim[0], y_lim[1]))
+        ax.set_zlim((z_lim[0], z_lim[1]))
         #ax.view_init(elev=elev, azim=azim)
         plt.tight_layout()
         plt.show()

@@ -26,18 +26,18 @@ from rayinidir import RayInitialDirections
 #from parray_estimation import octave_freq, octave_avg, get_hemispheres, get_inc_ref_dirs
 from decompositionclass import filter_evan
 
-SMALL_SIZE = 11
-BIGGER_SIZE = 13
-#plt.rcParams.update({'font.size': 10})
-plt.rcParams.update({'font.family': 'serif'})
-plt.rc('legend', fontsize=SMALL_SIZE)
-#plt.rc('title', fontsize=SMALL_SIZE)
-plt.rc('font', size=BIGGER_SIZE)          # controls default text sizes
-plt.rc('axes', titlesize=BIGGER_SIZE)     # fontsize of the axes title
-plt.rc('axes', labelsize=BIGGER_SIZE)    # fontsize of the x and y labels
-plt.rc('xtick', labelsize=BIGGER_SIZE)    # fontsize of the tick labels
-plt.rc('ytick', labelsize=BIGGER_SIZE)    # fontsize of the tick labels
-plt.rc('figure', titlesize=BIGGER_SIZE)
+# SMALL_SIZE = 11
+# BIGGER_SIZE = 13
+# #plt.rcParams.update({'font.size': 10})
+# plt.rcParams.update({'font.family': 'serif'})
+# plt.rc('legend', fontsize=SMALL_SIZE)
+# #plt.rc('title', fontsize=SMALL_SIZE)
+# plt.rc('font', size=BIGGER_SIZE)          # controls default text sizes
+# plt.rc('axes', titlesize=BIGGER_SIZE)     # fontsize of the axes title
+# plt.rc('axes', labelsize=BIGGER_SIZE)    # fontsize of the x and y labels
+# plt.rc('xtick', labelsize=BIGGER_SIZE)    # fontsize of the tick labels
+# plt.rc('ytick', labelsize=BIGGER_SIZE)    # fontsize of the tick labels
+# plt.rc('figure', titlesize=BIGGER_SIZE)
 
 class DecompositionEv(object):
     """ Decomposition of the sound field using propagating and evanescent waves.
