@@ -50,17 +50,27 @@ rec.plot_array()
 #%% Random 3D array by num of microphones
 rec.random_3d_array(x_len = 0.3, y_len = 0.3, z_len = 0.25, zr = 0.1, n_total = 200, seed = 0)
 rec.round_array(num_of_dec_cases = 3)
-rec.plot_array()
+rec.plot_array(x_lim = [-0.3, 0.3],y_lim = [-0.3, 0.3],z_lim = [0, 0.5])
 
 #%% Random 3D array by num of microphones
 rec.random_3d_array2(x_len = 0.3, y_len = 0.3, z_len = 0.25, zr = 0.1,
-                      nx = 10, ny = 11, nz = 2, delta_xyz = None, seed = 0, plot = False)
+                      nx = 10, ny = 11, nz = 3, delta_xyz = None, seed = 0, plot = True)
 rec.round_array(num_of_dec_cases = 3)
-rec.plot_array()
+rec.plot_array(x_lim = [-0.3, 0.3],y_lim = [-0.3, 0.3],z_lim = [0, 0.5])
+
+#%% sunflower circular array
+rec.sunflower_circular_array(n_recs = 50, radius = 0.6, alpha = 1, zr = 0.1)
+rec.plot_array(x_lim = [-0.7, 0.7],y_lim = [-0.7, 0.7],z_lim = [0, 0.2])
+
+#%%
+rec.sunflower_circular_array_n(n_recs = 50, radius = 0.6, alpha = 2, zr = 0.1,
+                               dist_bet_layers = [0.2, 0.4], rotations = [30, 30])
+rec.plot_array(x_lim = [-0.7, 0.7],y_lim = [-0.7, 0.7], z_lim = [0, 0.8])
 
 #%% arc
 rec.arc(radius = 20.0, n_recs = 36)
 rec.plot_array()
 #%% Hemisphere
-rec.hemispherical_array(radius = 20, n_rec_target = 642)
-rec.plot_array(x_lim=[-25, 25], y_lim=[-25, 25], z_lim=[0, 25])
+radii = 1
+rec.hemispherical_array(radius = radii, n_rec_target = 642)
+rec.plot_array(x_lim=[-radii, radii], y_lim=[-radii, radii], z_lim=[0, radii])

@@ -11,16 +11,16 @@ from scipy.special import roots_legendre, roots_laguerre
 import lcurve_functions as lc
 import utils_insitu as ut_is
 
-SMALL_SIZE = 11
-BIGGER_SIZE = 18
-plt.rcParams.update({'font.family': 'sans-serif'})
-plt.rc('font', size=BIGGER_SIZE)          # controls default text sizes
-plt.rc('figure', titlesize=BIGGER_SIZE)   # font size of the figure title
-plt.rc('legend', fontsize=BIGGER_SIZE)    # font size of the figure subtitle
-plt.rc('axes', titlesize=BIGGER_SIZE)     # font size of the axes title
-plt.rc('axes', labelsize=BIGGER_SIZE)     # font size of the x and y labels
-plt.rc('xtick', labelsize=BIGGER_SIZE)    # font size of the tick labels
-plt.rc('ytick', labelsize=BIGGER_SIZE)    # font size of the tick labels
+# SMALL_SIZE = 11
+# BIGGER_SIZE = 18
+# plt.rcParams.update({'font.family': 'sans-serif'})
+# plt.rc('font', size=BIGGER_SIZE)          # controls default text sizes
+# plt.rc('figure', titlesize=BIGGER_SIZE)   # font size of the figure title
+# plt.rc('legend', fontsize=BIGGER_SIZE)    # font size of the figure subtitle
+# plt.rc('axes', titlesize=BIGGER_SIZE)     # font size of the axes title
+# plt.rc('axes', labelsize=BIGGER_SIZE)     # font size of the x and y labels
+# plt.rc('xtick', labelsize=BIGGER_SIZE)    # font size of the tick labels
+# plt.rc('ytick', labelsize=BIGGER_SIZE)    # font size of the tick labels
 
 
 

@@ -1,12 +1,15 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from collections import defaultdict
 #from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 #from mpl_toolkits.mplot3d import Axes3D
 #import toml
 from controlsair import load_cfg, sph2cart, cart2sph
 from rayinidir import RayInitialDirections
-import utils_insitu as ut_is
-
+# import utils_insitu as ut_is
+# from utils_insitu import save, load
+import utils_insitu
+ # utils_insitu.load
 
 class Receiver():
     """ A receiver class to initialize many types of receivers
@@ -577,7 +580,86 @@ class Receiver():
             #ax.view_init(elev=elev, azim=azim)
             plt.tight_layout()
             plt.show()
+    
+    def sunflower_circular_array(self, n_recs = 100, radius = 1, alpha = 2, zr = 0.1):
+        """ Creates a circular planar array with the sunflower algorithm
         
+        Parameters
+        ----------
+        n_recs : int
+            number of receivers in the circular aperture
+        radius : float
+            radius of circular aperture
+        alpha : int
+            indicates how much one cares about the evenness of boundary. For higher values
+            there will be more points on the boundary
+        zr : float
+            distance from the microphones to the z=0 plane      
+        """
+        # Initialize
+        self.coord = np.zeros((n_recs, 3))
+        
+        # Number of points respectively on the boundary and inside the cirlce.
+        n_exterior = int(np.round(alpha * np.sqrt(n_recs)))
+        n_interior = n_recs - n_exterior
+    
+        # Ensure there are still some points in the inside...
+        if n_interior < 1:
+            raise RuntimeError(f"Parameter 'alpha' is too large ({alpha}), all "
+                               f"points would end-up on the boundary.")
+        # Generate the angles. The factor k_theta corresponds to 2*pi/phi^2.
+        k_theta = np.pi * (3 - np.sqrt(5))
+        angles = np.linspace(k_theta, k_theta * n_recs, n_recs)
+    
+        # Generate the radii.
+        r_interior = np.sqrt(np.linspace(0, 1, n_interior))
+        r_exterior = np.ones((n_exterior,))
+        r = radius * np.concatenate((r_interior, r_exterior))
+        
+        # Assign to x, y, and z
+        self.coord[:,0] = r*np.cos(angles)
+        self.coord[:,1] = r*np.sin(angles)
+        self.coord[:,2] = zr
+        
+    def sunflower_circular_array_n(self, n_recs = 100, radius = 1, alpha = 2, zr = 0.1,
+                                   dist_bet_layers = [0.1, 0.1], rotations = [45, 45]):
+        """ Creates a circular planar array with the sunflower algorithm
+        
+        Parameters
+        ----------
+        n_recs : int
+            number of receivers in the circular aperture
+        radius : float
+            radius of circular aperture
+        alpha : int
+            indicates how much one cares about the evenness of boundary. For higher values
+            there will be more points on the boundary
+        zr : float
+            distance from the microphones to the z=0 plane
+        dist_bet_layers : 1dArray
+            separation distances between two layers. Should be a vector of size num_of_layers - 1
+        rotations : 1dArray
+            Rotations to be applyed at each layer. Should be a vector of size num_of_layers - 1
+        
+        """
+        # Initiate sunflower array
+        self.sunflower_circular_array(n_recs = n_recs, radius = radius, alpha = alpha, zr = zr)
+        # copy coordinates of first layer to temporary variable
+        coords_1st_layer = self.coord
+        # Reinitiate self.coord
+        num_of_layers = len(dist_bet_layers) + 1
+        self.coord = np.zeros((n_recs*num_of_layers, 3))
+        self.coord[:n_recs, :] = coords_1st_layer
+        # Get the coordinate of the other layers
+        delta_z = 0
+        for dz_id, dz in enumerate(dist_bet_layers):
+            rot_mxt = self.get_rotmtx_z(theta_deg = rotations[dz_id])
+            coords_nth_layer = coords_1st_layer @ rot_mxt
+            self.coord[(dz_id+1)*n_recs:(dz_id+1)*n_recs + n_recs, :] = coords_nth_layer
+            delta_z += dz
+            self.coord[(dz_id+1)*n_recs:(dz_id+1)*n_recs + n_recs, 2] += delta_z
+        
+    
     def arc(self, radius = 20.0, n_recs = 36):
         """" Initializes a receiver arc.
 
@@ -624,40 +706,42 @@ class Receiver():
         self.coord = directions[id_dir[0],:]
         self.pdir_all = directions
         self.n_prop = len(self.coord[:,0])
-        self.conectivities_all = elements
-        self.conectivity_correction()
+        self.connectivities_all = elements
+        self.connectivity_correction()
         r, theta, phi = cart2sph(self.coord[:,0], self.coord[:,1], self.coord[:,2])
         r = radius*r
         self.coord[:,0], self.coord[:,1], self.coord[:,2] = sph2cart(r,theta,phi)
         self.compute_normals()
         self.correct_normals()
+        self.compute_triangle_areas()
+        self.compute_all_triangle_angles()
         
-    def conectivity_correction(self,):
+    def connectivity_correction(self,):
         """ Connectivity correction for mesh plotting
         """
-        self.sign_vec = np.array([self.pdir_all[self.conectivities_all[:,0], 2],
-                             self.pdir_all[self.conectivities_all[:,1], 2],
-                             self.pdir_all[self.conectivities_all[:,2], 2]])
+        self.sign_vec = np.array([self.pdir_all[self.connectivities_all[:,0], 2],
+                             self.pdir_all[self.connectivities_all[:,1], 2],
+                             self.pdir_all[self.connectivities_all[:,2], 2]])
         self.sign_z = np.sign(self.sign_vec)
         n_rows = np.sum(self.sign_z.T < 0 , 1)
         self.p_rows = np.where(n_rows == 0)[0]
-        self.conectivities = self.conectivities_all[self.p_rows,:]
+        self.connectivities = self.connectivities_all[self.p_rows,:]
         self.delta = self.id_dir[0]-np.arange(self.coord.shape[0])
         
-        for jrow in np.arange(self.conectivities.shape[0]):
-            for jcol in np.arange(self.conectivities.shape[1]):
-                id_jc = np.where(self.id_dir[0] == self.conectivities[jrow, jcol])[0]
+        for jrow in np.arange(self.connectivities.shape[0]):
+            for jcol in np.arange(self.connectivities.shape[1]):
+                id_jc = np.where(self.id_dir[0] == self.connectivities[jrow, jcol])[0]
                 delta = self.delta[id_jc]
-                self.conectivities[jrow, jcol] = self.conectivities[jrow, jcol] - delta
+                self.connectivities[jrow, jcol] = self.connectivities[jrow, jcol] - delta
 
     def compute_normals(self,):
         """ Compute normals of triangle
         """
-        self.normals = np.zeros((self.conectivities.shape[0],3))
-        for jrow in np.arange(self.conectivities.shape[0]):
-            pt_1 = self.coord[self.conectivities[jrow,0]]
-            pt_2 = self.coord[self.conectivities[jrow,1]]
-            pt_3 = self.coord[self.conectivities[jrow,2]]
+        self.normals = np.zeros((self.connectivities.shape[0],3))
+        for jrow in np.arange(self.connectivities.shape[0]):
+            pt_1 = self.coord[self.connectivities[jrow,0]]
+            pt_2 = self.coord[self.connectivities[jrow,1]]
+            pt_3 = self.coord[self.connectivities[jrow,2]]
             u_vec = pt_2 - pt_1
             v_vec = pt_3 - pt_1
             nx = u_vec[1]*v_vec[2] - u_vec[2]*v_vec[1]
@@ -671,14 +755,149 @@ class Receiver():
         for jrow in np.arange(self.normals.shape[0]):
             if self.normals[jrow, 2] < 0:
                 self.normals[jrow, 2] = - self.normals[jrow, 2]
-                self.conectivities[jrow, :] = np.flip(self.conectivities[jrow, :])
+                self.connectivities[jrow, :] = np.flip(self.connectivities[jrow, :])
+    
+    def compute_triangle_areas(self,):
+        """ Compute the areas of all triangles in the mesh
+        """
+        self.triangle_areas = np.zeros(self.connectivities.shape[0])
+        for jel, tri in enumerate(self.connectivities):
+            vertices = self.coord[self.connectivities[jel,:],:]
+            self.triangle_areas[jel] = self.triangle_area(vertices)
+        self.triangle_areas_mean = np.mean(self.triangle_areas)
+        self.triangle_areas_std = np.std(self.triangle_areas)
+        
+    
+    def triangle_area(self, vertices):
+        """Calculate the area of a triangle.
+        
+        Parameters
+        ----------
+        vertices : numpy 1d array
+            A (3,) numpy array with the vertices of the triangle
+        
+        Returns
+        -------
+        area_tri : float
+            the area of the triangle
+        """
+        # get one side of triangle and its norm
+        ab = vertices[1] - vertices[0]
+        ab_norm = np.linalg.norm(ab)
+        # get another side of triangle and its norm
+        ac = vertices[2] - vertices[0]
+        ac_norm = np.linalg.norm(ac)
+        # angle between sides
+        theta = np.arccos(np.dot(ab, ac)/(ab_norm * ac_norm))
+        # area
+        area_tri = 0.5 * ab_norm * ac_norm * np.sin(theta)
+        return area_tri
+    
+    def compute_all_triangle_angles(self,):
+        """ Compute the angle pairs of all triangles in the mesh
+        """
+        self.triangle_angles = np.zeros((self.connectivities.shape[0], 3))
+        for jel, tri in enumerate(self.connectivities):
+            vertices = self.coord[self.connectivities[jel,:],:]
+            self.triangle_angles[jel,:] = self.compute_triangle_angles(vertices)
+        self.triangle_angles_mean = np.mean(self.triangle_angles.flatten())
+        self.triangle_angles_std = np.std(self.triangle_angles.flatten())
+    
+    def compute_triangle_angles(self, vertices):
+        """ Compute triangle angles relative to origin 
+        
+        (for spherical array angle coverage)
+        """
+        thetas = np.zeros(3)
+        indices = [[0,1], [0,2], [1,2]]
+        for j, ind in enumerate(indices):
+            n1 = np.linalg.norm(vertices[ind[0],:])
+            n2 = np.linalg.norm(vertices[ind[1],:])
+            dot_prod = np.dot(vertices[ind[0],:], vertices[ind[1],:])
+            thetas[j] = np.rad2deg(np.arccos(dot_prod/(n1*n2)))
+        return thetas
+    
+    def fill_holes_hemisphere(self,):
+        open_edges = self.find_open_edges()
+        equator_edges = self.find_equator_edges(open_edges)
+
+        # Step 3: Form new triangles
+        new_triangles = self.form_new_triangles(open_edges, equator_edges)
+        # loops = self.group_edges_into_loops(open_edges)
+        # new_triangles = self.fill_holes(loops)
+        self.connectivities = np.vstack((self.connectivities, new_triangles))
             
-    # def hemispherical_array2(self, radius = 1, n_rec_target = 32):
-    #     from decomposition_ev_ig import DecompositionEv2
-    #     pk = DecompositionEv2()
-    #     pk.prop_dir(n_waves = n_rec_target, plot = False)
-    #     self.coord = pk.pdir
-    #     self.conectivities = pk.conectivities
+    def find_open_edges(self, ):
+        """Find edges that belong to only one triangle."""
+        edge_count = defaultdict(int)
+        for tri in self.connectivities:
+            edges = [(tri[i], tri[(i + 1) % 3]) for i in range(3)]
+            for edge in edges:
+                sorted_edge = tuple(sorted(edge))
+                edge_count[sorted_edge] += 1
+        open_edges = [edge for edge, count in edge_count.items() if count == 1]
+        return open_edges
+    
+    def find_equator_edges(self, edges):
+        """Find edges where both vertices lie on the equator (z = 0)."""
+        equator_edges = [
+            edge for edge in edges if self.coord[edge[0]][2] == 0 and self.coord[edge[1]][2] == 0
+        ]
+        return equator_edges
+    
+    def form_new_triangles(self, open_edges, equator_edges):
+        """Form new triangles using open edges and equator edges."""
+        new_triangles = []
+        used_edges = set()
+        
+        for eq_edge in equator_edges:
+            if eq_edge in used_edges:
+                continue
+            v1, v2 = eq_edge
+            # Find two open edges that connect to v1 and v2
+            connecting_edges = [
+                edge for edge in open_edges if v1 in edge or v2 in edge and edge != eq_edge
+            ]
+            if len(connecting_edges) >= 2:
+                edge1, edge2 = connecting_edges[:2]
+                v3 = (
+                    edge1[0] if edge1[0] != v1 and edge1[0] != v2 else edge1[1]
+                )  # Vertex not in eq_edge
+                new_triangles.append([v1, v2, v3])
+                used_edges.add(eq_edge)
+                used_edges.update(connecting_edges)
+        
+        return new_triangles
+
+    # def group_edges_into_loops(self, edges):
+    #     """Group open edges into loops."""
+    #     loops = []
+    #     while edges:
+    #         loop = []
+    #         edge = edges.pop(0)
+    #         loop.extend(edge)
+    #         while True:
+    #             next_edge = next((e for e in edges if loop[-1] in e), None)
+    #             if not next_edge:
+    #                 break
+    #             edges.remove(next_edge)
+    #             loop.append(next_edge[1] if next_edge[0] == loop[-1] else next_edge[0])
+    #         loops.append(loop)
+    #     return loops
+
+    # def fill_holes(self, loops):
+    #     """Fill holes by creating triangles for each loop."""
+    #     new_triangles = []
+    #     for loop in loops:
+    #         # Assume at least two points are on the equator (z = 0)
+    #         equator_pts = [v for v in loop if self.coord[v][2] == 0]
+    #         for i in range(len(equator_pts) - 1):
+    #             v1, v2 = equator_pts[i], equator_pts[i + 1]
+    #             # Find the closest non-equator vertex in the loop
+    #             non_equator_pts = [v for v in loop if v not in equator_pts]
+    #             closest_pt = min(non_equator_pts, key=lambda v: np.linalg.norm(self.coord[v] - self.coord[v1]))
+    #             new_triangles.append([v1, v2, closest_pt])
+    #     return new_triangles
     
     def round_array(self, num_of_dec_cases = 3):
         """ Round the coordinates of the array
@@ -764,6 +983,19 @@ class Receiver():
                             [0, 0, 1]])
         return rot_mtx
     
+    def compute_min_distances(self, coords):
+        """ Given a set of coordinates, compute the minimum distance between every point
+        """
+    
+        distances = np.zeros((coords.shape[0]))
+        min_distance = np.zeros(coords.shape[0])
+
+        for row, coord1 in enumerate(coords):
+            for col, coord2 in enumerate(coords):
+                distances[col] = np.linalg.norm(coord1 - coord2)
+            min_distance[row] = np.amin(distances[distances != 0])
+        return np.amax(min_distance), np.mean(min_distance), np.std(min_distance)
+    
     def plot_array(self, x_lim = [-1,1], y_lim = [-1,1], z_lim = [0, 1]):
         """ plot the array coordinates as dots in space
         """
@@ -790,7 +1022,7 @@ class Receiver():
     def save(self, filename = 'qdt', path = ''):
         """ To save the decomposition object as pickle
         """
-        ut_is.save(self, filename = filename, path = path)
+        utils_insitu.save(self, filename = filename, path = path)
 
     def load(self, filename = 'qdt', path = ''):
         """ To load the decomposition object as pickle
@@ -798,4 +1030,4 @@ class Receiver():
         You can instantiate an empty object of the class and load a saved one.
         It will overwrite the empty object.
         """
-        ut_is.load(self, filename = filename, path = path)   
+        utils_insitu.load(self, filename = filename, path = path)   
