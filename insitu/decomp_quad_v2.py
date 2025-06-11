@@ -637,6 +637,114 @@ class Decomposition_QDT(object):
         bar.close()
         return self.ref_coef_pw, self.alpha_coef_pw
     
+    def estimate_noise_threshold(self, noise_threshold = 1e-13):
+        """ Estimate the last value of q that is above noise threshold
+        
+        Parameters
+        ----------
+        noise_threshold : float
+            Noise Threshold below 1.0
+        """
+        self.noise_threshold = noise_threshold
+        self.q_noise_threshold = np.zeros(len(self.controls.freq))
+        self.noise_id = np.zeros(len(self.controls.freq))
+        # Freq loop
+        for jf, freq in enumerate(self.controls.freq):
+            # freq index
+            id_f = ut_is.find_freq_index(freq_vec = self.controls.freq,
+                                         freq_target = freq)
+            # amplitude normalization
+            source_amps = np.abs(self.pk[:,id_f])/np.amax(np.abs(self.pk[:,id_f]))
+            # Find the noise index
+            # print(freq)
+            id_n = np.where(source_amps >= noise_threshold)
+            if id_n[0][-1] < self.quad_order:
+                self.noise_id[jf] = id_n[0][-1]
+                self.q_noise_threshold[jf] = self.q[id_n[0][-1]]
+            else:
+                self.noise_id[jf] = int(self.quad_order-1)
+                self.q_noise_threshold[jf] = self.q[-1]
+    
+    def plot_source_amps(self, ax = None, freq = 1000, normalize = True,
+                         ylims = (1e-16, 5), color = None, marker = None, label = None):
+        """ Plot source amplitudes as a function of index
+        """
+        # Default color and marker
+        if color is None:
+            color = 'tab:blue'
+        if marker is None:
+            marker = 'o'
+        
+        # Find freq index
+        id_f = ut_is.find_freq_index(freq_vec = self.controls.freq,
+                                     freq_target = freq)
+        # Default label
+        if label is None:
+            label = "{:.1f} Hz".format(self.controls.freq[id_f])
+        
+        # Create axis if axis is None
+        if ax is None:
+            fig, ax = plt.subplots(1, 1, figsize = (8, 3))
+        
+        # Normalize source amplitudes or not
+        if normalize:
+            # source_amps = np.abs(self.pk[:,id_f]/self.pk[0,id_f])
+            source_amps = np.abs(self.pk[:,id_f])/np.amax(np.abs(self.pk[:,id_f]))
+        else:
+            source_amps = np.abs(self.pk[:,id_f])
+        
+        # Plot scatter plot
+        ax.scatter(1+np.arange(self.pk.shape[0]), source_amps, 
+                    color = color, marker = marker, label = label)
+        # Axis ajustment
+        ax.set_yscale("log")
+        ax.set_xlim((0.5, self.pk.shape[0]+0.5))
+        ax.set_ylim(ylims)
+        ax.set_ylabel(r"$|\tilde{s}|$")
+        ax.set_xlabel(r"source index [-]")
+        ax.grid(axis='both',linestyle = '--')
+        
+        # Ticks
+        tick_locations = np.arange(5, self.pk.shape[0]+2, 5)
+        tick_labels = [str(int(loc)) for loc in tick_locations]
+        tick_labels.insert(0, 's')
+        tick_labels.insert(1, 'is')
+        tick_locations = np.insert(tick_locations, [0, 0], [1,2])
+        ax.set_xticks(tick_locations)
+        ax.set_xticklabels(tick_labels)  
+        ax.legend()
+        return ax
+    
+    def paint_source_regions(self, ax, freq = 1000):
+        """ Annotate source amps graph
+        """
+        # Find freq index
+        id_f = ut_is.find_freq_index(freq_vec = self.controls.freq,
+                                     freq_target = freq)
+        # Color source and image source region
+        ax.axvspan(0.5, 2.5, color='grey', alpha = 0.35)
+        # Color complex image sources above noise region
+        ax.axvspan(2.5, self.noise_id[id_f] + 1 + 0.5, color='wheat', alpha = 0.35)
+        # Plot threshold line
+        ax.plot(self.noise_threshold * np.ones(len(self.q)+100), 
+                '--', linewidth = 2.0, color = 'maroon')
+        ax.annotate(r'noisy components', xy=(10, 0.001), color = 'maroon', 
+                    xytext=(len(self.q)-6, 8*self.noise_threshold))
+        return ax
+    
+    def annotate_last_source_above_noise(self, ax, freq = 1000):
+        """ Annotate last source above noise threshhold
+        """
+        # Find freq index
+        id_f = ut_is.find_freq_index(freq_vec = self.controls.freq,
+                                     freq_target = freq)
+        # Annotate last source above noise
+        ax.annotate(r'$q = {}$  [m]'.format(np.round(self.q[int(self.noise_id[id_f])],2)), 
+                    xy=(self.noise_id[id_f], 25*self.noise_threshold), 
+                    color = 'black') # xytext=(self.noise_id[id_f], 8*self.noise_threshold)
+        return ax
+        
+    
     def save(self, filename = 'qdt', path = ''):
         """ To save the decomposition object as pickle
         """

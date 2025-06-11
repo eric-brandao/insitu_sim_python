@@ -1144,7 +1144,7 @@ class DecompositionEv2(object):
         """
         self.fpts = receivers
         self.pt_recon = np.zeros((receivers.coord.shape[0], len(self.controls.k0)), dtype=complex)
-        self.uz_recon = np.zeros((self.fpts.coord.shape[0], len(self.controls.k0)), dtype=complex)
+        self.uzt_recon = np.zeros((self.fpts.coord.shape[0], len(self.controls.k0)), dtype=complex)
         if compute_uxy:
             self.uxt_recon = np.zeros((self.fpts.coord.shape[0], len(self.controls.k0)), dtype=complex)
             self.uyt_recon = np.zeros((self.fpts.coord.shape[0], len(self.controls.k0)), dtype=complex)
@@ -2017,7 +2017,7 @@ class ZsArrayEvIg(DecompositionEv2):
     """
 
     def __init__(self, p_mtx = None, controls = None, material = None, receivers = None,
-                 regu_par = 'L-curve'):
+                 delta_x = 0.05, delta_y = 0.05, regu_par = 'L-curve'):
         """
 
         Parameters
@@ -2034,8 +2034,9 @@ class ZsArrayEvIg(DecompositionEv2):
 
         The objects are stored as attributes in the class (easier to retrieve).
         """
-        DecompositionEv2.__init__(self, p_mtx, controls, material, receivers, regu_par)
-        super().__init__(p_mtx, controls, material, receivers, regu_par)
+        DecompositionEv2.__init__(self, p_mtx, controls,  receivers,
+                                  delta_x, delta_y, regu_par, material)
+        super().__init__(p_mtx, controls, receivers, delta_x, delta_y, regu_par, material)
 
     def zs(self, Lx = 0.1, Ly = 0.1, n_x = 21, n_y = 21, theta = [0], avgZs = True):
         """ Reconstruct the surface impedance and estimate the absorption
@@ -2073,7 +2074,7 @@ class ZsArrayEvIg(DecompositionEv2):
             self.grid = np.array([0,0,0])
         # Reconstruct
         self.reconstruct_pu(receivers=grid)
-        Zs_pt = np.divide(self.p_recon, self.uz_recon)
+        Zs_pt = np.divide(self.pt_recon, self.uzt_recon)
         self.Zs = np.mean(Zs_pt, axis=0)#np.zeros(len(self.controls.k0), dtype=complex)
         self.alpha = np.zeros((len(theta), len(self.controls.k0)))
         for jtheta, dtheta in enumerate(theta):

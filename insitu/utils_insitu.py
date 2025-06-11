@@ -874,6 +874,18 @@ def diffusion_coef_norm(d_coef_sample, d_coef_ref):
     norm_gamma = (d_coef_sample - d_coef_ref)/(1-d_coef_ref)
     return norm_gamma
 
+def scattering_coef_angdep(frequency, p_sample, p_ref):
+    """ Computes angle dependent scattering coefficient
+    """
+    n_freq = len(frequency)
+    scatt_coeff = np.zeros(n_freq)
+    for jf in range(n_freq):
+        sum_mod2_sample = np.sum(np.abs(p_sample[:, jf])**2)
+        sum_mod2_ref = np.sum(np.abs(p_ref[:, jf])**2)
+        sum_corr = np.abs(np.sum(p_sample[:, jf]*np.conj(p_ref[:, jf])))**2
+        scatt_coeff[jf] = 1-sum_corr/(sum_mod2_sample * sum_mod2_ref)
+    return scatt_coeff
+
 def save(obj, filename = 'fname', path = ''):
     """ To save the decomposition object as pickle
 

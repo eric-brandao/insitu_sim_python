@@ -66,7 +66,7 @@ class RayInitialDirections():
         '''
         tess = SphereTessellator(
             nverts=Nrays,
-            # depth=depth
+            #depth=depth
         )
         self.vinit, self.indices = tess.sphere
         self.vinit /= np.linalg.norm(self.vinit, axis = 1)[:,None]
