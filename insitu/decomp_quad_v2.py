@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 #from sklearn.linear_model import Ridge
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 unused import
 from scipy.special import roots_legendre, roots_laguerre
+from scipy.sparse.linalg import lsmr
 #from lcurve_functions_EU import csvd, l_curve, tikhonov
 import lcurve_functions as lc
 import utils_insitu as ut_is
@@ -132,6 +133,9 @@ class Decomposition_QDT(object):
         elif regu_par == 'gcv' or regu_par == 'GCV':
             self.regu_par_fun = lc.gcv_lambda
             print("You choose GCV to find optimal regularization parameter")
+        elif regu_par == 'ncp' or regu_par == 'NCP':
+            self.regu_par_fun = lc.ncp
+            print("You choose NCP to find optimal regularization parameter")
         else:
             self.regu_par_fun = lc.l_curve
             print("Returning to default L-curve to find optimal regularization parameter")
@@ -278,7 +282,94 @@ class Decomposition_QDT(object):
             self.kernel_uz(k0, rq, hz_q) * compensation_mtx
         return h_mtx_uz
     
-    def pk_tikhonov(self, plot_l=False, method='direct'):
+    def pk_tikhonov(self, plot_l=False, method='direct', lambd_value_vec = None):
+        """ Wave number spectrum estimation using Tikhonov inversion.
+
+        Estimate the wave number spectrum using regularized Tikhonov inversion.
+        The choice of the regularization parameter is based on the L-curve criterion.
+        This sound field is modelled by spherical waves. We use a monopole for the incident
+        sound field and image source distribution approximated by the Gauss-Legendre quadrature
+        for the reflected sound field. This method is an adaptation of one of the methods to perform
+        sound field decomposition implemented by Eric Brandão. GitHub repository link:
+        https://github.com/eric-brandao/insitu_sim_python
+
+        The inversion steps are:
+        (i) - Get the distance from sources in relation to each receiver;
+        (ii) - form the sensing matrix;
+        (iii) - compute SVD of the sensing matrix;
+        (iv) - compute the regularization parameter (L-curve);
+        (vii) - matrix inversion.
+
+        Parameters
+        ----------
+        a : int
+            lower bond of the integral
+        b : float
+            upper bound of the integral
+        method : str
+            Determines which method to use to compute the pseudo-inverse.
+                'direct' (default) - analytical solution - fastest, but maybe
+                inaccurate on noiseless situations. The following uses optimization
+                algorithms
+                'Ridge' - uses sklearn Ridge regression - slower, but accurate.
+                'Tikhonov' - uses cvxpy - slower, but accurate
+        plot_l : bool
+            Whether to plot the L-curve or not. Default is false.
+        retraction : float
+            Retraction value of the source height. Default is 1 cm.
+        """
+
+        # Get receiver data (frequency independent)
+        r, zr, r1, r2, rq, _ = self.get_rec_parameters(self.receivers) # r, zr, and r1 are vectors (M), rq is a M x (ng) matrix
+        # Get weights matrix (frequency independent)
+        weights_mtx = np.repeat(np.array([self.weights]), self.receivers.coord.shape[0], axis = 0) #M x (ng)
+        compensation_mtx = np.repeat(np.array([self.compensation]), self.receivers.coord.shape[0], axis = 0) #M x (ng)
+        # Initialize pk
+        self.pk = np.zeros((self.num_cols, len(self.controls.k0)), dtype=complex)
+        if lambd_value_vec is None:
+            self.lambd_value_vec = np.zeros(len(self.controls.k0))
+        else:
+            self.lambd_value_vec = lambd_value_vec
+        # Initialize bar
+        bar = tqdm(total=len(self.controls.k0),
+                   desc='Calculating Tikhonov inversion (for the Quadrature Method)...', ascii=False)
+        # Freq loop
+        for jf, k0 in enumerate(self.controls.k0):
+            # Forming the sensing matrix
+            h_mtx = self.build_hmtx_p((self.receivers.coord.shape[0], self.num_cols), k0, r1, r2, rq,
+                                      weights_mtx, compensation_mtx)
+            # Measured data
+            pm = self.pres_s[:, jf].astype(complex)
+            # Compute SVD
+            u, sig, v = lc.csvd(h_mtx.astype(complex))
+            # Reg Par
+            if lambd_value_vec is None:
+                # Find the optimal regularization parameter.
+                lambd_value = self.regu_par_fun(u, sig, pm, plot_l)
+                # lambd_value = 1e-3
+                self.lambd_value_vec[jf] = lambd_value
+            else:
+                lambd_value = self.lambd_value_vec[jf]
+                
+            # Solve system          
+            if method == 'direct':
+                Hm = np.matrix(h_mtx)
+                x = Hm.getH() @ np.linalg.inv(Hm @ Hm.getH() + (lambd_value**2)*np.identity(len(pm))) @ pm
+            elif method == 'Ridge':
+                x = lc.ridge_solver(h_mtx,pm,lambd_value)
+            elif method == 'Tikhonov':
+                x = lc.tikhonov(u,sig,v,pm,lambd_value)
+            elif method == 'cvx':
+                x = lc.cvx_tikhonov(h_mtx, pm, lambd_value, l_norm = 2)
+            else:
+                x = lc.tikhonov(u,sig,v,pm,lambd_value)
+            self.pk[:,jf] = x
+                
+            bar.update(1)
+        bar.close()
+        self.check_decomp()
+        
+    def pk_lsmr(self):
         """ Wave number spectrum estimation using Tikhonov inversion.
 
         Estimate the wave number spectrum using regularized Tikhonov inversion.
@@ -333,24 +424,10 @@ class Decomposition_QDT(object):
                                       weights_mtx, compensation_mtx)
             # Measured data
             pm = self.pres_s[:, jf].astype(complex)
-            # Compute SVD
-            u, sig, v = lc.csvd(h_mtx.astype(complex))
-            # Find the optimal regularization parameter.
-            lambd_value = self.regu_par_fun(u, sig, pm, plot_l)
-            self.lambd_value_vec[jf] = lambd_value
-            # Solve system          
-            if method == 'direct':
-                Hm = np.matrix(h_mtx)
-                x = Hm.getH() @ np.linalg.inv(Hm @ Hm.getH() + (lambd_value**2)*np.identity(len(pm))) @ pm
-            elif method == 'Ridge':
-                x = lc.ridge_solver(h_mtx,pm,lambd_value)
-            elif method == 'Tikhonov':
-                x = lc.tikhonov(u,sig,v,pm,lambd_value)
-            elif method == 'cvx':
-                x = lc.cvx_tikhonov(h_mtx, pm, lambd_value, l_norm = 2)
-            else:
-                x = lc.tikhonov(u,sig,v,pm,lambd_value)
-            self.pk[:,jf] = x
+            # Solve
+            x = lsmr(h_mtx, pm)[:1]
+            
+            self.pk[:,jf] = x[0]
                 
             bar.update(1)
         bar.close()

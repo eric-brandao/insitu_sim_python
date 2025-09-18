@@ -15,7 +15,7 @@ from receivers import Receiver
 from decomposition_ev_ig import DecompositionEv2, ZsArrayEvIg, filter_evan
 import utils_insitu as ut_is
 #%% Load file and build controls, receivers and data needed for decomposition
-data = np.load('todecompdata_1sph.npz')
+data = np.load('D:/Work/dev/insitu_sim_python/example/todecompdata_1sph.npz')
 
 air = AirProperties(c0 = 343.0, rho0 = 1.21)
 controls = AlgControls(c0 = air.c0, freq_vec = data['freq']) 
