@@ -37,8 +37,8 @@ class NLRInfSph(object):
             self.rhop = np.divide(self.Zp * self.kp, 2*np.pi*self.controls.freq)
             self.m = np.divide(self.air.rho0, self.rhop)
             self.n = np.divide(self.kp, self.controls.k0)
-            self.thickness = material.thickness
-            self.beta = (self.air.rho0 * self.air.c0) / material.Zs  # normalized surface admitance
+            # self.thickness = material.thickness
+            # self.beta = (self.air.rho0 * self.air.c0) / material.Zs  # normalized surface admitance
         except:
             self.Zp = []
             self.kp = []
@@ -47,6 +47,12 @@ class NLRInfSph(object):
             self.rhop = []
             self.m = []
             self.n = []
+            self.thickness = []
+            self.beta = []  # normalized surface admitance
+        try:
+            self.thickness = material.thickness
+            self.beta = (self.air.rho0 * self.air.c0) / material.Zs  # normalized surface admitance
+        except:
             self.thickness = []
             self.beta = []  # normalized surface admitance
         ## sources / receivers
@@ -350,3 +356,151 @@ class NLRInfSph(object):
             noise_u = np.random.normal(0, np.sqrt(noisePower_lin_u), size = signal_u.shape) +\
                 1j*np.random.normal(0, np.sqrt(noisePower_lin_u), size = signal_u.shape)
             self.uz_s[0] = signal_u + noise_u
+
+# Class for NLR estimation from a dipole
+class NLRInfSphDipole(NLRInfSph):
+    """ sound field caused by a dipole above a NLR infinite sample
+    
+    A class to calculate the sound pressure and particle velocity
+    using the non-locally reactive formulation (exact for dipole above a 
+    non-locally reactive and infinite samples)
+    The inputs are the objects: air, controls, material, sources, receivers
+    """
+    def __init__(self, air = [], controls = [], material = [], sources = [], 
+                 receivers = [], sing_step = 0.01):
+        """
+
+        Parameters
+        ----------
+        p_mtx : (N_rec x N_freq) numpy array
+            A matrix containing the complex amplitudes of all the receivers
+            Each column is a set of sound pressure at all receivers for a frequency.
+        controls : object (AlgControls)
+            Controls of the decomposition (frequency spam)
+        material : object (PorousAbsorber)
+            Contains the material properties (surface impedance).
+        receivers : object (Receiver)
+            The receivers in the field
+
+        The objects are stored as attributes in the class (easier to retrieve).
+        """
+        NLRInfSph.__init__(self, air, controls, material, 
+                                  sources, receivers, sing_step)
+        super().__init__(air, controls, material, sources, 
+                         receivers, sing_step)
+        
+    def p_nlr_semiinf(self, upper_int_limit = 10):
+        """ Sound pressure spectrum above semi-infinite medium (From Tamura I)
+        
+        This method calculates the sound pressure spectrum for all sources and receivers
+        Inputs:
+            upper_int_limit (default 20) - upper integral limit for truncation
+        Outputs:
+            pres_s - this is an array of objects. Inside each object there is a
+            (N_rec x N_freq) matrix. Each line of the matrix is a spectrum of a sound
+            pressure for a receiver. Each column is a set of sound pressures measured
+            by the receivers for a given frequency
+        """
+        # self.pres_s = []
+        for js, s_coord in enumerate(self.sources.coord):
+            hs = s_coord[2] # source height
+            pres_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = complex)
+            bar = tqdm(total = len(self.controls.k0)*self.receivers.coord.shape[0], desc = 'Processing sound pressure (NLR)')
+            for jrec, r_coord in enumerate(self.receivers.coord):
+                r = ((s_coord[0] - r_coord[0])**2 + (s_coord[1] - r_coord[1])**2)**0.5 # horizontal distance source-receiver
+                zr = r_coord[2]  # receiver height
+                r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5
+                r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
+                # setup progressbar
+                #print('Calculate sound pressure for source {} and receiver {}'.format(js+1, jrec+1))
+                
+                # pres = []
+                for jf, k0 in enumerate(self.controls.k0):
+                    # integrand
+                    # fs = lambda s: ((2*np.exp(-k0*(np.sqrt(s**2-1+0j))*(hs+zr)))*\
+                    #     k0*s*sp.jv(0,k0*s*r))/\
+                    #     ((np.sqrt(s**2-1+0j))+self.m[jf]*(np.sqrt(s**2-self.n[jf]**2+0j))*\
+                    #     np.tanh(k0*self.thickness*(np.sqrt(s**2-self.n[jf]**2+0j))))
+                    fs = lambda s: ((np.exp(1j*k0*(np.sqrt(1-s**2+0j))*(hs+zr)))/(4*np.pi)) *\
+                        ((k0**2)*s*sp.jv(0,k0*s*r))*\
+                        ((np.sqrt(1-s**2+0j)/self.m[jf] - np.sqrt(self.n[jf]**2-s**2+0j))/\
+                        (np.sqrt(1-s**2+0j)/self.m[jf] + np.sqrt(self.n[jf]**2-s**2+0j)))
+                    fs_r = lambda s: np.real(fs(s))
+                    fs_i = lambda s: np.imag(fs(s))
+                    # Integrate
+                    if not self.singularities_r: # in case singularities were not computed
+                        Iq_real = integrate.quad(fs_r, 0.0, upper_int_limit)
+                        Iq_imag = integrate.quad(fs_i, 0.0, upper_int_limit)
+                    else:
+                        Iq_real = integrate.quad(fs_r, 0.0, upper_int_limit,
+                            limit = int(len(self.limits)+1), points = self.singularities_r[jf])
+                        Iq_imag = integrate.quad(fs_i, 0.0, upper_int_limit,
+                            limit = int(len(self.limits)+1), points = self.singularities_i[jf])
+                    # Iq_real = qp(fs_r, [0.0, upper_int_limit])
+                    # Iq_imag = qp(fs_i, [0.0, upper_int_limit])
+                    I_nlr = Iq_real[0] + 1j * Iq_imag[0]
+                    pres_rec[jrec, jf] = (np.exp(1j * k0 * r1) /\
+                                          (4*np.pi*r1))*((hs-zr)/r1)*((1-1j*k0*r1)/r1) +\
+                        I_nlr
+                    bar.update(1)
+            bar.close()
+            self.pres_s.append(pres_rec)
+            
+    def p_nlr_layer(self, upper_int_limit = 10):
+        """ Sound pressure spectrum above a porous layer (From Tamura I)
+        
+        This method calculates the sound pressure spectrum for all sources and receivers
+        Inputs:
+            upper_int_limit (default 20) - upper integral limit for truncation
+        Outputs:
+            pres_s - this is an array of objects. Inside each object there is a
+            (N_rec x N_freq) matrix. Each line of the matrix is a spectrum of a sound
+            pressure for a receiver. Each column is a set of sound pressures measured
+            by the receivers for a given frequency
+        """
+        # self.pres_s = []
+        for js, s_coord in enumerate(self.sources.coord):
+            hs = s_coord[2] # source height
+            pres_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = complex)
+            bar = tqdm(total = len(self.controls.k0)*self.receivers.coord.shape[0], desc = 'Processing sound pressure (NLR)')
+            for jrec, r_coord in enumerate(self.receivers.coord):
+                r = ((s_coord[0] - r_coord[0])**2 + (s_coord[1] - r_coord[1])**2)**0.5 # horizontal distance source-receiver
+                zr = r_coord[2]  # receiver height
+                r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5
+                r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
+                # setup progressbar
+                #print('Calculate sound pressure for source {} and receiver {}'.format(js+1, jrec+1))
+                
+                # pres = []
+                for jf, k0 in enumerate(self.controls.k0):
+                    # integrand
+                    # fs = lambda s: ((2*np.exp(-k0*(np.sqrt(s**2-1+0j))*(hs+zr)))*\
+                    #     k0*s*sp.jv(0,k0*s*r))/\
+                    #     ((np.sqrt(s**2-1+0j))+self.m[jf]*(np.sqrt(s**2-self.n[jf]**2+0j))*\
+                    #     np.tanh(k0*self.thickness*(np.sqrt(s**2-self.n[jf]**2+0j))))
+                    fs = lambda s: ((np.exp(1j*k0*(np.sqrt(1-s**2+0j))*(hs+zr)))/(4*np.pi)) *\
+                        ((k0**2)*s*sp.jv(0,k0*s*r))*\
+                        ((np.sqrt(1-s**2+0j)/self.m[jf] -\
+                          np.sqrt(self.n[jf]**2-s**2+0j) * np.tan(k0*self.thickness*(np.sqrt(self.n[jf]**2-s**2+0j))))/\
+                        (np.sqrt(1-s**2+0j)/self.m[jf] +\
+                         np.sqrt(self.n[jf]**2-s**2+0j) * np.tan(k0*self.thickness*(np.sqrt(self.n[jf]**2-s**2+0j)))))
+                    fs_r = lambda s: np.real(fs(s))
+                    fs_i = lambda s: np.imag(fs(s))
+                    # Integrate
+                    if not self.singularities_r: # in case singularities were not computed
+                        Iq_real = integrate.quad(fs_r, 0.0, upper_int_limit)
+                        Iq_imag = integrate.quad(fs_i, 0.0, upper_int_limit)
+                    else:
+                        Iq_real = integrate.quad(fs_r, 0.0, upper_int_limit,
+                            limit = int(len(self.limits)+1), points = self.singularities_r[jf])
+                        Iq_imag = integrate.quad(fs_i, 0.0, upper_int_limit,
+                            limit = int(len(self.limits)+1), points = self.singularities_i[jf])
+                    # Iq_real = qp(fs_r, [0.0, upper_int_limit])
+                    # Iq_imag = qp(fs_i, [0.0, upper_int_limit])
+                    I_nlr = Iq_real[0] + 1j * Iq_imag[0]
+                    pres_rec[jrec, jf] = (np.exp(1j * k0 * r1) /\
+                                          (4*np.pi*r1))*((hs-zr)/r1)*((1-1j*k0*r1)/r1) +\
+                        I_nlr
+                    bar.update(1)
+            bar.close()
+            self.pres_s.append(pres_rec)

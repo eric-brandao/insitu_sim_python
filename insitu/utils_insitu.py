@@ -1617,6 +1617,118 @@ def compare_directivities(pressure_dict , plt3Ddir, nrows = 1, ncols = 1,
                         wspace = wspace, hspace = hspace)
     return fig, axs
     
+def get_random_direction(num_dim = 2):
+    """ Compute a randum unitary direction vector
+    """
+    direction = np.random.uniform(low = -1, high = 1, size = num_dim)
+    direction /= np.linalg.norm(direction)
+    return direction
+
+def move_point(point, direction, distance):
+    """ move a point in a given direction
+    """
+    new_point = point + distance * direction
+    return new_point
+
+def get_max_dist(point, direction, lower_bounds, upper_bounds):
+    """ Determines the max distance allowed
+    """
+    pass
+
+def check_crop_bounding_box(point, lower_bounds, upper_bounds):
+    """ Check if given point is inside the bounding box or not. If not crop it to bb.
+    """
+    # difference
+    lb_check = point - lower_bounds
+    ub_check = upper_bounds - point
+    
+    # if lb_check has negative values, crop to bounding box
+    if (lb_check < 0).any():
+        id_true = np.where(lb_check < 0)[0]
+        # Petubation
+        pertubation = np.random.uniform(low = 0, 
+                                        high = upper_bounds-lower_bounds, 
+                                        size = len(upper_bounds))
+        # Perturbed crop
+        point[id_true] = lower_bounds[id_true] + pertubation[id_true]
+    # if ub_check has negative values, crop to bounding box
+    if (ub_check < 0).any():
+        id_true = np.where(ub_check < 0)[0]
+        # Petubation
+        pertubation = np.random.uniform(low = 0, 
+                                        high = upper_bounds-lower_bounds, 
+                                        size = len(upper_bounds))
+        # Perturbed crop
+        point[id_true] = upper_bounds[id_true] - pertubation[id_true]
+    return point
+      
+def random_move(origin, lower_bounds, upper_bounds):
+    """ Random move (1-time only)
+    """
+    # number of dimensions
+    num_dim = len(origin)
+    # Get random direction
+    direction = get_random_direction(num_dim = num_dim)
+    # Get random distance
+    distance = np.random.uniform(low = 0, high = 1, size = 1)
+    # Move point
+    new_coord = move_point(point = origin, direction = direction, distance = distance)
+    # Check if it is in Bounding box, then crop it to it if not
+    new_coord = check_crop_bounding_box(point = new_coord,
+                                        lower_bounds = lower_bounds, 
+                                        upper_bounds = upper_bounds)
+    return new_coord, direction
+
+def radom_walk(origin, num_walks, lower_bounds, upper_bounds, seed = 0):
+    """ Makes random walk
+    """
+    np.random.seed(seed)
+    num_dim = len(origin)
+    new_coords = np.zeros((num_walks+1, num_dim))
+    new_coords[0,:] = origin
+    directions = np.zeros((num_walks, num_dim))
+    
+    for i in range(num_walks):
+        new_coords[i+1,:], directions[i,:] = random_move(origin = new_coords[i,:], 
+                                                         lower_bounds = lower_bounds, 
+                                                         upper_bounds = upper_bounds)
+        # # Get random direction
+        # directions[i,:] = get_random_direction(num_dim = num_dim)
+        # # Get random distance
+        # distance = np.random.uniform(low = 0, high = 1, size = 1)
+        # # Move point
+        # new_coords[i+1,:] = move_point(point = new_coords[i,:],
+        #                                direction = directions[i,:], distance = distance)
+        # # Check if it is in Bounding box, then crop it to it if not
+        # new_coords[i+1,:] = check_crop_bounding_box(point = new_coords[i+1,:],
+        #                                             lower_bounds = lower_bounds, 
+        #                                             upper_bounds = upper_bounds)
+    return new_coords, directions
+
+
+    
+def plot_pt_dir2D(point, direction, plot_arrows = True):
+    """ plots the point and direction
+    """
+    # plt.figure(figsize = (6,3))
+    plt.scatter(point[0], point[1], c = 'k', s = 10)
+    if plot_arrows:
+        plt.quiver(point[0], point[1], direction[0], direction[1])
+    
+def plot_random_walk_2D(points, directions, plot_arrows = True):
+    """ plots random walk
+    """
+    num_pts = points.shape[0]
+    plt.figure(figsize = (6,3))
+    for i in range(num_pts-1):
+        plot_pt_dir2D(points[i,:], direction = directions[i,:], plot_arrows = plot_arrows)
+    plt.scatter(points[-1,0], points[-1,1], c = 'k', s = 10)
+        
+    plt.grid(linestyle = '--')
+    minimum_range = 1.2*np.amin([np.amin(points[:,0]), np.amin(points[:,1])])
+    maximum_range = 1.2*np.amax([np.amax(points[:,0]), np.amax(points[:,1])])    
+    plt.xlim((minimum_range, maximum_range))
+    plt.ylim((minimum_range, maximum_range))
     
     # fig.subplots_adjust(left=0.1, right=0.9, hspace = 0.01, wspace = 0.01)        
             

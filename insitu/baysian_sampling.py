@@ -15,7 +15,7 @@ class BayesianSampler(object):
     """
     
     def __init__(self, measured_coords = None, measured_data = None, 
-                 num_model_par = 1, seed = 42):
+                 num_model_par = 1, parameters_names = None, seed = 42):
         """ Bayesian sampling schemes
         
         Parameters
@@ -31,13 +31,17 @@ class BayesianSampler(object):
             raise ValueError("It is necessary to input your measured coordinates and data. Otherwise, I can not do anything!")
         elif measured_coords.shape[0] != len(measured_data):
             raise ValueError("Measured coordinates length and data length must be the same!")
+        # Make sure parameters name has the same size of num_par
+        elif len(parameters_names) != num_model_par:
+            raise ValueError("The parameters_names list must be a list with same size of num_par")
         else:
             self.measured_coords = measured_coords
             self.measured_data = measured_data
             self.num_of_meas = len(measured_data)
             self.num_model_par = num_model_par
+            self.parameters_names = parameters_names
             self.seed = seed
-            self.rng = np.random.default_rng(seed)
+            # self.rng = np.random.default_rng(seed)
         # Make sure there is model function and get number of parameters to estimate
         # if not callable(model_fun):    
         #     raise ValueError("model_fun must be a callable function!")
@@ -84,6 +88,19 @@ class BayesianSampler(object):
             raise ValueError("Lower and Upper bonds must be a vector with the same size of num_par")
         self.lower_bounds = lower_bounds
         self.upper_bounds = upper_bounds
+        
+    def set_convergence_tolerance(self, convergence_tol = [0.01]):
+        """ Set convergence tolerance for nested sampling
+        
+        Parameters
+        ----------
+        convergence_tol : numpy1dArray
+            Array containing the tolerance values for each of the model's parameters
+        """
+        # Make sure lower / upper bonds has the same size of num_par
+        if len(convergence_tol) != self.num_model_par:
+            raise ValueError("convergence_tol must be a vector with the same size of num_par")
+        self.convergence_tol = convergence_tol
     
     def sample_uniform_prior(self, num_samples = 1):
         """ Sample uniform prior - all that is available for now
@@ -149,6 +166,7 @@ class BayesianSampler(object):
         # prediction
         y_pred = self.model_fun(x_meas = self.measured_coords, 
                                 model_par = model_par)
+        # plt.plot(self.measured_coords, 10*np.log10(y_pred/np.amax(y_pred)), 'o')
         # error norm
         error_norm = np.linalg.norm(self.measured_data - y_pred)
         logp = -(self.num_of_meas/2)*np.log((error_norm**2)/2)
@@ -176,10 +194,370 @@ class BayesianSampler(object):
         # Compute posterior weights ~ L * prior (prior is uniform, so just L)
         self.weights = np.exp(logp - np.max(logp))
         self.weights /= np.sum(self.weights)
-        return self.prior_samples, self.weights, logp
+        return self.prior_samples, self.weights, logp      
+    
+        
+    def update_values(self, random_par, adjust_suggested, current_worst_par_val,
+                      type_of_update = "adding"):
+        """ Update a given parameter value and logp from a set of parameter vector 
+        """
+        
+        # Update (Adding)
+        if type_of_update == "adding":
+            updated_sample_par = current_worst_par_val[random_par] + adjust_suggested
+        else:
+            updated_sample_par = current_worst_par_val[random_par] - adjust_suggested
+        updated_model_par = current_worst_par_val
+        updated_model_par[random_par] = updated_sample_par
+        updated_logp = self.log_t(updated_model_par)
+        return updated_logp, updated_model_par       
     
     
-    def nested_sampling(self, n_live=200, max_iter=2000):
+    def get_worst_logp(self, it_num = 0):
+        """ Find the worst logp value in live pts
+        
+        Finds the worst logp value in the current live pts population, then fill this
+        logp value and associated parameters to the correct place in the dead points.
+        
+        This is Step 1 (Beaton and Xiang - Sec. IV.B.1)
+        
+        Parameters
+        ----------
+        it_num : int
+            iteration number
+        """
+        # Find index of worst log-likelihood and update dead_pts and logp_dead
+        self.worst_logp_index = np.argmin(self.logp_live)
+        self.logp_dead[it_num] = self.logp_live[self.worst_logp_index]
+        self.dead_pts[it_num, :] = self.live_pts[self.worst_logp_index, :]
+
+    def compute_spread(self, pop_pts):
+        """ Compute the spread (max-min) of a population of sampled values
+        
+        Parameters
+        ----------
+        pop_pts : numpyndArray
+            A population of points in parameter space
+        """
+        spread = np.amax(pop_pts, axis = 0) - np.amin(pop_pts, axis = 0)
+        return spread    
+    
+    def suggest_random_adjustment(self, spread):
+        """ Suggest a random adjustment for a single random parameter
+        
+        These are Steps 2-3 (Beaton and Xiang - Sec. IV.B.1)
+        
+        1. Select a random parameter in the reference point.
+        2. Use a uniform distribution to generate a random adjustment
+        value for the parameter. The uniform distribution
+        will have limits from zero to a maximum value dependent
+        on the type of parameter selected. The MAX-MIN (spread/2) of the
+        current live_pts population is used as suggestion for this update.
+        
+        Parameters
+        ----------
+        spread : numpy1dArray
+            The Array containing the spread of the current population
+        """
+        # Select a random parameter index
+        random_par_id = np.random.randint(low = 0, high = self.num_model_par, size = 1)[0]
+        # Generate a random adjustment value for the parameter (uniform dist)
+        # random_par_id = 0
+        suggested_adjustment = np.random.uniform(low = 0,
+                                                 high = spread[random_par_id]/2, 
+                                                 size = 1)[0]
+        # print("ID {} / Spread {:.3f} / Val. {:.3f}".format(random_par_id, spread[random_par_id], suggested_adjustment))
+        # print(adjust_suggested)
+        return random_par_id, suggested_adjustment
+    
+    def update_parameter(self, parameter_vec, 
+                         random_par_id = 0, suggested_adjustment = 0.0):
+        """ Updates the choosen parameter.
+        
+        We need to decide if we add or subtract the random suggestion. To do so, 
+        we will calculate which is the closest border of the parameter we want to alter.
+        If the parameter is closer to the lower bound we add. If the parameter is closer
+        to the upper bound we subtract.
+        
+        This is Step 4 (Beaton and Xiang - Sec. IV.B.1)
+        
+        Parameters
+        ----------
+        parameter_vec : numpy1dArray
+            Parameter vector to adjust
+        random_par_id : int
+            Parameter to update
+        suggested_adjustment : float
+            Value to add or subtract from current parameter.
+        """
+        suggested_parameter_vec = np.copy(parameter_vec)
+        lower_bound_distance = parameter_vec[random_par_id] - self.lower_bounds[random_par_id]
+        upper_bound_distance = self.upper_bounds[random_par_id] - parameter_vec[random_par_id]
+        if lower_bound_distance <= upper_bound_distance:
+            # print("Summing")
+            suggested_parameter_vec[random_par_id] += np.abs(suggested_adjustment)
+        else:
+            # print("Subtracting")
+            suggested_parameter_vec[random_par_id] -= np.abs(suggested_adjustment)
+        return suggested_parameter_vec
+    
+    def constrained_resample2(self, current_worst_samplevec, current_spread,
+                              current_worst_logp = -1e6, max_attempts = 5):
+        """ Sample movement in the parameter space.
+        
+        Parameters
+        ----------
+        """
+        # initialize while loop variables
+        attempt_num = 0 # number of attempts made
+        update_unsuccessful = True # success of update is set to False first
+              
+        # worst_logp = current_worst_logp-1
+        while attempt_num <= max_attempts and update_unsuccessful:
+            # Get a adjustment suggestion
+            random_par_id, suggested_adjustment = self.suggest_random_adjustment(current_spread)
+            self.random_par_id.append(random_par_id)
+            # print("Att num {} / random id {} / random val {:.4f}".format(attempt_num,
+            #                                                              random_par_id, suggested_adjustment))
+            # Get a parameter suggestion
+            suggested_parameter_vec =\
+                self.update_parameter(parameter_vec = current_worst_samplevec,
+                                      random_par_id = random_par_id, 
+                                      suggested_adjustment = suggested_adjustment)
+            # Evaluate logp of suggested parameter vector
+            logp_new = self.log_t(model_par = suggested_parameter_vec)
+            # print(attempt_num)
+            if logp_new > current_worst_logp:
+                # current_worst_logp =  np.copy(logp_new)
+                # current_worst_samplevec = np.copy(suggested_parameter_vec)
+                update_unsuccessful = False
+            else:
+                logp_new = np.copy(current_worst_logp)
+                suggested_parameter_vec = np.copy(current_worst_samplevec)
+            
+            # if random_par_id == 1:
+            #     print("Att num {} / random id {} / UnSuccess {:.4f}".format(attempt_num,
+            #                                                             random_par_id, 
+            #                                                             update_unsuccessful))
+                
+            # print("Att num {} / unSucess is {}".format(attempt_num, update_unsuccessful))
+            # print("Att num {} / current worst logp {} / new logp {}".format(attempt_num,
+            #                                                        current_worst_logp, logp_new))
+            
+            attempt_num += 1
+            return logp_new, suggested_parameter_vec, update_unsuccessful
+    
+    def evaluate_move(self, logp_new, parameter_vec_new):
+        """ Evaluate if the proposed move satisfies increase in likelihood
+        
+        Evaluate if the proposed move generated a higher likelihood. If so,
+        then substitute the new logp to the worst one and the new parameter vector
+        to the worst one.
+        Parameters
+        ----------
+        
+        """
+        if logp_new > self.logp_live[self.worst_logp_index]:
+            self.logp_live[self.worst_logp_index] = logp_new
+            self.live_pts[self.worst_logp_index, :] = np.copy(parameter_vec_new)
+            # update_unsuccessful = False
+            self.update_successful = True
+        
+    
+    def update_from_lowest_likelihood(self, current_spread, max_up_attempts):
+        """ Update the parameter vector of lowest likelihood
+        
+        Updates the parameter of lowest likelihood and computes the new log likelihood.
+        
+        Parameters
+        ----------
+        current_spread : numpy1dArray
+            The Array containing the spread of the current population
+        
+        Returns
+        ----------
+        logp_new : float
+            New log-likelihood value
+        parameter_vec_new : numpy 1dArray
+            New samples value
+        """
+        attempt_num = 0 # number of attempts made
+        while attempt_num <= max_up_attempts and not self.update_successful:
+            # Get a random adjustment suggestion        
+            random_par_id, suggested_adjustment = self.suggest_random_adjustment(current_spread)
+            self.random_par_id.append(random_par_id)
+            # Get a parameter vec suggestion
+            parameter_vec_new =\
+                self.update_parameter(parameter_vec = self.live_pts[self.worst_logp_index],
+                                      random_par_id = random_par_id, 
+                                      suggested_adjustment = suggested_adjustment)
+            # Evaluate logp of suggested parameter vector
+            logp_new = self.log_t(model_par = parameter_vec_new)
+            # Evaluate if the move increased likelihood
+            self.evaluate_move(logp_new, parameter_vec_new)
+            attempt_num += 1
+        # return logp_new, parameter_vec_new
+        
+    def update_rw(self, pt_of_origin, lower_bounds, upper_bounds,
+                  max_up_attempts):
+        """ Update the parameter vector of lowest likelihood (Random walk)
+        
+        Updates the parameter of lowest likelihood and computes the new log likelihood.
+        
+        Parameters
+        ----------
+        current_spread : numpy1dArray
+            The Array containing the spread of the current population
+        
+        Returns
+        ----------
+        logp_new : float
+            New log-likelihood value
+        parameter_vec_new : numpy 1dArray
+            New samples value
+        """
+        attempt_num = 0 # number of attempts made
+        # Origin of random walk - live_pts with lowest likelihood
+        parameter_vec_new = np.copy(pt_of_origin)
+        while attempt_num <= max_up_attempts and not self.update_successful:
+            # Get a random adjustment by random waling the original point
+            parameter_vec_new, _ =\
+                ut_is.random_move(origin = parameter_vec_new, 
+                                  lower_bounds = lower_bounds, 
+                                  upper_bounds = upper_bounds)
+            # Evaluate logp of suggested parameter vector
+            logp_new = self.log_t(model_par = parameter_vec_new)
+            # Evaluate if the move increased likelihood
+            self.evaluate_move(logp_new, parameter_vec_new)
+            attempt_num += 1
+        # return logp_new, parameter_vec_new
+    
+    def update_from_random_par_vec(self, current_spread):
+        """ Update from a random parameter vector index
+        """
+        
+        all_indexes = np.arange(0, self.live_pts.shape[0])
+        remaining_indexes = np.delete(all_indexes, self.worst_logp_index)
+        np.random.shuffle(remaining_indexes)
+        # print(remaining_indexes)
+        # update_successful = False
+        i = 0
+        while i < len(remaining_indexes) and not self.update_successful:
+            # Get a adjustment suggestion
+            random_par_id, suggested_adjustment = self.suggest_random_adjustment(current_spread)
+            self.random_par_id.append(random_par_id)
+            # Get a parameter suggestion
+            # print(remaining_indexes[i])
+            parameter_vec_new =\
+                self.update_parameter(parameter_vec = self.live_pts[remaining_indexes[i]],
+                                      random_par_id = random_par_id, 
+                                      suggested_adjustment = suggested_adjustment)
+            # Evaluate logp of suggested parameter vector
+            logp_new = self.log_t(model_par = parameter_vec_new)
+            self.evaluate_move(logp_new, parameter_vec_new)
+            # print(i)
+            i += 1
+    
+    def constrained_resample(self, i, max_up_attempts = 5):
+        """ Sample movement in the parameter space.
+        
+        Parameters
+        ----------
+        """
+        # Compute current spread in the given live_pts population
+        current_spread = self.compute_spread(self.live_pts)
+        # print(current_spread)
+        self.spread[i,:] = current_spread
+        # initialize while loop variables
+        # attempt_num = 0 # number of attempts made
+        # update_unsuccessful = True # success of update is set to False first
+        self.update_successful = False # success of update is set to False first
+        
+        # worst_logp = current_worst_logp-1
+        # while attempt_num <= max_up_attempts and not self.update_successful:
+        # while self.update_successful:
+        self.update_from_lowest_likelihood(current_spread, max_up_attempts)
+        if not self.update_successful:
+            self.update_from_random_par_vec(current_spread)
+            
+    def constrained_resample_rw(self, i, max_up_attempts = 5):
+        """ Sample movement in the parameter space with random walk.
+        
+        Parameters
+        ----------
+        """
+        # Compute current spread in the given live_pts population
+        current_spread = self.compute_spread(self.live_pts)
+        # print(current_spread)
+        self.spread[i,:] = current_spread
+        lower_bounds = 1.00*np.amin(self.live_pts, axis = 0)
+        upper_bounds = 1.00*np.amax(self.live_pts, axis = 0)
+        # initialize while loop variables
+        self.update_successful = False # success of update is set to False first
+        
+        # worst_logp = current_worst_logp-1
+        # while attempt_num <= max_up_attempts and not self.update_successful:
+        # while self.update_successful:
+        self.update_rw(pt_of_origin = self.live_pts[self.worst_logp_index], 
+                       lower_bounds = lower_bounds, upper_bounds = upper_bounds,
+                       max_up_attempts = max_up_attempts)
+        if not self.update_successful:
+            # Sample a random point in the current pop of live pts
+            all_indexes = np.arange(0, self.live_pts.shape[0])
+            remaining_indexes = np.delete(all_indexes, self.worst_logp_index)
+            
+            pt_of_origin_id = np.random.randint(low = 0, high = len(remaining_indexes),
+                                                size = 1)[0]
+            pt_of_origin = self.live_pts[remaining_indexes[pt_of_origin_id],:]
+            # print(pt_of_origin)
+            self.update_rw(pt_of_origin = pt_of_origin, 
+                           lower_bounds = lower_bounds, upper_bounds = upper_bounds,
+                           max_up_attempts = max_up_attempts)
+    
+    def nested_sampling(self, n_live = 10, max_iter = 10, seed = 42,
+                        max_up_attempts = 5):
+        # Sample the prior and compute the logp of initial population
+        np.random.seed(seed)
+        self.live_pts, _, self.logp_live = self.brute_force_sampling(num_samples = n_live)
+        self.init_pop = np.copy(self.live_pts)
+        # Initialize variables
+        self.dead_pts = np.zeros((max_iter, self.num_model_par))
+        self.logp_dead = np.zeros(max_iter)
+        self.logp_dead_weights = np.zeros(max_iter + n_live) # normalized
+        # logp_current_it = np.amin(self.logp_live)
+        self.delta_mu = np.zeros(max_iter)
+        self.evidence = 0
+        # init things that might not be used later (for checking)
+        self.spread = np.zeros((max_iter, self.num_model_par))
+        self.random_par_id = []
+        self.worst_logp_index_list = []
+        bar = tqdm(total = max_iter, desc='Nested sampling loop...', ascii=False)
+        # print("All Logp {}".format(self.logp_live))
+        for i in range(max_iter):
+            self.delta_mu[i] = np.exp(-i/self.live_pts.shape[0])
+            # Compute current spread in the given live_pts population
+            # current_spread = self.compute_spread(self.live_pts)
+            # self.spread[i,:] = current_spread
+            # Find index of worst log-likelihood and update dead_pts and logp_dead
+            self.get_worst_logp(it_num = i)
+            self.worst_logp_index_list.append(self.worst_logp_index)
+            self.evidence += (np.exp(self.logp_dead[i])) * self.delta_mu[i]
+            # print("\n ### Iteration {} #### / Current spread: {}".format(i, current_spread))
+            # # Make the move (1 - try updating the worst sample)                        
+            # self.constrained_resample(i, max_up_attempts = max_up_attempts)
+            self.constrained_resample_rw(i, max_up_attempts = max_up_attempts)            
+            bar.update(1)
+        
+        log_weights_concat = np.concatenate((self.logp_dead, self.logp_live))
+        self.weights = np.exp(log_weights_concat - np.max(log_weights_concat))
+        self.weights /= np.sum(self.weights)
+        self.prior_samples = np.concatenate((self.dead_pts, self.live_pts))
+        bar.close()
+        
+    # Make the move
+    # print("Logp {:.2f} / Parameters: {}".format(self.logp_dead[i], 
+    
+    def nested_sampling2(self, n_live=200, max_iter=2000):
         
         # thetas = self.sample_uniform_prior(num_samples = n_live) #sample_prior(n_live)
         thetas, _, logLs = self.brute_force_sampling(num_samples = n_live) #logLs = np.array([loglike(th) for th in thetas])
@@ -198,11 +576,11 @@ class BayesianSampler(object):
             dead_logLs.append(logL_star) # Append worst likelihood value
             dead_logw.append(logw) # Append weight value
             # Make the move of worst point
-            # seed = thetas[self.rng.integers(n_live)]
-            # new_theta, new_logL = self.constrained_move2(seed, logL_star)
-            new_theta, new_logL = self.move_towards(theta_star, logL_star, 
-                                                    np.delete(thetas, worst, axis=0),
-                                                    dist_factor = 0.05)
+            seed = thetas[self.rng.integers(n_live)]
+            new_theta, new_logL = self.constrained_move(seed, logL_star)
+            # new_theta, new_logL = self.move_towards(theta_star, logL_star, 
+            #                                         np.delete(thetas, worst, axis=0),
+            #                                         dist_factor = 0.05)
             thetas[worst], logLs[worst] = new_theta, new_logL
             logX_prev = logX
             # Evidence update (Check it)
@@ -225,7 +603,7 @@ class BayesianSampler(object):
         self.weights = np.exp(log_weights_concat - np.max(log_weights_concat))
         self.weights /= np.sum(self.weights)
         self.prior_samples = np.concatenate((np.array(dead_points), thetas))
-        return self.prior_samples, self.weights, Z
+        return self.prior_samples, self.weights, log_weights_concat
     
     def get_destination(self, theta_start, theta_cluster, dist_factor = 0.2):
         # Mean of cluster
@@ -366,38 +744,136 @@ class BayesianSampler(object):
         plt.ylabel(r"$p(\Theta)$")
         plt.tight_layout();
         
-    def plot_smooth_marginal_posterior(self, ):
+    def plot_smooth_marginal_posterior(self, figshape = None,
+                                       figsize = None):
         """ Plot smooth posteriors using scipy KDE
         """
-        plt.figure(figsize = (7,3))
-        for jdim in range(self.prior_samples.shape[1]):
-            kde = scipy.stats.gaussian_kde(self.prior_samples[:, jdim], weights = self.weights)
-            x_grid = np.linspace(self.prior_samples[:, jdim].min(), 
-                                 self.prior_samples[:, jdim].max(), 500)
-            pdf = kde(x_grid)
-            plt.plot(x_grid, pdf, linewidth = 2, label = r"$\theta_{}$".format(jdim), 
-                     alpha = 0.7)
-        plt.legend()
-        plt.grid(linestyle = '--')
-        plt.xlabel(r"$\theta$")
-        plt.ylabel(r"$p(\Theta)$")
+        if figshape is None:
+            raise ValueError("I need a shape for the figure.")
+        if figsize is None:
+            figsize = (figshape[0]*4, figshape[1]*2)
+           
+        _, ax = self.give_me_an_ax(figshape = figshape, figsize = figsize)
+        
+        jdim = 0
+        for row in range(ax.shape[0]):
+            for col in range(ax.shape[1]):
+                if jdim < self.prior_samples.shape[1]:
+                    kde = scipy.stats.gaussian_kde(self.prior_samples[:, jdim], 
+                                                   weights = self.weights)
+                    x_grid = np.linspace(self.prior_samples[:, jdim].min(), 
+                                         self.prior_samples[:, jdim].max(), 500)
+                    pdf = kde(x_grid)
+                    ax[row, col].plot(x_grid, pdf, linewidth = 1.5, 
+                                      label = self.parameters_names[jdim], 
+                                      alpha = 0.7, color = 'mediumpurple')
+                    # ax[row, col].legend()
+                    ax[row, col].grid(linestyle = '--')
+                    ax[row, col].set_xlim((self.lower_bounds[jdim], self.upper_bounds[jdim]))
+                    ax[row, col].set_xlabel(self.parameters_names[jdim])
+                    ax[row, col].set_ylabel(r"$p(\theta)$")
+                    jdim += 1
         plt.tight_layout();
         
-    def plot_marginal_posterior(self, prior_samples, weights):
-        """ Plot smooth posteriors
+        # plt.figure(figsize = (7,3))
+        # for jdim in range(self.prior_samples.shape[1]):
+        #     kde = scipy.stats.gaussian_kde(self.prior_samples[:, jdim], weights = self.weights)
+        #     x_grid = np.linspace(self.prior_samples[:, jdim].min(), 
+        #                          self.prior_samples[:, jdim].max(), 500)
+        #     pdf = kde(x_grid)
+        #     plt.plot(x_grid, pdf, linewidth = 2, label = r"$\theta_{}$".format(jdim), 
+        #              alpha = 0.7)
+        # plt.legend()
+        # plt.grid(linestyle = '--')
+        # plt.xlabel(r"$\theta$")
+        # plt.ylabel(r"$p(\Theta)$")
+        # plt.tight_layout();
+    
+    def plot_loglike_vs_mass(self, ax = None):
+        """ Plots the evolution of the log-likelihood as a function of iteration number
+        
+        Parameters
+        ----------
+        ax : matplotlib axes or None
         """
-        plt.figure(figsize = (7,3))
-        for jdim in range(prior_samples.shape[1]):
-            samples = prior_samples[:, jdim]
-            idx = np.argsort(samples)
-            
-            plt.plot(samples[idx], weights[idx], linewidth = 2, label = r"$\theta_{}$".format(jdim), 
-                     alpha = 0.7)
-        plt.legend()
-        plt.grid(linestyle = '--')
-        plt.xlabel(r"$\theta$")
-        plt.ylabel(r"$p(\Theta)$")
+        # Create axis if axis is None
+        if ax is None:
+            _, ax = self.give_me_an_ax()
+        
+        ax.plot(self.delta_mu, self.logp_dead, '-k', linewidth = 1.5, alpha = 0.85)
+        ax.grid(linestyle = '--')
+        # ax.set_xlabel(r"iteration [-]")
+        ax.set_xlabel(r"Prior mass [-]")
+        ax.set_ylabel(r"$\mathcal{L}(\theta)$ [Np]")
+        ax.set_xlim((0, 1))
         plt.tight_layout();
+        
+    def plot_loglike(self, ax = None):
+        """ Plots the evolution of the log-likelihood as a function of iteration number
+        
+        Parameters
+        ----------
+        ax : matplotlib axes or None
+        """
+        # Create axis if axis is None
+        if ax is None:
+            _, ax = self.give_me_an_ax()
+        
+        ax.plot(self.logp_dead, '-k', linewidth = 1.5, alpha = 0.85)
+        ax.grid(linestyle = '--')
+        ax.set_xlabel(r"iteration [-]")
+        ax.set_ylabel(r"$\mathcal{L}(\theta)$ [Np]")
+        ax.set_xlim((0, len(self.logp_dead)))
+        plt.tight_layout(); 
+    
+    def plot_spread(self, ax = None):
+        """ Plots the spread as a function of iteration number
+        
+        Parameters
+        ----------
+        ax : matplotlib axes or None
+        """
+        # Create axis if axis is None
+        if ax is None:
+            _, ax = self.give_me_an_ax()
+        for i in range(self.spread.shape[1]):
+            ax.plot(self.spread[:, i], linewidth = 1, 
+                    label = self.parameters_names[i] + \
+                        r": ({}, {}). $s_o = {:.2f}$".format(self.lower_bounds[i], 
+                                                             self.upper_bounds[i],
+                                                             self.upper_bounds[i]-self.lower_bounds[i]), 
+                    alpha = 0.85)
+        ax.legend()
+        ax.grid(linestyle = '--')
+        ax.set_xlabel(r"iteration [-]")
+        ax.set_ylabel(r"spread")
+        ax.set_xlim((0, self.spread.shape[0]))
+        # ax.set_ylim((np.amin(self.lower_bounds), np.amax(self.upper_bounds)))
+        plt.tight_layout();
+        
+            
+    def give_me_an_ax(self, figshape = (1, 1), figsize = (6,3)):
+        """ return me a default matplotlib ax
+        """
+        fig, ax = plt.subplots(figsize = figsize,
+                               nrows = figshape[0], ncols = figshape[1])
+        return fig, ax
+        
+    # def plot_marginal_posterior(self, prior_samples, weights):
+    #     """ Plot smooth posteriors
+    #     """
+    #     plt.figure(figsize = (7,3))
+    #     for jdim in range(prior_samples.shape[1]):
+    #         samples = prior_samples[:, jdim]
+    #         idx = np.argsort(samples)
+            
+    #         plt.plot(samples[idx], weights[idx], linewidth = 2, label = r"$\theta_{}$".format(jdim), 
+    #                  alpha = 0.7)
+    #     plt.legend()
+    #     plt.grid(linestyle = '--')
+    #     plt.xlabel(r"$\theta$")
+    #     plt.ylabel(r"$p(\Theta)$")
+    #     plt.tight_layout();
         
     def reconstruct_mean(self, x_meas):
         """ Reconstruction from mean values
@@ -418,7 +894,47 @@ class BayesianSampler(object):
         return y_recon
         
         
-        
+# returned_tuple =\
+#     self.constrained_resample2(
+#         current_worst_samplevec = self.dead_pts[i, :],
+#         current_spread = current_spread,
+#         current_worst_logp = self.logp_dead[i],
+#         max_attempts = max_attempts)
+# self.logp_live[self.worst_logp_index] = returned_tuple[0] 
+# self.live_pts[self.worst_logp_index, :] = returned_tuple[1] 
+# update_unsuccessful = returned_tuple[2]
+# # 2 - If unsuccessful - select a random parameter as base and try again
+# if update_unsuccessful:
+#     all_indexes = np.arange(0, n_live)
+#     remaining_indexes = np.delete(all_indexes, self.worst_logp_index)
+#     random_index_id = np.random.randint(low = 0, 
+#                                         high = len(remaining_indexes), 
+#                                         size = 1)[0]
+#     choosen_index = remaining_indexes[random_index_id]
+#     returned_tuple =\
+#         self.constrained_resample(
+#             current_worst_samplevec = self.live_pts[choosen_index, :],
+#             current_spread = current_spread,
+#             current_worst_logp = self.logp_dead[i],
+#             max_attempts = max_attempts)
+#     self.logp_live[self.worst_logp_index] = returned_tuple[0] 
+#     self.live_pts[self.worst_logp_index, :] = returned_tuple[1] 
+#     update_unsuccessful = returned_tuple[2]
+# # 3 - If unsuccessful - resample prior using the spread
+# if update_unsuccessful:
+#     mean = np.mean(self.live_pts, axis = 0)
+#     prior_sample = np.random.uniform(low = mean-current_spread/2, 
+#                                       high = mean+current_spread/2,
+#                                       size = (1, self.num_model_par))[0]
+#     # print(prior_sample)
+#     logp_new = self.log_t(model_par = prior_sample)
+#     if logp_new > self.logp_dead[i]:
+#         self.logp_live[self.worst_logp_index] = logp_new 
+#         self.live_pts[self.worst_logp_index, :] = np.copy(prior_sample) 
+        #update_unsuccessful = False
+    # else:
+    #     logp_new = np.copy(current_worst_logp)
+    #     suggested_parameter_vec = np.copy(current_worst_samplevec)        
     
 
 
