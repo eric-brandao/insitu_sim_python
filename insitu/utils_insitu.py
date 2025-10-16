@@ -1730,6 +1730,79 @@ def plot_random_walk_2D(points, directions, plot_arrows = True):
     plt.xlim((minimum_range, maximum_range))
     plt.ylim((minimum_range, maximum_range))
     
+def give_me_an_ax(figshape = (1, 1), figsize = (6,3)):
+    """ return me a default matplotlib ax
+    """
+    fig, ax = plt.subplots(figsize = figsize,
+                           nrows = figshape[0], ncols = figshape[1],
+                           squeeze = False)
+    return fig, ax
+
+# def get_plot_defaults()
+
+def plot_1d_curve(xdata, ydata, ax, xlims = None, ylims = None, 
+                  color = 'tab:blue', linewidth = 1.5, marker = None, 
+                  linestyle = '-', alpha = 1.0, label = None,
+                  xlabel = None, ylabel = None,
+                  linx = True, liny = True, xticks = None):
+    """ plots 1d curve
+    """
+    # Set defaults
+    if xlims is None:
+        xlims = xdata.min(), xdata.max()
+    if ylims is None:
+        ylims = ydata.min(), ydata.max()
+    if linx and liny:
+        ax.plot(xdata, ydata, color = color, linewidth = linewidth, 
+                linestyle = linestyle, alpha = alpha, label = label)
+    elif ~linx and liny:
+        ax.semilogx(xdata, ydata, color = color, linewidth = linewidth, 
+                linestyle = linestyle, alpha = alpha, label = label)
+    elif linx and ~liny:
+        ax.semilogy(xdata, ydata, color = color, linewidth = linewidth, 
+                linestyle = linestyle, alpha = alpha, label = label)
+    else:
+        ax.loglog(xdata, ydata, color = color, linewidth = linewidth, 
+                linestyle = linestyle, alpha = alpha, label = label)
+    ax.grid(linestyle = '--')
+    if label is not None:
+        ax.legend()
+    if xticks is not None:
+        xlabels = [str(num) for num in xticks]
+        ax.set_xticks(xticks, xlabels)
+        ax.minorticks_off()
+    
+    ax.set_xlim(xlims)
+    ax.set_ylim(ylims)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    
+
+def plot_absorption(freq, abs_coeff, ax = None, xlim = None, ylim = None, 
+                    color = 'tab:blue', linewidth = 1.5, linestyle = '-',
+                    alpha = 1.0, label = None):
+    """ Plot absorption coefficient
+    
+    Parameters
+    ----------
+    ax : matplotlib axes or None
+    """    
+    # Create axis if axis is None
+    if ax is None:
+        _, ax = give_me_an_ax()
+        ax = ax[0,0]
+    
+    plot_1d_curve(freq, abs_coeff, ax, ylims = (-0.2, 1.2),
+                  color = color, linewidth = 1.5, 
+                  linestyle = linestyle, alpha = alpha, 
+                  label = label, xlabel = "Frequency [Hz]", ylabel = r"$\alpha$  [-]",
+                  linx = False, liny = True, 
+                  xticks = [31.5, 63, 125, 250, 500, 1000, 2000, 4000])
+    
+    
+    
+    
+    
     # fig.subplots_adjust(left=0.1, right=0.9, hspace = 0.01, wspace = 0.01)        
             
     # spec_dict = [[{'type': 'surface'}]*n_cols]*n_rows

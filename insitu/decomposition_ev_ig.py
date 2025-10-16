@@ -666,15 +666,15 @@ class DecompositionEv2(object):
             kz evanescent waves
         """
         # Stack evanescent kz with propagating kz for incident and reflected grids
-        k_prop_inc = k0 * np.array([self.prop_waves_dir.coord[:,0], 
-                                              self.prop_waves_dir.coord[:,1],
-                                              -self.prop_waves_dir.coord[:,2]]).T
+        k_prop_inc = k0 * np.array([self.prop_waves_dir.coord[:,0],
+                                    self.prop_waves_dir.coord[:,1],
+                                    -self.prop_waves_dir.coord[:,2]]).T
         k_evan_inc = np.array([kx_ev, ky_ev, -kz_ev]).T
         k_vec_inc = np.vstack((k_prop_inc, k_evan_inc))
         # Reflected
         k_prop_ref = k0 * np.array([self.prop_waves_dir.coord[:,0], 
-                                              self.prop_waves_dir.coord[:,1], 
-                                              self.prop_waves_dir.coord[:,2]]).T
+                                    self.prop_waves_dir.coord[:,1], 
+                                    self.prop_waves_dir.coord[:,2]]).T
         k_evan_ref = np.array([kx_ev, ky_ev, kz_ev]).T
         k_vec_ref = np.vstack((k_prop_ref, k_evan_ref))
         return k_vec_inc, k_vec_ref

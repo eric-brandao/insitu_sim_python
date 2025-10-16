@@ -14,7 +14,7 @@ a1 = 10**0
 a2 = 10**(-6/10)
 T1 = 0.5
 T2 = 1
-tK = 1
+tK = 1.2
 
 #%% Data generation
 fs = 44100 # sample rate
@@ -31,7 +31,7 @@ white_noise = np.random.normal(loc = 0.0, scale = 1.0, size = len(time))
 ht = white_noise * true_edc
 ht2 = white_noise**2 * true_edc
 
-skip = 410 # samples
+skip = 10 # samples
 time_meas = time[0::skip]
 np.random.seed(0)
 measured_edc = true_edc[0::skip] - np.random.normal(loc = 0, 
@@ -82,7 +82,7 @@ def exp_decay(x_meas, model_par = [1, 0.7, 1.8, 4, 1e-4]):
     """
     decay1 = model_par[0] * np.exp(-13.8*x_meas/model_par[2])
     decay2 = model_par[1] * np.exp(-13.8*x_meas/model_par[3])
-    noise = model_par[4] * (tK - x_meas)
+    noise = a0 * (tK - x_meas)
     y_pred = decay1 + decay2 + noise
     return y_pred
 
@@ -91,16 +91,17 @@ def exp_decay(x_meas, model_par = [1, 0.7, 1.8, 4, 1e-4]):
 #%%
 ba = BayesianSampler(measured_coords = time_meas, 
                      measured_data = measured_edc,
-                     parameters_names = ["A1", "A2", "T1", "T2", "A0"],
-                     num_model_par = 5, seed = 42)
+                     parameters_names = ["A1", "A2", "T1", "T2"],
+                     num_model_par = 4, seed = 42)
 ba.set_model_fun(model_fun = exp_decay)
-ba.set_uniform_prior_limits(lower_bounds = [0.5, 0.1, 0.1, 0.5, 9e-5], 
-                            upper_bounds = [1.5, 0.8, 1, 2.5, 2e-4])
-ba.set_convergence_tolerance(convergence_tol = [0.1, 0.1, 0.05, 0.05, 0.3e-3])
+ba.set_uniform_prior_limits(lower_bounds = [0.1, 0.1, 0.1, 0.5], 
+                            upper_bounds = [1.5, 1.0, 1.0, 2.5])
+ba.set_convergence_tolerance(convergence_tol = [0.1, 0.1, 0.05, 0.05])
 #prior_samples, weights, logp = ba.brute_force_sampling(num_samples = 100000)
 
 #%%
-ba.nested_sampling(n_live = 50, max_iter = 6000, max_up_attempts = 50, seed = 0)
+ba.nested_sampling(n_live = 250, max_iter = 10000, max_up_attempts = 100, seed = 0)
+print("\n Log-Evidence value: {:.4f}".format(ba.logZ))
 #prior_samples, weights2, Z = ba.nested_sampling(n_live = 250, max_iter = 500)
 #posterior_ns = prior_samples[rng.choice(len(prior_samples), size=5000, p=weights)]
 #%%
@@ -122,7 +123,7 @@ plt.ylim((ba.lower_bounds[idxs[1]], ba.upper_bounds[idxs[1]]))
 plt.xlabel(ba.parameters_names[idxs[0]])
 plt.ylabel(ba.parameters_names[idxs[1]])
 #%%
-ba.plot_smooth_marginal_posterior(figshape = (3,2))
+ba.plot_smooth_marginal_posterior(figshape = (2,2))
 
 #%%
 ba.compute_statistics()
@@ -136,8 +137,8 @@ plt.figure(figsize = (6,4))
 #           label = "h(t)", alpha = 0.4)
 
 plt.plot(time, 10*np.log10(true_edc/np.amax(true_edc)), linewidth = 1, label = "True EDC")
-plt.plot(time_meas, 10*np.log10(measured_edc/np.amax(measured_edc)), 'o',  
-          color = 'grey', alpha = 0.3, label = "Measured EDC")
+# plt.plot(time_meas, 10*np.log10(measured_edc/np.amax(measured_edc)), 'o',  
+#           color = 'grey', alpha = 0.3, label = "Measured EDC")
 plt.plot(time, 10*np.log10(edc_recon/np.amax(edc_recon)), '--',  
           color = 'm', alpha = 0.8, label = "Recon EDC")
 # plt.fill_between(time, 10*np.log10(edc_recon_ci[0,:]/np.amax(edc_recon_ci[0,:])),

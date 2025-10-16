@@ -172,7 +172,7 @@ class BayesianSampler(object):
         logp = -(self.num_of_meas/2)*np.log((error_norm**2)/2)
         return logp
     
-    def brute_force_sampling(self, num_samples = 1000):
+    def brute_force_sampling_bar(self, num_samples = 1000):
         """ Brute force sample the parameter space.
         
         Parameters
@@ -196,7 +196,25 @@ class BayesianSampler(object):
         self.weights /= np.sum(self.weights)
         return self.prior_samples, self.weights, logp      
     
+    def brute_force_sampling(self, num_samples = 1000):
+        """ Brute force sample the parameter space.
         
+        Parameters
+        ----------
+        num_samples : int
+            total number of samples to draw
+        """
+        self.prior_samples = self.sample_uniform_prior(num_samples = num_samples)
+        # Initialize logp
+        logp = np.zeros(num_samples)
+        for jp, pr_sam in enumerate(self.prior_samples):
+            logp[jp] = self.log_t(model_par = pr_sam)
+        
+        # Compute posterior weights ~ L * prior (prior is uniform, so just L)
+        self.weights = np.exp(logp - np.max(logp))
+        self.weights /= np.sum(self.weights)
+        return self.prior_samples, self.weights, logp 
+    
     def update_values(self, random_par, adjust_suggested, current_worst_par_val,
                       type_of_update = "adding"):
         """ Update a given parameter value and logp from a set of parameter vector 
@@ -513,9 +531,68 @@ class BayesianSampler(object):
             self.update_rw(pt_of_origin = pt_of_origin, 
                            lower_bounds = lower_bounds, upper_bounds = upper_bounds,
                            max_up_attempts = max_up_attempts)
+            
+    def slice_step(self, it_num, theta, win_size = 0.2, max_up_attempts = 200):
+        """ Slice step function
+        
+        Parameters
+        ----------
+        it_num : int
+            iteration number
+        """
+        theta = np.copy(theta)
+        # direction = rng.normal(size = self.num_model_par)
+        # direction /= np.linalg.norm(v)
+        direction = ut_is.get_random_direction(num_dim = self.num_model_par)
+        u_min, u_max = -0.5*win_size, 0.5*win_size
+        for _ in range(max_up_attempts):
+            u = np.random.uniform(low = u_min, high = u_max, size = 1)#rng.uniform(u_min, u_max)
+            theta_trial = theta + u * direction
+            if np.any(theta_trial < self.lower_bounds) or np.any(theta_trial > self.upper_bounds):
+                if u > 0:
+                    u_max = u
+                else: 
+                    u_min = u
+                continue
+            new_logp = self.log_t(model_par = theta_trial)
+            if new_logp > self.logp_dead[it_num]:
+                return theta_trial
+            else:
+                if u > 0: 
+                    u_max = u
+                else: 
+                    u_min = u
+        return theta
+    
+    def constrained_resample_slice(self, it_num = 0, win_size = 0.2, 
+                                   max_up_attempts = 200):
+        """ Constrained move using slice sampling
+        """
+        current_spread = self.compute_spread(self.live_pts)
+        win_size = np.amax(current_spread)
+        # print(current_spread)
+        self.spread[it_num,:] = current_spread
+        # Init new param
+        theta_new = None
+        for _ in range(200):
+            cand = self.live_pts[np.random.randint(self.live_pts.shape[0]),:]
+            theta_try = self.slice_step(it_num = it_num, theta = cand, win_size = win_size,
+                                        max_up_attempts = max_up_attempts)
+            new_logp = self.log_t(model_par = theta_try)
+            if new_logp > self.logp_dead[it_num]:
+                theta_new = theta_try
+                break
+        if theta_new is None:
+            theta_new = self.sample_uniform_prior(num_samples = 1)
+            # theta_new = sample_prior(rng, bounds, 1)[0]
+        self.live_pts[self.worst_logp_index, :] = theta_new
+        self.logp_live[self.worst_logp_index] = self.log_t(model_par = theta_new)
+        # thetas[worst] = theta_new
+        # logLs[worst] = log_likelihood(theta_new)
+        
     
     def nested_sampling(self, n_live = 10, max_iter = 10, seed = 42,
-                        max_up_attempts = 5):
+                        max_up_attempts = 200):
         # Sample the prior and compute the logp of initial population
         np.random.seed(seed)
         self.live_pts, _, self.logp_live = self.brute_force_sampling(num_samples = n_live)
@@ -526,7 +603,11 @@ class BayesianSampler(object):
         self.logp_dead_weights = np.zeros(max_iter + n_live) # normalized
         # logp_current_it = np.amin(self.logp_live)
         self.delta_mu = np.zeros(max_iter)
+        self.Xi = 1
         self.evidence = 0
+        self.logZ = np.log(np.finfo(np.float64).eps)#-np.inf # Log evidence init
+        self.info = 0.0 # information init
+        self.logwidth = np.log(1.0 - np.exp(-1.0/n_live))  # initial shrinkage
         # init things that might not be used later (for checking)
         self.spread = np.zeros((max_iter, self.num_model_par))
         self.random_par_id = []
@@ -534,28 +615,37 @@ class BayesianSampler(object):
         bar = tqdm(total = max_iter, desc='Nested sampling loop...', ascii=False)
         # print("All Logp {}".format(self.logp_live))
         for i in range(max_iter):
-            self.delta_mu[i] = np.exp(-i/self.live_pts.shape[0])
-            # Compute current spread in the given live_pts population
-            # current_spread = self.compute_spread(self.live_pts)
-            # self.spread[i,:] = current_spread
             # Find index of worst log-likelihood and update dead_pts and logp_dead
             self.get_worst_logp(it_num = i)
             self.worst_logp_index_list.append(self.worst_logp_index)
-            self.evidence += (np.exp(self.logp_dead[i])) * self.delta_mu[i]
-            # print("\n ### Iteration {} #### / Current spread: {}".format(i, current_spread))
-            # # Make the move (1 - try updating the worst sample)                        
+            # Update evidence Z using log-sum-exp for stability
+            logZ_new = np.logaddexp(self.logZ, self.logwidth + self.logp_dead[i])
+            delta_logZ = np.exp(self.logp_dead[i] + self.logwidth - logZ_new)
+            self.info = delta_logZ * self.logp_dead[i] + (1 - delta_logZ) *\
+                (self.info + self.logZ) - logZ_new
+            self.logZ = logZ_new
+            self.logwidth -= 1.0 / n_live
+            self.delta_mu[i] = self.logwidth
+            # Move                      
             # self.constrained_resample(i, max_up_attempts = max_up_attempts)
-            self.constrained_resample_rw(i, max_up_attempts = max_up_attempts)            
+            # self.constrained_resample_rw(i, max_up_attempts = max_up_attempts)
+            self.constrained_resample_slice(it_num = i, win_size = 0.4,
+                                            max_up_attempts = max_up_attempts)
             bar.update(1)
-        
+        bar.close()
         log_weights_concat = np.concatenate((self.logp_dead, self.logp_live))
         self.weights = np.exp(log_weights_concat - np.max(log_weights_concat))
         self.weights /= np.sum(self.weights)
         self.prior_samples = np.concatenate((self.dead_pts, self.live_pts))
-        bar.close()
+        # Final contribution of the live pts
+        logL_max = np.max(self.logp_live)
+        self.logZ = np.logaddexp(self.logZ, logL_max)
+        
         
     # Make the move
     # print("Logp {:.2f} / Parameters: {}".format(self.logp_dead[i], 
+    
+    
     
     def nested_sampling2(self, n_live=200, max_iter=2000):
         
@@ -800,12 +890,12 @@ class BayesianSampler(object):
         if ax is None:
             _, ax = self.give_me_an_ax()
         
-        ax.plot(self.delta_mu, self.logp_dead, '-k', linewidth = 1.5, alpha = 0.85)
-        ax.grid(linestyle = '--')
+        ax[0,0].plot(np.exp(self.delta_mu), self.logp_dead, '-k', linewidth = 1.5, alpha = 0.85)
+        ax[0,0].grid(linestyle = '--')
         # ax.set_xlabel(r"iteration [-]")
-        ax.set_xlabel(r"Prior mass [-]")
-        ax.set_ylabel(r"$\mathcal{L}(\theta)$ [Np]")
-        ax.set_xlim((0, 1))
+        ax[0,0].set_xlabel(r"Prior mass [-]")
+        ax[0,0].set_ylabel(r"$\mathcal{L}(\theta)$ [Np]")
+        ax[0,0].set_xlim((0, 1))
         plt.tight_layout();
         
     def plot_loglike(self, ax = None):
@@ -819,11 +909,11 @@ class BayesianSampler(object):
         if ax is None:
             _, ax = self.give_me_an_ax()
         
-        ax.plot(self.logp_dead, '-k', linewidth = 1.5, alpha = 0.85)
-        ax.grid(linestyle = '--')
-        ax.set_xlabel(r"iteration [-]")
-        ax.set_ylabel(r"$\mathcal{L}(\theta)$ [Np]")
-        ax.set_xlim((0, len(self.logp_dead)))
+        ax[0,0].plot(self.logp_dead, '-k', linewidth = 1.5, alpha = 0.85)
+        ax[0,0].grid(linestyle = '--')
+        ax[0,0].set_xlabel(r"iteration [-]")
+        ax[0,0].set_ylabel(r"$\mathcal{L}(\theta)$ [Np]")
+        ax[0,0].set_xlim((0, len(self.logp_dead)))
         plt.tight_layout(); 
     
     def plot_spread(self, ax = None):
@@ -837,17 +927,17 @@ class BayesianSampler(object):
         if ax is None:
             _, ax = self.give_me_an_ax()
         for i in range(self.spread.shape[1]):
-            ax.plot(self.spread[:, i], linewidth = 1, 
+            ax[0,0].plot(self.spread[:, i], linewidth = 1, 
                     label = self.parameters_names[i] + \
                         r": ({}, {}). $s_o = {:.2f}$".format(self.lower_bounds[i], 
                                                              self.upper_bounds[i],
                                                              self.upper_bounds[i]-self.lower_bounds[i]), 
                     alpha = 0.85)
-        ax.legend()
-        ax.grid(linestyle = '--')
-        ax.set_xlabel(r"iteration [-]")
-        ax.set_ylabel(r"spread")
-        ax.set_xlim((0, self.spread.shape[0]))
+        ax[0,0].legend()
+        ax[0,0].grid(linestyle = '--')
+        ax[0,0].set_xlabel(r"iteration [-]")
+        ax[0,0].set_ylabel(r"spread")
+        ax[0,0].set_xlim((0, self.spread.shape[0]))
         # ax.set_ylim((np.amin(self.lower_bounds), np.amax(self.upper_bounds)))
         plt.tight_layout();
         
@@ -856,7 +946,8 @@ class BayesianSampler(object):
         """ return me a default matplotlib ax
         """
         fig, ax = plt.subplots(figsize = figsize,
-                               nrows = figshape[0], ncols = figshape[1])
+                               nrows = figshape[0], ncols = figshape[1],
+                               squeeze = False)
         return fig, ax
         
     # def plot_marginal_posterior(self, prior_samples, weights):
