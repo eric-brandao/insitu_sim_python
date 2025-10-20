@@ -1738,7 +1738,6 @@ def give_me_an_ax(figshape = (1, 1), figsize = (6,3)):
                            squeeze = False)
     return fig, ax
 
-# def get_plot_defaults()
 
 def plot_1d_curve(xdata, ydata, ax, xlims = None, ylims = None, 
                   color = 'tab:blue', linewidth = 1.5, marker = None, 

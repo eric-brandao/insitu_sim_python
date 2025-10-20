@@ -92,7 +92,7 @@ def exp_decay(x_meas, model_par = [1, 0.7, 1.8, 4, 1e-4]):
 ba = BayesianSampler(measured_coords = time_meas, 
                      measured_data = measured_edc,
                      parameters_names = ["A1", "A2", "T1", "T2"],
-                     num_model_par = 4, seed = 42)
+                     num_model_par = 4)
 ba.set_model_fun(model_fun = exp_decay)
 ba.set_uniform_prior_limits(lower_bounds = [0.1, 0.1, 0.1, 0.5], 
                             upper_bounds = [1.5, 1.0, 1.0, 2.5])
@@ -100,7 +100,7 @@ ba.set_convergence_tolerance(convergence_tol = [0.1, 0.1, 0.05, 0.05])
 #prior_samples, weights, logp = ba.brute_force_sampling(num_samples = 100000)
 
 #%%
-ba.nested_sampling(n_live = 250, max_iter = 10000, max_up_attempts = 100, seed = 0)
+ba.nested_sampling(n_live = 250, max_iter = 5000, max_up_attempts = 100, seed = 0)
 print("\n Log-Evidence value: {:.4f}".format(ba.logZ))
 #prior_samples, weights2, Z = ba.nested_sampling(n_live = 250, max_iter = 500)
 #posterior_ns = prior_samples[rng.choice(len(prior_samples), size=5000, p=weights)]

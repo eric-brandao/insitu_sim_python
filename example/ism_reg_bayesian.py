@@ -38,7 +38,7 @@ s_min_i, s_max_i = np.imag(ism.pk[0,:]).min(), np.imag(ism.pk[0,:]).max()
 is_min_r, is_max_r = np.real(ism.pk[1,:]).min(), np.real(ism.pk[1,:]).max()
 is_min_i, is_max_i = np.imag(ism.pk[1,:]).min(), np.imag(ism.pk[1,:]).max()
 #%% ISM estimation (Bayesian)
-factor = 1
+factor = 0.5
 ism_b = Decomposition_2M_Bayesian(p_mtx = field_nlr.pres_s[0], controls=field_nlr.controls,
                        receivers = field_nlr.receivers, 
                            source_coord = field_nlr.sources.coord[0])
@@ -48,7 +48,7 @@ ism_b.set_prior_limits(lower_bounds = [s_min_r-factor, s_min_i-factor,
                                        is_max_r+factor, is_max_i+factor])
 
 # Sampling
-ism_b.pk_bayesian(n_live = 250, max_iter = 2000, max_up_attempts = 50, seed = 0)
+ism_b.pk_bayesian(n_live = 250, max_iter = 3000, max_up_attempts = 50, seed = 0)
 #%%
 alpha_vp = ism_b.ref_coeff()
 #%% Plot absorption

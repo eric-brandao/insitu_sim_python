@@ -97,7 +97,7 @@ class Decomposition_2M_Bayesian(Decomposition_2M):
             ba = BayesianSampler(measured_coords = self.receivers.coord, 
                                   measured_data = self.pres_s[:, jf],
                                   parameters_names = self.parameters_names,
-                                  num_model_par = 4, seed = seed)
+                                  num_model_par = 4)
             ba.set_model_fun(model_fun = self.forward_model)
             ba.set_uniform_prior_limits(lower_bounds = self.lower_bounds, 
                                         upper_bounds = self.upper_bounds)

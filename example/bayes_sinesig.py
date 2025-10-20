@@ -43,10 +43,10 @@ def sine_sig(x_meas, model_par = [1, 1]):
 ba = BayesianSampler(measured_coords = x_meas, 
                      measured_data = y_meas,
                      parameters_names = ["Amp", "freq"],
-                     num_model_par = 2, seed = 42)
+                     num_model_par = 2)
 ba.set_model_fun(model_fun = sine_sig)
-ba.set_uniform_prior_limits(lower_bounds = [0.0, 0.5], 
-                            upper_bounds = [4.0, 2.0])
+ba.set_uniform_prior_limits(lower_bounds = [0.0, 0.0], 
+                            upper_bounds = [4.0, 4.0])
 ba.set_convergence_tolerance(convergence_tol = [0.1, 0.1])
 
 #%%

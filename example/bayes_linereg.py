@@ -47,19 +47,20 @@ def line_model(x_meas, model_par = [1, 0]):
 y_pred_test = line_model(x_meas, model_par = [m, b])
 #%%
 ba = BayesianSampler(measured_coords = x_meas, measured_data = y_meas,
-                     num_model_par = 2, seed = 42)
+                     num_model_par = 2, parameters_names = ["m", "b"],
+                     likelihood = "Gaussian1D")
 ba.set_model_fun(model_fun = line_model)
-ba.set_uniform_prior_limits(lower_bounds = [-5, -5], upper_bounds = [5, 5])
+ba.set_uniform_prior_limits(lower_bounds = [-4, -4], upper_bounds = [4, 4])
 ba.set_convergence_tolerance(convergence_tol = [0.1, 0.2])
 #prior_samples = ba.sample_uniform_prior(num_samples = 100)
 #prior_samples, weights, _ = ba.brute_force_sampling(num_samples = 100000)
 
 #%%
-# prior_samples, weights, logp = ba.nested_sampling(n_live = 100, max_iter=2000)
-ba.nested_sampling(n_live = 400, max_iter = 5000, max_up_attempts = 50, seed = 42)
+ba.nested_sampling(n_live = 250, max_iter = 5000, max_up_attempts = 100, seed = 42)
 #%%
+plt.figure()
+plt.scatter(ba.dead_pts[:,0], ba.dead_pts[:,1], alpha = 0.1)
 plt.scatter(ba.live_pts[:,0], ba.live_pts[:,1])
-# plt.scatter(ba.dead_pts[:,0], ba.dead_pts[:,1], alpha = 0.5)
 plt.scatter(m, b, marker='x')
 plt.xlim((ba.lower_bounds[0], ba.upper_bounds[0]))
 plt.ylim((ba.lower_bounds[1], ba.upper_bounds[1]))
@@ -67,7 +68,7 @@ plt.xlabel("m")
 plt.ylabel("b")
 #%%
 #ba.plot_histograms()
-ba.plot_smooth_marginal_posterior()
+ba.plot_smooth_marginal_posterior(figshape = (1,2))
 
 #%% Statistics and reconstruction
 ba.compute_statistics()
@@ -86,3 +87,21 @@ plt.xlabel("x [m]")
 plt.ylabel("y [-]")
 plt.legend()
 plt.tight_layout();
+
+#%%
+import scipy
+def Phi(z):
+    return 0.5 * (1.0 + scipy.special.erf(z / np.sqrt(2.0)))
+
+def analytic_logZ_uniform_prior_on_cube(a, b, D):
+    L = b - a
+    p = Phi(b) - Phi(a)   # mass per dimension inside [a,b]
+    if p <= 0:
+        return -np.inf
+    logZ = D * (np.log(p) - np.log(L))
+    return logZ
+
+logZ = analytic_logZ_uniform_prior_on_cube(ba.lower_bounds[0], ba.upper_bounds[0], 
+                                           ba.num_model_par)
+print("Analytical logZ: {:.4f}".format(logZ))
+print("Numerical logZ: {:.4f}".format(ba.logZ))
