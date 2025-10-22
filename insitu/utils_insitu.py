@@ -10,6 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.tri as mtri
 import matplotlib as mpl
+import scipy
 from scipy.interpolate import griddata
 from controlsair import cart2sph, sph2cart
 import gmsh
@@ -1800,7 +1801,64 @@ def plot_absorption(freq, abs_coeff, ax = None, xlim = None, ylim = None,
     
     
     
+def MPM(samp, L, Ts, tol):
+    """ Matrix Pencil Method (implemented by Martin Eser - JASA 2021)
     
+    Parameters
+    ----------
+    samp : numpy1dArray
+        Samples of the variable of interest
+    L : int
+        Pencil Parameter
+    Ts : float
+        Sampling period
+    tol : float
+        Tolerance for SVD truncation
+    
+    Parameters
+    ----------
+    An : numpy1dArray
+        Amplitudes in transformed space
+    Bn : numpy1dArray
+        Locations in transformed space
+    """
+    # samp: samples of reflection coefficient; sampled at each K_z0 calculated from t
+    # L: pencil parameter
+    # Ts: sampling rate deltat in Eser, 2021
+    # tol: SVD truncation threshold
+
+    Y = scipy.linalg.hankel(samp)[: len(samp) - L, : L + 1]  # full Hankel matrix
+    U, s, Vh = np.linalg.svd(Y)  # singular value decomposition (SVD) of Hankel matrix
+    indx = np.where(s < s.max() * tol)[0][
+        0
+    ]  # truncation of SVD given prescribed threshold tol
+    Vpr = Vh.conj().T[:, :indx]  # V^f in Eser, 2021
+
+    V1pr = Vpr[:-1, :]  # V_1^fH in Eser, 2021
+    V2pr = Vpr[1:, :]  # V_2^fH in Eser, 2021
+    spr = np.zeros((np.shape(U)[0], np.shape(V1pr)[-1]))  # Sigma^f in Eser, 2021
+    np.fill_diagonal(spr, s[:indx])
+    Y1 = (U.dot(spr)).dot(V1pr.conj().T)
+    Y2 = (U.dot(spr)).dot(V2pr.conj().T)
+
+    poles = scipy.linalg.eigvals(
+        np.dot(scipy.linalg.pinv(Y1), Y2)
+    )  # Eq. (15) in Eser, 2021
+    poles = poles[:indx]  # z_n in Eser, 2021
+
+    # alp = np.log(np.abs(poles[:]))/(Ts)
+    # freqs = np.arctan2(np.imag(poles[:]),np.real(poles[:]))/(2*np.pi*Ts)
+    # Bn = (alp+1j*(2*np.pi*freqs))*Ts
+    Bn = np.log(poles[:]) / Ts  # Eq. (16) in Eser, 2021
+
+    Vrhs = np.array((samp))  # right hand side of Eq. (17) in Eser, 2021
+    Van = np.vstack(
+        [poles ** (i) for i in range(np.shape(samp)[0])]
+    )  # Vandermonde matrix in Eq. (17) in Eser, 2021
+    # calculate An from least-squares Vandermonde system
+    An = np.linalg.lstsq(Van, Vrhs, rcond=None)[0]  # Solution of Eq. (17) in Eser, 2021
+
+    return An, Bn  # output of sought coeffcients of the series of exponentials
     
     # fig.subplots_adjust(left=0.1, right=0.9, hspace = 0.01, wspace = 0.01)        
             

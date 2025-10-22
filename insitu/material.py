@@ -89,10 +89,10 @@ class PorousAbsorber():
         q0_l = self.porosity * (self.lam_l ** 2) / 8.0
         gw = (1 + ((2 * self.tortuosity * q0 / (self.porosity * self.lam)) ** 2) * (1j * w / v)) ** 0.5
         gw_l = (1 + ((self.lam_l / 4) ** 2) * (1j * w / v_l)) ** 0.5
-        rho_p = self.rho0 * (self.tortuosity + ((v * self.porosity) / (1j * w * q0)) * gw)
+        self.rhop = self.rho0 * (self.tortuosity + ((v * self.porosity) / (1j * w * q0)) * gw)
         kappa_p = gamma * p0 / (gamma - ((gamma - 1.0) / (1 + ((v_l * self.porosity) / (1j * w * q0_l)) * gw_l)))
-        self.Zp = (rho_p * kappa_p) ** 0.5
-        self.kp = w * ((rho_p / kappa_p) ** 0.5)
+        self.Zp = (self.rhop * kappa_p) ** 0.5
+        self.kp = w * ((self.rhop / kappa_p) ** 0.5)
 
     def layer_over_rigid(self, thickness = 25.0/1000, theta = 0.0):
         '''

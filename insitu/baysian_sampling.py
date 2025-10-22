@@ -173,7 +173,12 @@ class BayesianSampler(object):
                                 model_par = model_par)
         # error norm
         error_norm = np.linalg.norm(self.measured_data - y_pred)
-        logp = np.log(1/(self.sigma*np.sqrt(2*np.pi))) - error_norm**2/(2*self.sigma**2)
+        logp = - 0.5 * self.num_of_meas * np.log(2*np.pi*self.sigma*2) -\
+            error_norm**2/(2*self.sigma**2)
+        # logp = -0.5*self.num_of_meas * np.log(2*np.pi) -\
+        #     self.num_of_meas * np.log(self.sigma) -\
+        #     0.5*error_norm**2/(self.sigma**2)
+
         return logp
         
     def log_t(self, model_par):
@@ -746,6 +751,8 @@ class BayesianSampler(object):
         self.dead_pts = np.zeros((max_iter, self.num_model_par))
         self.logp_dead = np.zeros(max_iter)
         self.current_evid_increase = np.zeros(max_iter)
+        self.current_logevid = np.zeros(max_iter)
+        self.mass = np.zeros(max_iter)
         curr_evid = 0
         # self.logp_dead_weights = np.zeros(max_iter + n_live) # normalized
         # logp_current_it = np.amin(self.logp_live)
@@ -767,19 +774,23 @@ class BayesianSampler(object):
         # print("All Logp {}".format(self.logp_live))
         # bar.reset()
         for i in range(max_iter):
+            self.current_logevid[i] = self.logZ
             # 1 - Find index of worst log-likelihood and update variables
             self.get_worst_logp(it_num = i)
             self.worst_logp_index_list.append(self.worst_logp_index)
             # 2 - Update evidence Z using log-sum-exp for stability
             logX = -(i+1)/n_live
-            w_i = np.exp(logXprev) - np.exp(logX)
-            # logZ_new = np.logaddexp(self.logZ, self.logp_dead[i] + np.log(w_i))
-            logZ_new = np.logaddexp(self.logZ, self.logwidth + self.logp_dead[i])
+            self.mass[i] = logX
+            w_i = np.logaddexp(logXprev, -logX)#np.exp(logXprev) - np.exp(logX)
+            logZ_new = np.logaddexp(self.logZ, self.logp_dead[i] + np.log(w_i))
+            # logZ_new = np.logaddexp(self.logZ, self.logwidth + self.logp_dead[i])
             self.logZ = logZ_new
             logXprev = logX
             delta_logZ = np.exp(self.logp_dead[i] + self.logwidth - logZ_new)
-            self.info = delta_logZ * self.logp_dead[i] + (1 - delta_logZ) *\
-                (self.info + self.logZ) - logZ_new
+            # self.info = delta_logZ * self.logp_dead[i] + (1 - delta_logZ) *\
+            #     (self.info + self.logZ) - logZ_new
+            self.info += np.exp(self.logp_dead[i] + np.log(w_i) - logZ_new) *\
+                (self.logp_dead[i] - logZ_new)
             # self.logZ = logZ_new
             self.logwidth -= 1.0 / n_live
             # self.delta_mu[i] = self.logwidth
@@ -803,7 +814,11 @@ class BayesianSampler(object):
         self.weights /= np.sum(self.weights)
         # Update evidence (final) value with the max(live log-likelihood) info.
         logL_max = np.max(self.logp_live)
-        self.logZ = np.logaddexp(self.logZ, logL_max)
+        L_mean = np.mean(np.exp(self.logp_live))
+        w_final = np.exp(logX)
+        # self.logZ = np.logaddexp(self.logZ, logL_max)
+        self.logZ = np.logaddexp(self.logZ, np.log(w_final*L_mean))
+
     
     def sort_livepop(self, ):
         """ Computes sorted version of logp_live and live_pts.
