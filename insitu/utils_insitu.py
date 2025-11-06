@@ -1793,12 +1793,33 @@ def plot_absorption(freq, abs_coeff, ax = None, xlim = None, ylim = None,
         ax = ax[0,0]
     
     plot_1d_curve(freq, abs_coeff, ax, ylims = (-0.2, 1.2),
-                  color = color, linewidth = 1.5, 
+                  color = color, linewidth = linewidth, 
                   linestyle = linestyle, alpha = alpha, 
                   label = label, xlabel = "Frequency [Hz]", ylabel = r"$\alpha$  [-]",
                   linx = False, liny = True, 
                   xticks = [31.5, 63, 125, 250, 500, 1000, 2000, 4000])
+    return ax
+
+def plot_absorption_theta(theta, abs_coeff, ax = None, xlim = None, ylim = None,
+                          color = 'tab:blue', linewidth = 1.5, linestyle = '-',
+                          alpha = 1.0, label = None):
+    """ Plot absorption coefficient as a function of the incidence angle
     
+    Parameters
+    ----------
+    ax : matplotlib axes or None
+    """    
+    # Create axis if axis is None
+    if ax is None:
+        _, ax = give_me_an_ax()
+        ax = ax[0,0]
+    
+    plot_1d_curve(theta, abs_coeff, ax, ylims = (-0.2, 1.2),
+                  color = color, linewidth = linewidth, 
+                  linestyle = linestyle, alpha = alpha, 
+                  label = label, xlabel = r"$\theta$ [deg]", ylabel = r"$\alpha$  [-]",
+                  linx = True, liny = True, xticks = np.arange(0, 105, 15))
+    return ax
     
     
 def MPM(samp, L, Ts, tol):
@@ -1860,65 +1881,4 @@ def MPM(samp, L, Ts, tol):
 
     return An, Bn  # output of sought coeffcients of the series of exponentials
     
-    # fig.subplots_adjust(left=0.1, right=0.9, hspace = 0.01, wspace = 0.01)        
-            
-    # spec_dict = [[{'type': 'surface'}]*n_cols]*n_rows
-    # subtitles_tuple = tuple(item for sublist in subtitles for item in sublist)
-    # # set the figure with subplots
-    # figs = make_subplots(rows = n_rows, cols = n_cols, specs = spec_dict, horizontal_spacing = 0.01, 
-    #                       vertical_spacing = 0.01, subplot_titles = subtitles_tuple)
-    # remove_bg_and_axis(figs, n_rows*n_cols)
-    # # Update the camera view of figure
-    # eye = set_camera_eye(figs, view = plt3Ddir.view, eye_user = plt3Ddir.eye_dict)
-    # camera = dict(eye = eye)
-    
-    # for row in range(n_rows):
-    #     for col in range(n_cols):
-    #         plt3Ddir.pressure = pressure[row][col]
-    #         plt3Ddir.plot_3d_polar()
-    #         for jtr, trace in enumerate(plt3Ddir.fig.data):
-    #             figs.add_trace(trace, row = row+1, col = col+1)
-                
-                
-    # # Update layout for all 3D scenes in a loop
-    # for scene_idx in range(1, n_rows*n_cols+1):  # scene1, scene2, scene3, scene4
-    #     scene_key = f'scene{scene_idx}'
-    #     figs.update_layout({scene_key: dict(aspectmode='data', aspectratio=dict(x=1, y=1, z=1),
-    #                                         camera = camera)})
-
-    # # Adjust figure dimensions
-    # figs.update_layout(height = n_rows*plt3Ddir.fig_size, width = n_rows*plt3Ddir.fig_size,
-    #                     margin=dict(l=0, r=0, t=50, b=0))
-    
-
-    # return figs
-    
-# def crop_whitespace(img):
-#     # Convert image to greyscale to detect differences
-#     gray_img = img.convert("L")  # Convert to grayscale
-#     bg = Image.new("L", img.size, 255)  # Create a plain white background
-#     diff = ImageChops.difference(gray_img, bg)
-#     bbox = diff.getbbox()  # Get bounding box of non-white areas
-#     if bbox:
-#         return img.crop(bbox)
-#     return img  # Return original if no cropping is needed
-
-
-
-# for c, i in enumerate(idf):
-#     # Flat
-#     _, trace = ded_flat_sf.plot_directivity(freq = freq[i], color_method = 'dB', radius_method = 'dB', dinrange = dinrange,
-#         color_code = color_map, view = 'iso_z',  renderer = "notebook", true_directivity = true_directivity)
-#     figs.add_trace(trace, row = 1, col = c+1)
-
-#     # Sphere
-#     _, trace = ded_sphere_sf.plot_directivity(freq = freq[i], color_method = 'dB', radius_method = 'dB', dinrange = dinrange,
-#         color_code = color_map, view = 'iso_z',  renderer = "notebook", true_directivity = true_directivity)
-#     figs.add_trace(trace, row = 2, col = c+1)
-    
-#     # 4 spheres
-#     _, trace = ded_4spheres.plot_directivity(freq = freq[i], color_method = 'dB', radius_method = 'dB', dinrange = dinrange,
-#         color_code = color_map, view = 'iso_z',  renderer = "notebook", true_directivity = true_directivity)
-#     figs.add_trace(trace, row = 3, col = c+1)
-# figs.update_layout(height=900, width=1050)
-# figs.show() 
+   

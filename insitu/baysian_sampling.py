@@ -796,8 +796,8 @@ class BayesianSampler(object):
             # self.delta_mu[i] = self.logwidth
             # 3 - Propose the update.                     
             # self.constrained_resample(i, max_up_attempts = max_up_attempts)
-            # self.constrained_resample_rw(i, max_up_attempts = max_up_attempts)
-            self.constrained_resample_slice(it_num = i, max_up_attempts = max_up_attempts)
+            self.constrained_resample_rw(i, max_up_attempts = max_up_attempts)
+            # self.constrained_resample_slice(it_num = i, max_up_attempts = max_up_attempts)
             # 4 - Test if iteration can be stopped
             self.current_evid_increase[i] = (self.logp_dead[i] + self.logwidth)-curr_evid
             curr_evid = self.logp_dead[i] + self.logwidth
@@ -944,6 +944,7 @@ class BayesianSampler(object):
                     ax[row, col].set_ylabel(r"$p(\theta)$")
                     jdim += 1
         plt.tight_layout();
+        return ax
     
     def plot_loglike_vs_mass(self, ax = None):
         """ Plots the evolution of the log-likelihood vs. mass
@@ -978,7 +979,8 @@ class BayesianSampler(object):
         ax[0,0].plot(self.logp_concat, '-k', linewidth = 1.5, alpha = 0.85)
         ax[0,0].grid(linestyle = '--')
         ax[0,0].set_xlabel(r"Iteration Number [-]")
-        ax[0,0].set_ylabel(r"$\text{log}(\mathcal{L}(\theta))$ [Np]")
+        # ax[0,0].set_ylabel(r"$\mathrm{log}(\mathcal{L}(\theta))$ [Np]")
+        ax[0,0].set_ylabel(r"log($L(\theta$)) [Np]")
         ax[0,0].set_xlim((0, len(self.logp_concat)))
         plt.tight_layout(); 
     

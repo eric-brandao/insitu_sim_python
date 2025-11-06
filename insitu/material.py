@@ -1,8 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import warnings
+import utils_insitu as ut_is
 # from insitu.controlsair import load_cfg
-
+from controlsair import AirProperties, AlgControls
 
 class PorousAbsorber():
     def __init__(self, air, controls):
@@ -120,6 +121,43 @@ class PorousAbsorber():
             (self.Zs * np.cos(self.theta) + self.rho0 * self.c0)
         self.alpha = 1 - (np.abs(self.Vp)) ** 2.0
         return self.Zs, self.Vp, self.alpha
+    
+    def layer_over_rigid_theta(self, thickness = 25.0/1000, theta_init = 0,
+                               theta_end = 90, theta_res = 1):
+        """ Computes the absorption data (Zs, Vp, alpha) for frequency/agular sweep.
+        
+
+        Parameters
+        ----------
+        thickness : float, optional
+            Sample thickness. The default is 25.0/1000.
+        theta_init : float, optional
+            initial value of theta in degrees. The default is 0.
+        theta_end : TYPE, optional
+            final value of theta in degrees. The default is 90.
+        theta_res : TYPE, optional
+            angular resolution of theta in degrees. The default is 1.
+
+        Returns
+        -------
+        Zs : complex
+            Complex surface impedance vs frequency and incidence angle
+        Vp : complex
+            Complex reflection coefficient vs frequency and incidence angle
+        alpha : complex
+            Absorption coefficient vs frequency and incidence angle
+        """
+        theta = np.arange(start = np.deg2rad(theta_init),
+                          stop = np.deg2rad(theta_end)+np.deg2rad(theta_res), 
+                          step = np.deg2rad(theta_res))
+        self.theta_deg = np.rad2deg(theta)
+        self.Zs_ft = np.zeros((len(self.freq), len(theta)), dtype = complex)
+        self.Vp_ft = np.zeros((len(self.freq), len(theta)), dtype = complex)
+        self.alpha_ft = np.zeros((len(self.freq), len(theta)))
+        for jt, the in enumerate(theta):
+            self.Zs_ft[:, jt], self.Vp_ft[:, jt], self.alpha_ft[:, jt] =\
+                self.layer_over_rigid(thickness = thickness, theta = the)
+        # return Zs, Vp, alpha
 
     def layer_over_airgap(self, thick1 = 25.0/1000, thick2 = 10.0/1000, theta = 0.0):
         '''
@@ -160,119 +198,72 @@ class PorousAbsorber():
         return self.Zs, self.Vp, self.alpha
 
     def plot_zc(self,):
-        '''
-        This method is used to plot the reference characteristic impedance
-        '''
+        """ Plot the characteristic impedance (spk)
+        """
         pass
 
     def plot_kc(self,):
-        '''
-        This method is used to plot the reference characteristic wave number
-        '''
+        """ Plot the characteristic wave-number (spk)
+        """
         pass
 
     def plot_zs(self,):
-        '''
-        This method is used to plot the reference surface impedance
-        '''
+        """ Plot the surface impedance (spk)
+        """
         pass
 
     def plot_vp(self,):
-        '''
-        This method is used to plot the reference reflection coefficient
-        '''
+        """ Plot the reflection coefficient (spk)
+        """
         pass
 
-    def plot_absorption(self):
-        '''
-        This method is used to plot the reference absorption coefficient
-        '''
-        fig = plt.figure()
-        plt.plot(self.freq, self.alpha, 'k-', label=self.model)
-        plt.title(self.material_scene)
-        plt.grid(linestyle = '--', which='both')
-        plt.xscale('log')
-        plt.legend(loc = 'lower right')
-        plt.xticks([50, 100, 500, 1000, 5000, 10000],
-            ['50', '100', '500', '1000', '5000', '10000'])
-        plt.xlabel('Frequency [Hz]')
-        plt.ylabel('absorption coefficient [-]')
-        plt.ylim((-0.2, 1.2))
-        plt.xlim((0.8 * self.freq[0], 1.2*self.freq[-1]))
-        plt.show()
+    def plot_absorption(self, color = 'k', linewidth = 1.5, 
+                        linestyle = '-', alpha = 1.0, label = "PW"):
+        """ Plot the absorption coefficient (spk)
+        """
+        ax = ut_is.plot_absorption(self.freq, self.alpha, 
+                                   xlim = (self.freq[0], self.freq[-1]), 
+                                   ylim = (-0.2, 1.2), color = color, linewidth = linewidth, 
+                                   linestyle = linestyle, alpha = alpha, label = label)
+        plt.tight_layout()
+        return ax
+    
+    def plot_absorption_theta(self, freq2plot = 1000, color = 'k', linewidth = 1.5,
+                              linestyle = '-', alpha = 1.0, label = "PW"):
+        """ Plot the absorption coefficient (spk)
+        """
+        id_f = ut_is.find_freq_index(self.freq, freq_target = freq2plot)        
+        ax = ut_is.plot_absorption_theta(self.theta_deg, self.alpha_ft[id_f, :],
+                                         xlim = (0, 90), ylim = (-0.2, 1.2),
+                                         color = color, linewidth = linewidth,
+                                         linestyle = linestyle, alpha = alpha, label = label)
+        plt.tight_layout()
+        return ax
+        
 
+def kp_rhop_range_study(resist = [3000, 60000], phi = [0.15, 1.0],
+                        alpha_inf = [1.0, 3.00], Lam = [50e-6, 300e-6],
+                        Lamlfac = [1.01, 3.0], n_samples = 20000,
+                        freq_vec = [125, 250, 500, 1000, 2000, 4000]):
+    # Air and controls
+    air = AirProperties(c0 = 343.0, rho0 = 1.21)
+    controls = AlgControls(c0 = air.c0, freq_vec = freq_vec)
+    # Sample
+    resist_s = np.random.uniform(low = resist[0], high = resist[1], size = n_samples)
+    phi_s = np.random.uniform(low = phi[0], high = phi[1], size = n_samples)
+    alpha_inf_s = np.random.uniform(low = alpha_inf[0], high = alpha_inf[1], size = n_samples)
+    Lam_s = np.random.uniform(low = Lam[0], high = Lam[1], size = n_samples)
+    Laml_factor_s = np.random.uniform(low = Lamlfac[0], high = Lamlfac[1], size = n_samples)
+    Laml_s = Laml_factor_s * Lam_s
+    # Loop
+    k_p = np.zeros((n_samples, len(controls.freq)), dtype = complex)
+    rho_p = np.zeros((n_samples, len(controls.freq)), dtype = complex)
+    for jm in range(n_samples):
+        material = PorousAbsorber(air, controls)
+        #material.miki(resistivity=resist)
+        material.jcal(resistivity = resist_s[jm], porosity = phi_s[jm], 
+                      tortuosity = alpha_inf_s[jm], lam = Lam_s[jm], lam_l = Laml_s[jm])
+        k_p[jm, :] = material.kp#/controls.k0 # Normalized
+        rho_p[jm, :] = material.rhop#/air.rho0 # Normalized
+    return k_p, rho_p
 
-
-# class PorousAbsorber():
-#     def __init__(self, config_file, air, freq):
-#         '''
-#         Set up porous absorber
-#         '''
-#         self.c0 = np.float32(air.c0)
-#         self.rho0 = np.float32(air.rho0)
-#         self.freq = freq
-#         config = load_cfg(config_file)
-#         self.resistivity = np.float32(config['porous']['resistivity'])
-#         self.porosity = np.float32(config['porous']['porosity'])
-#         self.tortuosity = np.float32(config['porous']['tortuosity'])
-#         self.lam = np.float32(config['porous']['lam'])
-#         self.lam_l = np.float32(config['porous']['lam_l'])
-#         # self.thickness = config['porous']['resistivity']
-
-#     def delany_bazley(self):
-#         self.model = 'Delany and Bazley'
-#         X = 1000.0 * self.freq / self.resistivity
-#         w = 2 * np.pi * self.freq
-#         k0 = w / self.c0
-#         self.Zp = np.array((self.rho0 * self.c0) * (1 + 9.08 * X ** (-0.75)
-#         - 1j * (11.9 * X ** (-0.73))), dtype = np.csingle)
-#         self.kp = np.array(-1j * k0 * (10.3 * X ** (-0.59) +
-#             1j * (1 + 10.8 * X ** (-0.7))), dtype = np.csingle)
-#         return self.Zp, self.kp
-
-#     def jcal(self):
-#         self.model = 'JCAL'
-#         eta = 1.84e-5
-#         b2 = 0.77
-#         gamma = 1.4
-#         p0 = 101320
-#         v = eta / self.rho0
-#         v_l = v / b2
-#         w = 2 * np.pi * self.freq
-#         k0 = w / self.c0
-#         q0 = eta / self.resistivity
-#         q0_l = self.porosity * (self.lam_l ** 2) / 8.0
-#         gw = (1 + ((2 * self.tortuosity * q0 / (self.porosity * self.lam)) ** 2) * (1j * w / v)) ** 0.5
-#         gw_l = (1 + ((self.lam_l / 4) ** 2) * (1j * w / v_l)) ** 0.5
-#         rho_p = self.rho0 * (self.tortuosity + ((v * self.porosity) / (1j * w * q0)) * gw)
-#         kappa_p = gamma * p0 / (gamma - ((gamma - 1.0) / (1 + ((v_l * self.porosity) / (1j * w * q0_l)) * gw_l)))
-#         self.Zp = (rho_p * kappa_p) ** 0.5
-#         self.kp = w * ((rho_p / kappa_p) ** 0.5)
-#         # rhop = self.rho0 * self.tortuosity * (1 +
-#         #     ((self.resistivity * self.porosity) / (1j * self.tortuosity * self.rho0 * w)) *
-#         #     ((1 + (4 * 1j * (self.tortuosity ** 2) * eta *self.rho0 * w) /
-#         #     ((self.resistivity ** 2) * (self.lam ** 2) * (self.porosity ** 2))) ** 0.5))
-#         # kappa_p = gamma * p0 / (gamma - ((gamma - 1.0) / (1 + ((self.resistivity * self.porosity) /
-#         # (1j * self.tortuosity * self.rho0 * b2 * w)) * ((1 + (4 * 1j * (self.tortuosity ** 2) * eta *self.rho0 * b2 * w) /
-#         #     ((self.resistivity ** 2) * (self.lam ** 2) * (self.porosity ** 2))) ** 0.5)
-
-#     def layer_over_rigid(self, thickness):
-#         self.Zs = -1j * self.Zp * (1 / np.tan(self.kp * thickness))
-#         self.Vp = (self.Zs - self.rho0 * self.c0) / (self.Zs + self.rho0 * self.c0)
-#         self.alpha = 1 - (np.abs(self.Vp)) ** 2.0
-#         return self.Zs, self.Vp, self.alpha
-
-#     def plot_absorption(self):
-#         plt.figure()
-#         plt.plot(self.freq, self.alpha, 'k-', label=self.model)
-#         plt.title('Porous material layer over rigid backing')
-#         plt.grid(linestyle = '--', which='both')
-#         plt.xscale('log')
-#         plt.legend(loc = 'lower right')
-#         plt.xticks([50, 100, 500, 1000, 5000, 10000],
-#             ['50', '100', '500', '1000', '5000', '10000'])
-#         plt.xlabel('Frequency [Hz]')
-#         plt.ylabel('absorption coefficient [-]')
-#         plt.ylim((-0.2, 1.2))
-#         plt.xlim((0.8 * self.freq[0], 1.2*self.freq[-1]))
-#         plt.show()
