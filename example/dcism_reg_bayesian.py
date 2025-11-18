@@ -20,9 +20,9 @@ from controlsair import AirProperties #AlgControls,
 # from receivers import Receiver
 # from material import PorousAbsorber  # Material
 from field_inf_nlr import NLRInfSph  # Field Inf NLR
-from decomp_quad_v2 import Decomposition_QDT
+# from decomp_quad_v2 import Decomposition_QDT
 from decomp_DCISM_bayesian import DCISM_Bayesian
-import lcurve_functions as lc
+# import lcurve_functions as lc
 import utils_insitu as ut_is
 
 #%%
@@ -69,7 +69,7 @@ alpha_true = 1-(np.abs(Vp_true))**2
 #%% DCISM estimation (Bayesian)
 dcism_b = DCISM_Bayesian(p_mtx = field_nlr.pres_s[0], controls=field_nlr.controls,
                          air = air, receivers = field_nlr.receivers, 
-                         source = field_nlr.sources)
+                         source = field_nlr.sources, sampling_scheme = 'slice')
 # dcism_b.show_available_models()
 dcism_b.choose_forward_model(chosen_model = 3)
 #dcism_b.show_chosen_model_parameters()
@@ -84,7 +84,8 @@ dcism_b.set_sample_thickness(t_p = field_nlr.material.thickness)
 dcism_b.set_reference_sensor(ref_sens = 0)
 ba = dcism_b.nested_sampling_single_freq(jf = id_f, n_live = 50, max_iter = 200,
                                           max_up_attempts = 50, seed = 0)
-ba.confidence_interval(ci_percent = 99)
+ba.confidence_interval(ci_percent = 80)
+#ba.reconstruct_mean(x_meas = dcism_b.receivers.coord)
 # dcism_b.pk_bayesian(n_live = 250, max_iter = 500, max_up_attempts = 50, seed = 0)
 #%%
 ba.plot_loglike()

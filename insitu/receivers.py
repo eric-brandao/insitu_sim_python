@@ -996,6 +996,112 @@ class Receiver():
             min_distance[row] = np.amin(distances[distances != 0])
         return np.amax(min_distance), np.mean(min_distance), np.std(min_distance)
     
+    def remove_z_coords(self, z = 0.01, pres_data = None):
+        """ Remove certain z coordinates of the array
+        
+        
+        Finds the indexes belongin to the desired z coordinate to be removed.
+        Then, delete it from orginal coordinate vector and returns a new receiver
+        object. If pressure data is passed, it will remove those coordinates from
+        the measured data too.
+        
+        Parameters
+        ----------
+        z : float
+            Exact value of z coordinate to remove
+        pres_data : numpyndArray
+            Pressure data in a matriz (Nrecs x Nfreq)
+        """
+        id_remove = np.where(self.coord[:,2] == z)[0]
+        new_array, new_pres_data = self.get_new_array_data(id_remove, pres_data = pres_data)
+        return new_array, new_pres_data
+    
+    def truncate_array_zmax(self, z_max = 0.05, pres_data = None):
+        """ Remove points that have higher height than z_max
+        
+        Parameters
+        ----------
+        z_max : float
+            max height value to truncate array
+        pres_data : numpyndArray
+            Pressure data in a matriz (Nrecs x Nfreq)
+        """
+        # Horizonta distance
+        id_remove = np.where(self.coord[:,2] > z_max)[0]
+        new_array, new_pres_data = self.get_new_array_data(id_remove, pres_data = pres_data)
+        return new_array, new_pres_data
+    
+    def truncate_array_zmin(self, z_min = 0.05, pres_data = None):
+        """ Remove points that have lower height than z_min
+        
+        Parameters
+        ----------
+        z_min : float
+            min height value to truncate array
+        pres_data : numpyndArray
+            Pressure data in a matriz (Nrecs x Nfreq)
+        """
+        # Horizonta distance
+        id_remove = np.where(self.coord[:,2] < z_min)[0]
+        new_array, new_pres_data = self.get_new_array_data(id_remove, pres_data = pres_data)
+        return new_array, new_pres_data
+    
+    def truncate_array_radially(self, radius = 0.3, pres_data = None):
+        """ Remove points that have horizontal distance larger than radius
+        
+        Parameters
+        ----------
+        radius : float
+            Radius value to truncate array
+        pres_data : numpyndArray
+            Pressure data in a matriz (Nrecs x Nfreq)
+        """
+        # Horizonta distance
+        horz_dist = np.sqrt(self.coord[:,0]**2 + self.coord[:,1]**2)
+        id_remove = np.where(horz_dist > radius)[0]
+        new_array, new_pres_data = self.get_new_array_data(id_remove, pres_data = pres_data)
+        return new_array, new_pres_data
+    
+    def truncate_array_xmax(self, x_max = 0.5, pres_data = None):
+        """ Remove points that have higher x-value than x_max
+        
+        Parameters
+        ----------
+        x_max : float
+            max x value to truncate array
+        pres_data : numpyndArray
+            Pressure data in a matriz (Nrecs x Nfreq)
+        """
+        # Horizonta distance
+        id_remove = np.where(np.abs(self.coord[:,0]) > x_max)[0]
+        new_array, new_pres_data = self.get_new_array_data(id_remove, pres_data = pres_data)
+        return new_array, new_pres_data
+    
+    def truncate_array_ymax(self, y_max = 0.5, pres_data = None):
+        """ Remove points that have higher y-value than y_max
+        
+        Parameters
+        ----------
+        y_max : float
+            max y value to truncate array
+        pres_data : numpyndArray
+            Pressure data in a matriz (Nrecs x Nfreq)
+        """
+        # Horizonta distance
+        id_remove = np.where(np.abs(self.coord[:,1]) > y_max)[0]
+        new_array, new_pres_data = self.get_new_array_data(id_remove, pres_data = pres_data)
+        return new_array, new_pres_data
+        
+    def get_new_array_data(self, id_remove, pres_data = None):
+        """ Based on idexes to remove, get new array and data.
+        """
+        new_pres_data = None
+        new_array = Receiver()
+        new_array.coord = np.delete(self.coord, id_remove, axis = 0)
+        if pres_data is not None:
+            new_pres_data = np.delete(pres_data, id_remove, axis = 0)
+        return new_array, new_pres_data
+    
     def plot_array(self, x_lim = [-1,1], y_lim = [-1,1], z_lim = [0, 1]):
         """ plot the array coordinates as dots in space
         """

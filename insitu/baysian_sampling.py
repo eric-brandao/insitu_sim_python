@@ -16,7 +16,7 @@ class BayesianSampler(object):
     
     def __init__(self, measured_coords = None, measured_data = None, 
                  num_model_par = 1, parameters_names = None,
-                 likelihood = None):
+                 likelihood = None, sampling_scheme = 'slice'):
         """ Bayesian sampling schemes
         
         Parameters
@@ -34,6 +34,11 @@ class BayesianSampler(object):
             Its input are the measured coordinates and the
         likelihood : str or None
             likelihood type function
+        sampling_scheme : str
+            Desired sampling scheme for nested sampling. The possibilites are:
+                "slice" (default - slice sampling), "random walk" (random walk)
+                "constrained" (for random parameter update). Given a choice, 
+                the update function is selected.
         """
         # Make sure there is measured data
         if measured_coords is None or measured_data is None:
@@ -57,7 +62,15 @@ class BayesianSampler(object):
             self.set_log_normal_1d_std()
         else:
             self.likelihood_fun = self.log_t
-            
+        
+        if sampling_scheme == 'slice':
+            self.sample_update_fun = self.constrained_resample_slice
+        elif sampling_scheme == 'random walk':
+            self.sample_update_fun = self.constrained_resample_rw
+        elif sampling_scheme == 'constrained':
+            self.sample_update_fun = self.constrained_resample
+        else:
+            self.sample_update_fun = self.constrained_resample_slice
             # self.seed = seed
             # self.rng = np.random.default_rng(seed)
         # Make sure there is model function and get number of parameters to estimate
@@ -794,10 +807,11 @@ class BayesianSampler(object):
             # self.logZ = logZ_new
             self.logwidth -= 1.0 / n_live
             # self.delta_mu[i] = self.logwidth
-            # 3 - Propose the update.                     
-            # self.constrained_resample(i, max_up_attempts = max_up_attempts)
-            self.constrained_resample_rw(i, max_up_attempts = max_up_attempts)
-            # self.constrained_resample_slice(it_num = i, max_up_attempts = max_up_attempts)
+            # 3 - Propose the update.
+            self.sample_update_fun(i, max_up_attempts)                   
+            # self.constrained_resample(i, max_up_attempts)
+            # self.constrained_resample_rw(i, max_up_attempts)
+            # self.constrained_resample_slice(i, max_up_attempts)
             # 4 - Test if iteration can be stopped
             self.current_evid_increase[i] = (self.logp_dead[i] + self.logwidth)-curr_evid
             curr_evid = self.logp_dead[i] + self.logwidth

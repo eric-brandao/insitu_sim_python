@@ -1776,7 +1776,51 @@ def plot_1d_curve(xdata, ydata, ax, xlims = None, ylims = None,
     ax.set_ylim(ylims)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
+
+def plot_time(fs, sig, ax = None, xlims = None, ylims = None, 
+              color = 'tab:blue', linewidth = 1.5, linestyle = '-',
+              alpha = 1.0, label = None):
+    """ plot time signals (single channel)
     
+    fs : int
+        Sampling rate
+    sig : numpy1dArray
+        Signal in time dommain - single channel    
+    """
+    # Create axis if axis is None
+    if ax is None:
+        _, ax = give_me_an_ax()
+        ax = ax[0,0]
+    n_samples = len(sig)
+    time = np.linspace(0, (n_samples-1)/fs, n_samples)
+    plot_1d_curve(time, sig, ax, xlims = xlims, ylims = ylims,
+                  color = color, linewidth = linewidth, 
+                  linestyle = linestyle, alpha = alpha, 
+                  label = label, xlabel = "Time [s]", ylabel = "Amplitude",
+                  linx = True, liny = True)
+    return ax
+
+def plot_spk_mag(freq, spk, ax = None, xlims = None, ylims = None, 
+              color = 'tab:blue', linewidth = 1.5, linestyle = '-',
+              alpha = 1.0, label = None):
+    """ plot magnitude spectrum of signals in dB (single channel)
+    
+    freq : numpy1dArray
+        frequency vector
+    spk_mag : numpy1dArray
+        spectrum   
+    """
+    # Create axis if axis is None
+    if ax is None:
+        _, ax = give_me_an_ax()
+        ax = ax[0,0]
+    spk_mag_dB = 20*np.log10(np.abs(spk)) 
+    plot_1d_curve(freq, spk_mag_dB, ax, xlims = xlims, ylims = ylims,
+                  color = color, linewidth = linewidth, 
+                  linestyle = linestyle, alpha = alpha, 
+                  label = label, xlabel = "Frequency [Hz]", ylabel = "Magnitude [dB]",
+                  linx = False, liny = True)
+    return ax
 
 def plot_absorption(freq, abs_coeff, ax = None, xlim = None, ylim = None, 
                     color = 'tab:blue', linewidth = 1.5, linestyle = '-',

@@ -26,7 +26,7 @@ class DCISM_Bayesian(object):
     that uses the dDCISM as a forward model (as implemented by M. Eser)
     """
     def __init__(self, p_mtx=None, controls=None, air = None, 
-                 receivers = None, source = None):
+                 receivers = None, source = None, sampling_scheme = 'slice'):
         """
 
         Parameters
@@ -52,6 +52,7 @@ class DCISM_Bayesian(object):
         self.air = air
         self.receivers = receivers
         self.source = source
+        self.sampling_scheme = sampling_scheme
         # self.set_reference_sensor(ref_sens = 0)
         # self.parameters_names = ["Re(s)", "Im(s)", "Re(is)", "Im(is)"]
         # Get receiver data (frequency independent)
@@ -273,7 +274,8 @@ class DCISM_Bayesian(object):
         ba = BayesianSampler(measured_coords = self.receivers.coord, 
                               measured_data = self.pres_s[:, jf],
                               parameters_names = self.parameters_names,
-                              num_model_par = self.num_model_par)
+                              num_model_par = self.num_model_par,
+                              sampling_scheme = self.sampling_scheme)
         ba.set_model_fun(model_fun = self.forward_model_4)
         ba.set_uniform_prior_limits(lower_bounds = self.lower_bounds, 
                                     upper_bounds = self.upper_bounds)
