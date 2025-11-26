@@ -19,6 +19,11 @@ field_nlr = NLRInfSph()
 path = 'D:/Work/UFSM/Pesquisa/insitu_arrays/TAMURA_DCISM/dcism_locallyreacting_Rtheta/'
 field_nlr.load(path = path, filename = "melamine_nlr_sim")
 
+#%%
+new_array, new_pres_data = field_nlr.receivers.remove_z_coords(z = 0.02, 
+                                                               pres_data = field_nlr.pres_s[0])
+
+id_z_list = new_array.get_micpair_indices()
 #%% 
 new_array, new_pres_data = field_nlr.receivers.remove_z_coords(z = 0.1, 
                                                                pres_data = field_nlr.pres_s[0])

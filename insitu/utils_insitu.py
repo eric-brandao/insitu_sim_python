@@ -1822,6 +1822,66 @@ def plot_spk_mag(freq, spk, ax = None, xlims = None, ylims = None,
                   linx = False, liny = True)
     return ax
 
+def plot_spk_mag_pha(freq, spk, ax = None, xlims = None, ylims = None, 
+              color = 'tab:blue', linewidth = 1.5, linestyle = '-',
+              alpha = 1.0, label = None):
+    """ plot spectrum of signals Magnitude and phase (single channel)
+    
+    freq : numpy1dArray
+        frequency vector
+    spk_mag : numpy1dArray
+        spectrum   
+    """
+    # Create axis if axis is None
+    if ax is None:
+        _, ax = give_me_an_ax(figshape = (1, 2), figsize = (10,3))
+
+    spk_mag_dB = 20*np.log10(np.abs(spk))
+    spk_pha = np.rad2deg(np.angle(spk))
+    # plot mag
+    plot_1d_curve(freq, spk_mag_dB, ax[0,0], xlims = xlims, ylims = ylims,
+                  color = color, linewidth = linewidth, 
+                  linestyle = linestyle, alpha = alpha, 
+                  label = label, xlabel = "Frequency [Hz]", ylabel = "Magnitude [dB]",
+                  linx = False, liny = True)
+    # plot phase
+    plot_1d_curve(freq, spk_pha, ax[0,1], xlims = xlims, ylims = ylims,
+                  color = color, linewidth = linewidth, 
+                  linestyle = linestyle, alpha = alpha, 
+                  label = label, xlabel = "Frequency [Hz]", ylabel = "Phase [deg.]",
+                  linx = False, liny = True)    
+    return ax
+
+def plot_spk_re_imag(freq, spk, ax = None, xlims = None, ylims = None, 
+              color = 'tab:blue', linewidth = 1.5, linestyle = '-',
+              alpha = 1.0, label = None):
+    """ plot spectrum of signals Real and Imag (single channel)
+    
+    freq : numpy1dArray
+        frequency vector
+    spk_mag : numpy1dArray
+        spectrum   
+    """
+    # Create axis if axis is None
+    if ax is None:
+        _, ax = give_me_an_ax(figshape = (1, 2), figsize = (10,3))
+
+    spk_re = np.real(spk)
+    spk_im = np.imag(spk)
+    # plot real
+    plot_1d_curve(freq, spk_re, ax[0,0], xlims = xlims, ylims = ylims,
+                  color = color, linewidth = linewidth, 
+                  linestyle = linestyle, alpha = alpha, 
+                  label = label, xlabel = "Frequency [Hz]", ylabel = "Real [-]",
+                  linx = False, liny = True)
+    # plot imag
+    plot_1d_curve(freq, spk_im, ax[0,1], xlims = xlims, ylims = ylims,
+                  color = color, linewidth = linewidth, 
+                  linestyle = linestyle, alpha = alpha, 
+                  label = label, xlabel = "Frequency [Hz]", ylabel = "Imag. [-]",
+                  linx = False, liny = True)    
+    return ax
+
 def plot_absorption(freq, abs_coeff, ax = None, xlim = None, ylim = None, 
                     color = 'tab:blue', linewidth = 1.5, linestyle = '-',
                     alpha = 1.0, label = None):

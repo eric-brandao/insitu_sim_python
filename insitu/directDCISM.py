@@ -13,7 +13,6 @@ import utils_insitu as ut_is
 from receivers import Receiver
 from sources import Source
 from material import PorousAbsorber
-import utils_insitu as ut_is
 
 class dDCISM(object):
     """ Direct Discrete Image Source Method
@@ -270,7 +269,7 @@ class dDCISM(object):
         the sound field (but not so much inverse problems)
         """
         # Initalize pressure matrix
-        pres_mtx = np.zeros((self.receivers.coord.shape[0], 
+        self.pres_mtx = np.zeros((self.receivers.coord.shape[0], 
                              len(self.controls.k0)), dtype = complex)
         # Initialize bar
         bar = tqdm(total=len(self.controls.k0),
@@ -278,12 +277,25 @@ class dDCISM(object):
         
         # Freq loop
         for jk, k0 in enumerate(self.controls.k0):
-            pres_mtx[:, jk] = self.predict_p(k = k0, k_p = self.material.kp[jk],
+            self.pres_mtx[:, jk] = self.predict_p(k = k0, k_p = self.material.kp[jk],
                                              rho_p = self.material.rhop[jk],
                                              t_p = self.material.thickness)
             bar.update(1)
         bar.close()
-        return pres_mtx
+        #return self.pres_mtx
+    
+    def save(self, filename = 'dDCISM', path = ''):
+        """ To save the decomposition object as pickle
+        """
+        ut_is.save(self, filename = filename, path = path)
+
+    def load(self, filename = 'dDCISM', path = ''):
+        """ To load the decomposition object as pickle
+
+        You can instantiate an empty object of the class and load a saved one.
+        It will overwrite the empty object.
+        """
+        ut_is.load(self, filename = filename, path = path)
         
         
         

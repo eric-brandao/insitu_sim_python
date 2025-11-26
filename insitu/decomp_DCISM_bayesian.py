@@ -171,6 +171,18 @@ class DCISM_Bayesian(object):
         # Set new measurement data
         self.pres_s = self.pres_s / self.pres_s[self.ref_sens,:]
         self.pres_s = np.delete(self.pres_s, self.ref_sens, axis = 0)
+        
+    def set_mic_pairs(self,):
+        """ Get the indexes of mic-pair transfer functions
+        """
+        # Collect mic-pair transfer funtions
+        self.id_z_list = self.receivers.get_micpair_indices()
+        self.tf_array = Receiver()
+        self.tf_array.coord = self.receivers.coord[self.id_z_list[0],:]
+        # Change measured data to transfer function
+        p_exp_line_1 = self.pres_s[self.id_z_list[0],:]
+        p_exp_line_2 = self.pres_s[self.id_z_list[1],:]
+        self.pres_s = p_exp_line_1/p_exp_line_2
             
     def setup_dDCISM(self,  T0 = 7.5, dt = 0.1, tol = 1e-6, gamma=1.0):
         """ Initialization of object:
@@ -190,7 +202,7 @@ class DCISM_Bayesian(object):
                                source = self.source, receivers = self.receivers,
                                T0 = T0, dt = dt, tol = tol, gamma = gamma)
             
-    def forward_model_1(self, x_meas, model_par = [3.00, -56.00, 1.20, -64.00, 1e-5, -np.pi]):
+    def forward_model_2(self, x_meas, model_par = [3.00, -56.00, 1.20, -64.00, 1e-5, -np.pi]):
         """ Forward model for pressure reconstruction at array (single freq)
 
         Parameters
@@ -206,8 +218,9 @@ class DCISM_Bayesian(object):
         prediction
         """
         # Source strength
-        vol_velocity = model_par[4]*np.exp(1j*model_par[5])
-        source_strength = 1j*self.air.rho0*self.controls.c0*self.current_k0*vol_velocity
+        # vol_velocity = model_par[4]*np.exp(1j*model_par[5])
+        # source_strength = 1j*self.air.rho0*self.controls.c0*self.current_k0*vol_velocity
+        source_strength = model_par[4]*np.exp(1j*model_par[5])
         # complex wave-number
         k_p = model_par[0] + 1j*model_par[1]
         # complex density
@@ -217,7 +230,7 @@ class DCISM_Bayesian(object):
         p_pred = source_strength * green_fun
         return p_pred
     
-    def forward_model_4(self, x_meas, model_par = [3.00, -56.00, 1.20, -64.00]):
+    def forward_model_3(self, x_meas, model_par = [3.00, -56.00, 1.20, -64.00]):
         """ Forward model for pressure reconstruction at array (single freq)
 
         Parameters
@@ -235,13 +248,46 @@ class DCISM_Bayesian(object):
         # Source strength
         # source_strength = 1.0
         # complex wave-number
-        k_p = model_par[0] + 1j*model_par[1]
+        k_p = self.current_k0*(model_par[0] + 1j*model_par[1])
         # complex density
-        rho_p = model_par[2] + 1j*model_par[3]
+        rho_p = self.air.rho0*(model_par[2] + 1j*model_par[3])
         green_fun = self.dDCISMsf.predict_p(k = self.current_k0, k_p = k_p, rho_p = rho_p, 
                                             t_p = self.t_p)
         p_pred = green_fun / green_fun[self.ref_sens]
         p_pred = np.delete(p_pred, self.ref_sens)
+        # p_pred = source_strength * green_fun
+        return p_pred
+    
+    def forward_model_33(self, x_meas, model_par = [3.00, -56.00, 1.20, -64.00]):
+        """ Forward model for pressure reconstruction at array (single freq)
+
+        Parameters
+        ----------
+        x_meas : numpyndArray
+            Measurement coordinates
+        model_par : TYPE, optional
+            DESCRIPTION. The default is [3.00, -56.00, 1.20, -64.00, 1e-5, -np.pi].
+        freq_idx : int
+            Frequency index
+        Returns
+        -------
+        prediction
+        """
+        # Source strength
+        # source_strength = 1.0
+        # complex wave-number
+        k_p = self.current_k0*(model_par[0] + 1j*model_par[1])
+        # complex density
+        rho_p = self.air.rho0*(model_par[2] + 1j*model_par[3])
+        green_fun = self.dDCISMsf.predict_p(k = self.current_k0, k_p = k_p, rho_p = rho_p, 
+                                            t_p = self.t_p)
+        
+        p_exp_line_1 = green_fun[self.id_z_list[0]]
+        p_exp_line_2 = green_fun[self.id_z_list[1]]
+        p_pred = p_exp_line_1/p_exp_line_2
+        
+        # p_pred = green_fun / green_fun[self.ref_sens]
+        # p_pred = np.delete(p_pred, self.ref_sens)
         # p_pred = source_strength * green_fun
         return p_pred
     
@@ -271,16 +317,17 @@ class DCISM_Bayesian(object):
             to a parameter set with higher likelihood.
         """
         self.current_k0 = self.controls.k0[jf]
-        ba = BayesianSampler(measured_coords = self.receivers.coord, 
+        ba = BayesianSampler(measured_coords = self.receivers.coord[self.id_z_list[0],:], 
                               measured_data = self.pres_s[:, jf],
                               parameters_names = self.parameters_names,
                               num_model_par = self.num_model_par,
                               sampling_scheme = self.sampling_scheme)
-        ba.set_model_fun(model_fun = self.forward_model_4)
+        ba.set_model_fun(model_fun = self.forward_model_33)
         ba.set_uniform_prior_limits(lower_bounds = self.lower_bounds, 
                                     upper_bounds = self.upper_bounds)
-        ba.nested_sampling(n_live = n_live, max_iter = max_iter, 
-                           max_up_attempts = max_iter, seed = seed)
+        # ba.nested_sampling(n_live = n_live, max_iter = max_iter, 
+        #                    max_up_attempts = max_iter, seed = seed)
+        ba.ultranested_sampling(n_live = n_live, max_iter = max_iter)
         ba.compute_statistics()
         return ba
     
@@ -307,17 +354,17 @@ class DCISM_Bayesian(object):
         
     def get_kp_rhop(self, ba, mode = "mean"):
         if mode == "mean":
-            kp = ba.mean_values[0] + 1j*ba.mean_values[1]
-            rhop = ba.mean_values[2] + 1j*ba.mean_values[3]
+            kp = self.current_k0*(ba.mean_values[0] + 1j*ba.mean_values[1])
+            rhop = self.air.rho0*(ba.mean_values[2] + 1j*ba.mean_values[3])
         elif mode == "lower_ci":
-            kp = ba.ci[0,0] + 1j*ba.ci[0,1]
-            rhop = ba.ci[0,2] + 1j*ba.ci[0,3]
+            kp = self.current_k0*(ba.ci[0,0] + 1j*ba.ci[0,1])
+            rhop = self.air.rho0*(ba.ci[0,2] + 1j*ba.ci[0,3])
         elif mode == "upper_ci":
-            kp = ba.ci[1,0] + 1j*ba.ci[1,1]
-            rhop = ba.ci[1,2] + 1j*ba.ci[1,3]
+            kp = self.current_k0*(ba.ci[1,0] + 1j*ba.ci[1,1])
+            rhop = self.air.rho0*(ba.ci[1,2] + 1j*ba.ci[1,3])
         else:
-            kp = ba.mean_values[0] + 1j*ba.mean_values[1]
-            rhop = ba.mean_values[2] + 1j*ba.mean_values[3]
+            kp = self.current_k0*(ba.mean_values[0] + 1j*ba.mean_values[1])
+            rhop = self.air.rho0*(ba.mean_values[2] + 1j*ba.mean_values[3])
         return kp, rhop
     
     def recon_mat_props_nlr(self, ba, id_f, theta, mode = "mean"):

@@ -996,6 +996,17 @@ class Receiver():
             min_distance[row] = np.amin(distances[distances != 0])
         return np.amax(min_distance), np.mean(min_distance), np.std(min_distance)
     
+    def get_id_at_z(self, z = 0.01):
+        """ Get indexes at given z-coordinate
+                
+        Parameters
+        ----------
+        z : float
+            Exact value of z coordinate to remove
+        """
+        id_get = np.where(self.coord[:,2] == z)[0]
+        return id_get
+       
     def remove_z_coords(self, z = 0.01, pres_data = None):
         """ Remove certain z coordinates of the array
         
@@ -1101,6 +1112,56 @@ class Receiver():
         if pres_data is not None:
             new_pres_data = np.delete(pres_data, id_remove, axis = 0)
         return new_array, new_pres_data
+    
+    def get_micpair_indices(self,):
+        """ Find microphone pairs indexes
+        """
+        # minimum z-value
+        z_min = np.amin(self.coord[:,2])
+        # Index list per plane
+        id_z_list = self.get_rec_id_list()
+        # print(id_z_list[0][0])
+        # Fist plane indexes
+        id_z_ord = []
+        id_z_ord.append(id_z_list[0])
+        
+        for jl in range(len(id_z_list)-1):
+            id_2_loop = id_z_list[jl+1]
+            xy_coords_z = np.array([self.coord[id_2_loop,0], self.coord[id_2_loop,1]]).T
+            id_min_all = []
+            for jel in range(len(id_z_list[0])):#
+                xy_coord_zmin = np.array([self.coord[id_z_list[0][jel],0], 
+                                          self.coord[id_z_list[0][jel],1]])
+                # print(xy_coord_zmin)
+                # print(np.linalg.norm(xy_coords_z - xy_coord_zmin, axis = 1))
+                id_min = np.argmin(np.linalg.norm(xy_coords_z - xy_coord_zmin, axis = 1))
+                id_min_all.append(id_min)
+            id_z_ord.append(np.array(id_z_list[jl+1][id_min_all]))                         
+        return id_z_ord
+    
+    def get_rec_id_list(self):
+        """ Get a list of indexes separated by z-plane loc.
+        """
+        # All z-values sorted.
+        z_vals = np.sort(np.unique(self.coord[:,2]))
+        id_z_list = []
+        for jz, z in enumerate(z_vals):
+            id_get = np.where(self.coord[:,2] == z)[0]
+            id_z_list.append(id_get)
+        return id_z_list
+    
+    def get_rec_plane_list(self, z_vals):
+        """ Get a list of coordinates separated by z-plane loc.
+        """
+        rec_plane_list = []
+        for jz, z in enumerate(z_vals):
+            id_get = np.where(self.coord[:,2] == z)[0]
+            rec_plane_list.append(self.coord[id_get, :])
+        return rec_plane_list
+
+
+        
+    
     
     def plot_array(self, x_lim = [-1,1], y_lim = [-1,1], z_lim = [0, 1]):
         """ plot the array coordinates as dots in space

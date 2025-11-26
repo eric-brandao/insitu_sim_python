@@ -57,6 +57,7 @@ field_nlr.material.layer_over_rigid_theta(thickness = field_nlr.material.thickne
 
 #%% True kp and rhop (single freq)
 id_f = 5
+k0 = field_nlr.controls.k0[id_f]
 print("Frequency is {} [Hz]".format(field_nlr.controls.freq[id_f]))
 print(r"True $k_p$: {}".format(field_nlr.material.kp[id_f]))
 print(r"True $\rho_p$: {}".format(field_nlr.material.rhop[id_f]))
@@ -66,23 +67,31 @@ Zp = rhop * field_nlr.controls.w[id_f]/kp
 Zs = -1j*Zp*(1 / np.tan(kp*field_nlr.material.thickness))
 Vp_true = (Zs-(air.rho0*air.c0))/(Zs+(air.rho0*air.c0))
 alpha_true = 1-(np.abs(Vp_true))**2
+
+#%% Filtering the array
+new_array, new_pres_data = field_nlr.receivers.remove_z_coords(z = 0.02, 
+                                                               pres_data = field_nlr.pres_s[0])
+
 #%% DCISM estimation (Bayesian)
-dcism_b = DCISM_Bayesian(p_mtx = field_nlr.pres_s[0], controls=field_nlr.controls,
-                         air = air, receivers = field_nlr.receivers, 
+dcism_b = DCISM_Bayesian(p_mtx = new_pres_data, controls=field_nlr.controls,
+                         air = air, receivers = new_array, 
                          source = field_nlr.sources, sampling_scheme = 'slice')
 # dcism_b.show_available_models()
 dcism_b.choose_forward_model(chosen_model = 3)
+dcism_b.set_mic_pairs()
 #dcism_b.show_chosen_model_parameters()
-# dcism_b.set_prior_limits(lower_bounds = [3.00, -56.00, 1.19, -64.00, 1e-5, -np.pi], 
-#                          upper_bounds = [189.00, -1.00, 17.00, -0.15, 1e-3, np.pi])
+# dcism_b.set_prior_limits(lower_bounds = [15.00, -30.00, 1.22, -20.00, 0.1, -np.pi], 
+#                          upper_bounds = [35.00, -1.00, 10.00, -0.05, 1.5, np.pi])
 # dcism_b.set_prior_limits(lower_bounds = [3.00, -56.00, 1.19, -64.00], 
 #                          upper_bounds = [189.00, -1.00, 17.00, -0.15])
-dcism_b.set_prior_limits(lower_bounds = [15.00, -30.00, 1.22, -20.00], 
-                          upper_bounds = [35.00, -1.00, 10.00, -0.05])
+# dcism_b.set_prior_limits(lower_bounds = [15.00, -30.00, 1.22, -20.00], 
+#                           upper_bounds = [35.00, -1.00, 10.00, -0.05])
+dcism_b.set_prior_limits(lower_bounds = [15.00/k0, -30.00/k0, 1.22/air.rho0, -20.00/air.rho0], 
+                          upper_bounds = [35.00/k0, -1.00/k0, 10.00/air.rho0, -0.05/air.rho0])
 dcism_b.setup_dDCISM(T0 = 7.5, dt = 0.1, tol = 1e-6, gamma=1.0)
 dcism_b.set_sample_thickness(t_p = field_nlr.material.thickness)
-dcism_b.set_reference_sensor(ref_sens = 0)
-ba = dcism_b.nested_sampling_single_freq(jf = id_f, n_live = 50, max_iter = 200,
+#dcism_b.set_reference_sensor(ref_sens = 0)
+ba = dcism_b.nested_sampling_single_freq(jf = id_f, n_live = 50, max_iter = 2000,
                                           max_up_attempts = 50, seed = 0)
 ba.confidence_interval(ci_percent = 80)
 #ba.reconstruct_mean(x_meas = dcism_b.receivers.coord)
@@ -90,10 +99,10 @@ ba.confidence_interval(ci_percent = 80)
 #%%
 ba.plot_loglike()
 axs = ba.plot_smooth_marginal_posterior(figshape = (2, 2))
-axs[0,0].axvline(np.real(field_nlr.material.kp[id_f]), linestyle = '--', color = 'k', linewidth = 2)
-axs[0,1].axvline(np.imag(field_nlr.material.kp[id_f]), linestyle = '--', color = 'k', linewidth = 2)
-axs[1,0].axvline(np.real(field_nlr.material.rhop[id_f]), linestyle = '--', color = 'k', linewidth = 2)
-axs[1,1].axvline(np.imag(field_nlr.material.rhop[id_f]), linestyle = '--', color = 'k', linewidth = 2)
+axs[0,0].axvline(np.real(field_nlr.material.kp[id_f]/k0), linestyle = '--', color = 'k', linewidth = 2)
+axs[0,1].axvline(np.imag(field_nlr.material.kp[id_f]/k0), linestyle = '--', color = 'k', linewidth = 2)
+axs[1,0].axvline(np.real(field_nlr.material.rhop[id_f]/air.rho0), linestyle = '--', color = 'k', linewidth = 2)
+axs[1,1].axvline(np.imag(field_nlr.material.rhop[id_f]/air.rho0), linestyle = '--', color = 'k', linewidth = 2)
 
 #%%
 kp_b, rhop_b, _, _, _, alpha_calc = dcism_b.recon_mat_props_nlr(ba, id_f, 

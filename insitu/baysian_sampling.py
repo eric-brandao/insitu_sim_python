@@ -9,6 +9,11 @@ import scipy
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import utils_insitu as ut_is
+try:
+    import ultranest
+except:
+    print("Not possible to use Ultranest in this environment")
+        
 
 class BayesianSampler(object):
     """ Bayesian sampling analysis of inverse problems
@@ -151,9 +156,17 @@ class BayesianSampler(object):
         prior_samples : numpyndArray
             samples of the uniform prior distribution with dimensions (num_pts, num_model_par)
         """
-        prior_samples = np.random.uniform(low = self.lower_bounds, 
-                                          high = self.upper_bounds,
+        # prior_samples = np.random.uniform(low = self.lower_bounds, 
+        #                                   high = self.upper_bounds,
+        #                                   size = (num_samples, self.num_model_par))
+        
+        prior_cube = np.random.uniform(low = np.zeros(self.num_model_par), 
+                                          high = np.ones(self.num_model_par),
                                           size = (num_samples, self.num_model_par))
+        prior_samples = np.zeros(prior_cube.shape)
+        for jp in range(self.num_model_par):
+            prior_samples[:, jp] = prior_cube[:, jp] *\
+                (self.upper_bounds[jp]-self.lower_bounds[jp]) + self.lower_bounds[jp]
         return prior_samples
     
     def set_log_normal_1d_std(self, sigma = 1):
@@ -841,6 +854,28 @@ class BayesianSampler(object):
         sorted_logp_live = self.logp_live[sorted_indices]
         sorted_live_pts = self.live_pts[sorted_indices, :]
         return sorted_logp_live, sorted_live_pts
+    
+    def prior_un(self, cube):
+        prior_cube = cube.copy()
+        # transform location parameter: uniform prior
+        prior_samples = np.zeros(prior_cube.shape)
+        for jp in range(self.num_model_par):
+            prior_samples[jp] = prior_cube[jp] *\
+                (self.upper_bounds[jp]-self.lower_bounds[jp]) + self.lower_bounds[jp]
+        return prior_samples
+    
+    def ultranested_sampling(self, n_live = 250, max_iter = 1000):
+        """ Run via ultranest
+        """       
+        sampler = ultranest.NestedSampler(param_names = self.parameters_names,
+                                          loglike = self.log_t, 
+                                          transform = self.prior_un, num_live_points = n_live)
+        result = sampler.run(max_iters = max_iter)
+        self.logp_concat = sampler.results['weighted_samples']['logl']
+        self.logZ = sampler.results['logz']
+        self.prior_samples = sampler.results['weighted_samples']['points']
+        self.weights = sampler.results['weighted_samples']['weights']
+        return sampler
         
     def weighted_mean(self, ):
         """ Weighted mean
@@ -914,6 +949,33 @@ class BayesianSampler(object):
         self.weighted_var()
         self.ess_and_stderror()
         self.confidence_interval(ci_percent = ci_percent)
+        
+    def reconstruct_mean(self, x_meas):
+        """ Reconstruction from mean values
+        
+        Parameters
+        ----------
+        x_meas : numpyndArray
+            Coordinates where to reconstruct.
+        """
+        # prediction - from mean
+        y_recon = self.model_fun(x_meas = x_meas,
+                                 model_par = self.mean_values)
+        return y_recon
+    
+    def reconstruct_ci(self, x_meas):
+        """ Reconstruction from confidence interval values
+        
+        Parameters
+        ----------
+        x_meas : numpyndArray
+            Coordinates where to reconstruct.
+        """
+        y_recon = np.zeros((2, len(x_meas)))
+        for jci in range(2):
+            y_recon[jci, :] = self.model_fun(x_meas = x_meas,
+                                             model_par = self.ci[jci, :])
+        return y_recon
     
     def plot_histograms(self, ):
         """ Plot histograms
@@ -959,6 +1021,58 @@ class BayesianSampler(object):
                     jdim += 1
         plt.tight_layout();
         return ax
+    
+    def plot_histogram(self, ax = None, par_id = 0):
+        """ Plot histograms
+        """
+        if ax is None:
+            _, ax = ut_is.give_me_an_ax(figshape = (1,1), figsize = (6,3))
+            ax = ax[0,0]
+        
+        counts, _, _ = ax.hist(self.prior_samples[:, par_id], bins = 100, weights = self.weights, 
+                  density = True, label = self.parameters_names[par_id], alpha = 0.8)
+        # print(counts.shape)
+        ax.axvline(x = self.mean_values[par_id], linestyle = '--', 
+                   color = 'crimson', alpha = 0.8)
+        ax.axvline(x = self.median_values[par_id], linestyle = '--', 
+                   color = 'palevioletred', alpha = 0.8)
+        ax.axvline(x = self.ci[0, par_id], linestyle = '--', 
+                   color = 'lightpink', alpha = 0.8)
+        ax.axvline(x = self.ci[1, par_id], linestyle = '--', 
+                   color = 'lightpink', alpha = 0.8)
+        # ax.legend()
+        ax.set_xlim((self.mean_values[par_id]-0.25*self.ci[0, par_id],
+                     self.mean_values[par_id]+0.25*self.ci[1, par_id]))
+        ax.grid(linestyle = '--', alpha = 0.5)
+        ax.set_xlabel(r"Value")
+        ax.set_ylabel(r"$p(\Theta)$")
+    
+    def plot_samples(self, ax = None, par_id = 0):
+        """ Plot a prior samples of a given parameter
+        """
+        if ax is None:
+            _, ax = ut_is.give_me_an_ax(figshape = (1,1), figsize = (6,3))
+            ax = ax[0,0]
+            
+        ax.scatter(np.arange(stop = self.prior_samples.shape[0]),
+                   self.prior_samples[:, par_id], alpha = 0.4, s = 5)
+        ax.set_ylim((self.lower_bounds[par_id]-np.abs(0.2*self.lower_bounds[par_id]), 
+                     self.upper_bounds[par_id]+0.2*np.abs(self.upper_bounds[par_id])))
+        ax.set_xlim((0, self.prior_samples.shape[0]))
+        ax.grid(linestyle = '--')
+        ax.set_xlabel("index [-]")
+        ax.set_ylabel(self.parameters_names[par_id])
+    
+    def plot_full_trace(self):
+        """ plot full trace of all parameters
+        """
+        _, ax = ut_is.give_me_an_ax(figshape = (self.num_model_par, 2), 
+                                    figsize = (6, self.num_model_par*1.5))
+        
+        for jp in range(self.num_model_par):
+            self.plot_samples(ax = ax[jp, 0], par_id = jp)
+            self.plot_histogram(ax = ax[jp, 1], par_id = jp)
+        plt.tight_layout()
     
     def plot_loglike_vs_mass(self, ax = None):
         """ Plots the evolution of the log-likelihood vs. mass
@@ -1040,32 +1154,7 @@ class BayesianSampler(object):
     #     plt.ylabel(r"$p(\Theta)$")
     #     plt.tight_layout();
         
-    def reconstruct_mean(self, x_meas):
-        """ Reconstruction from mean values
-        
-        Parameters
-        ----------
-        x_meas : numpyndArray
-            Coordinates where to reconstruct.
-        """
-        # prediction - from mean
-        y_recon = self.model_fun(x_meas = x_meas,
-                                 model_par = self.mean_values)
-        return y_recon
     
-    def reconstruct_ci(self, x_meas):
-        """ Reconstruction from confidence interval values
-        
-        Parameters
-        ----------
-        x_meas : numpyndArray
-            Coordinates where to reconstruct.
-        """
-        y_recon = np.zeros((2, len(x_meas)))
-        for jci in range(2):
-            y_recon[jci, :] = self.model_fun(x_meas = x_meas,
-                                             model_par = self.ci[jci, :])
-        return y_recon
         
         
 # returned_tuple =\
