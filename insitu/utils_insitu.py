@@ -1896,7 +1896,7 @@ def plot_absorption(freq, abs_coeff, ax = None, xlim = None, ylim = None,
         _, ax = give_me_an_ax()
         ax = ax[0,0]
     
-    plot_1d_curve(freq, abs_coeff, ax, ylims = (-0.2, 1.2),
+    plot_1d_curve(freq, abs_coeff, ax, xlims = xlim, ylims = ylim,
                   color = color, linewidth = linewidth, 
                   linestyle = linestyle, alpha = alpha, 
                   label = label, xlabel = "Frequency [Hz]", ylabel = r"$\alpha$  [-]",

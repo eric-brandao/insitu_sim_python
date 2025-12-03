@@ -1,12 +1,5 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Oct 30 14:12:36 2025
-
-@author: Win11
-"""
-
-# -*- coding: utf-8 -*-
-"""
 Created on Wed Oct 15 2025
 
 @author: Eric Brandão
