@@ -14,13 +14,13 @@ from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 unused import
 #import cvxpy as cp
 from scipy import linalg # for svd
 from scipy.sparse.linalg import lsqr, lsmr
-from lcurve_functions import csvd, l_cuve, tikhonov, ridge_solver, direct_solver
+# from lcurve_functions import csvd, l_cuve, tikhonov, ridge_solver, direct_solver
 import pickle
 from receivers import Receiver
 from material import PorousAbsorber
 from controlsair import cart2sph, sph2cart, update_progress, compare_alpha, compare_zs
 from rayinidir import RayInitialDirections
-from parray_estimation import octave_freq, octave_avg, get_hemispheres
+#from parray_estimation import octave_freq, octave_avg, get_hemispheres
 from decompositionclass import Decomposition, filter_evan
 
 class ZsArray(Decomposition):

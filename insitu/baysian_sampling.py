@@ -780,13 +780,12 @@ class BayesianSampler(object):
         self.current_logevid = np.zeros(max_iter)
         self.mass = np.zeros(max_iter)
         curr_evid = 0
-        # self.logp_dead_weights = np.zeros(max_iter + n_live) # normalized
-        # logp_current_it = np.amin(self.logp_live)
-        # self.delta_mu = np.zeros(max_iter)
-        # self.Xi = 1
-        # self.evidence = 0
-        # Initialize variables (log-evidence, information, logwidth of the mass)
-        self.logZ = -np.inf #-0/n_live#-1e9 # Log evidence init np.log(np.finfo(np.float64).eps)# -np.inf
+        
+        
+        
+        self.logZ = -1e300#-np.inf #-0/n_live#-1e9 # Log evidence init np.log(np.finfo(np.float64).eps)# -np.inf
+        # log_ksi = 0.0
+        ksi_prev = 1
         logXprev = 0.0
         self.info = 0.0 # information init
         self.logwidth = np.log(1.0 - np.exp(-1.0/n_live))  # initial shrinkage
@@ -797,8 +796,7 @@ class BayesianSampler(object):
         self.random_par_id = []
         self.worst_logp_index_list = []
         bar = tqdm(total = max_iter, desc='Nested sampling loop...', ascii=False)
-        # print("All Logp {}".format(self.logp_live))
-        # bar.reset()
+        
         for i in range(max_iter):
             self.current_logevid[i] = self.logZ
             # 1 - Find index of worst log-likelihood and update variables
@@ -806,21 +804,44 @@ class BayesianSampler(object):
             self.worst_logp_index_list.append(self.worst_logp_index)
             # 2 - Update evidence Z using log-sum-exp for stability
             logX = -(i+1)/n_live
+            log_ksi_k = -(i+1)/n_live
+            delta_ksi = ksi_prev - np.exp(log_ksi_k)
+            log_delta_ksi = np.log(delta_ksi)
+            ksi_prev = np.exp(log_ksi_k)
+            # log_Zk = np.logaddexp(self.logp_dead[i], log_delta_ksi) 
+            # log_ksi = log_ksi_k
             self.mass[i] = logX
-            w_i = np.logaddexp(logXprev, -logX)#np.exp(logXprev) - np.exp(logX)
-            logZ_new = np.logaddexp(self.logZ, self.logp_dead[i] + np.log(w_i))
+            w_i = np.logaddexp(-logXprev, -logX)#np.exp(logXprev) - np.exp(logX)
+            # logZ_new = np.logaddexp(self.logZ, self.logp_dead[i] + np.log(w_i)) # This one (previous)
+            logZ_new = np.logaddexp(self.logZ, self.logp_dead[i]+log_delta_ksi)
             # logZ_new = np.logaddexp(self.logZ, self.logwidth + self.logp_dead[i])
+            
+            self.info = np.exp(self.logp_dead[i] + log_delta_ksi -logZ_new) * self.logp_dead[i] +\
+                np.exp(self.logZ-logZ_new)*(self.info+self.logZ) - logZ_new
+            
+            # self.info = np.exp(self.logZ-logZ_new)*(self.info+self.logZ)
+            
             self.logZ = logZ_new
             logXprev = logX
-            delta_logZ = np.exp(self.logp_dead[i] + self.logwidth - logZ_new)
+            # delta_logZ = np.exp(self.logp_dead[i] + self.logwidth - logZ_new)
             # self.info = delta_logZ * self.logp_dead[i] + (1 - delta_logZ) *\
             #     (self.info + self.logZ) - logZ_new
-            self.info += np.exp(self.logp_dead[i] + np.log(w_i) - logZ_new) *\
-                (self.logp_dead[i] - logZ_new)
+            # self.info += np.exp(self.logp_dead[i] + np.log(w_i) - logZ_new) *\
+            #     (self.logp_dead[i] - logZ_new)
+            
+            
             # self.logZ = logZ_new
             self.logwidth -= 1.0 / n_live
             # self.delta_mu[i] = self.logwidth
             # 3 - Propose the update.
+            ################################ Ultranest ###########
+            # # Worst object in collection and its weight (= volume * likelihood)
+            # logwt = logvol + self.logp_dead[i]
+            # # Update evidence Z and information h.
+            # logz_new = np.logaddexp(logz, logwt)
+            # self.logZ = logz_new
+            
+            
             self.sample_update_fun(i, max_up_attempts)                   
             # self.constrained_resample(i, max_up_attempts)
             # self.constrained_resample_rw(i, max_up_attempts)
@@ -839,12 +860,23 @@ class BayesianSampler(object):
         # Normalized weights calculation.
         self.weights = np.exp(self.logp_concat - np.max(self.logp_concat))
         self.weights /= np.sum(self.weights)
+        
         # Update evidence (final) value with the max(live log-likelihood) info.
         logL_max = np.max(self.logp_live)
         L_mean = np.mean(np.exp(self.logp_live))
         w_final = np.exp(logX)
+        
+        logvol = -max_iter / n_live - np.log(n_live)
+        for i in range(n_live):
+            logwt = logvol + self.logp_live[i]
+            logz_new = np.logaddexp(self.logZ, logwt)
+            self.info = (np.exp(logwt - logz_new) * self.logp_live[i] +\
+                 np.exp(self.logZ - logz_new) * (self.info + self.logZ) - logz_new)
+            self.logZ = logz_new
+        
+        self.logZ_err = np.sqrt(self.info/n_live)
         # self.logZ = np.logaddexp(self.logZ, logL_max)
-        self.logZ = np.logaddexp(self.logZ, np.log(w_final*L_mean))
+        # self.logZ = np.logaddexp(self.logZ, np.log(w_final*L_mean))
 
     
     def sort_livepop(self, ):

@@ -57,7 +57,11 @@ ba.set_uniform_prior_limits(lower_bounds = [-10, 0], upper_bounds = [10, 10])
 #prior_samples, weights, _ = ba.brute_force_sampling(num_samples = 100000)
 
 #%%
-ba.nested_sampling(n_live = 50, max_iter = 800, max_up_attempts = 100, seed = 0)
+ba.nested_sampling(n_live = 50, max_iter = 800, max_up_attempts = 100, seed = 42)
+print("\n My Nested log-evidence: {:.4f} +/- {:.4f}".format(ba.logZ, ba.logZ_err))
+print("\n My Nested h: {:.4f}".format(ba.info))
+#%%
+ba.ultranested_sampling(n_live = 50, max_iter = 800)
 #%%
 # plt.figure()
 # plt.scatter(ba.dead_pts[:,0], ba.dead_pts[:,1], alpha = 0.1)
