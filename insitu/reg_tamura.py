@@ -99,7 +99,9 @@ class RegTamura(object):
         """ Form a k vector
         """
         kr_max = np.pi/0.01
-        k = np.arange(0, kr_max + self.delta_k, self.delta_k)
+        # k = np.arange(0, kr_max + self.delta_k, self.delta_k)
+        
+        k = np.arange(self.delta_k/2, kr_max + self.delta_k/2, self.delta_k)
         return k
     
     def get_k0z(self, k0):

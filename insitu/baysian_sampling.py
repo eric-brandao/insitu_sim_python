@@ -369,6 +369,7 @@ class BayesianSampler(object):
             self.logp_live[self.worst_logp_index] = logp_new
             self.live_pts[self.worst_logp_index, :] = np.copy(parameter_vec_new)
             self.update_successful = True
+            self.num_evals_sucessful += 1
     
     def suggest_random_adjustment(self, spread):
         """ Suggest a random adjustment for a single random parameter
@@ -571,6 +572,7 @@ class BayesianSampler(object):
                                   upper_bounds = upper_bounds)
             # Evaluate logp of suggested parameter vector
             logp_new = self.likelihood_fun(model_par = parameter_vec_new)
+            self.num_evals += 1
             # Evaluate if the move increased likelihood
             self.evaluate_move(logp_new, parameter_vec_new)
             # increase attempt_num
@@ -614,6 +616,100 @@ class BayesianSampler(object):
             self.update_rw(pt_of_origin = pt_of_origin, 
                            lower_bounds = lower_bounds, upper_bounds = upper_bounds,
                            max_up_attempts = max_up_attempts)
+            
+    def constrained_resample_rw_mcmc(self, i, max_up_attempts = 100):
+        """ Sample movement in the parameter space with random walk MCMC.
+        
+        1 - Computes the spread in the current live-pts population
+        2 - Try to update from lowest likelihood (using random parameter suggestion)
+        3 - Try to update from random parameter vector (using random parameter suggestion)
+        
+        Parameters
+        ----------
+        i : int
+            iteration value
+        max_up_attempts : int
+            Maximum number of update attempts.
+        """
+        # Compute current spread in the given live_pts population
+        self.spread[i,:] = self.compute_spread(self.live_pts)
+        # Compute bounds given the current live points population
+        lower_bounds = np.amin(self.live_pts, axis = 0)
+        upper_bounds = np.amax(self.live_pts, axis = 0)
+        # initialize while loop variables
+        self.update_successful = False # success of update is set to False first
+        attempt_num = 0
+        while not self.update_successful and attempt_num <= self.live_pts.shape[0]-1:
+            # Get remaining indexes - excluding the one with lowest likelihood.
+            all_indexes = np.arange(0, self.live_pts.shape[0])
+            remaining_indexes = np.delete(all_indexes, self.worst_logp_index)
+            # Sample a random point in the current pop of live pts
+            pt_of_origin_id = np.random.randint(low = 0, high = len(remaining_indexes),
+                                                size = 1)[0]
+            pt_of_origin = self.live_pts[remaining_indexes[pt_of_origin_id],:]
+            # Try random walk
+            self.update_rw_mcmc(pt_of_origin = pt_of_origin, 
+                           lower_bounds = lower_bounds, upper_bounds = upper_bounds,
+                           num_of_movs = 20, max_up_attempts = max_up_attempts)
+            attempt_num += 1
+            
+    def update_rw_mcmc(self, pt_of_origin, lower_bounds, upper_bounds,
+                       num_of_movs = 20, max_up_attempts = 100):
+        """ Update the parameter vector of lowest likelihood with a Random walk MCMC.
+        
+        Updates the parameter of lowest likelihood and computes the new log likelihood.
+        It uses a random walk approach. It walks the point of origin at a random direction
+        and random distance, then evaluates the move. If the move is sucessful, it stops.
+        If not, move again starting from the previous point of destination.
+        
+        Parameters
+        ----------
+        pt_of_origin : numpy1dArray
+            The parameter vector where you start your random walk. This can either be
+            the parameter vector with lowest likelihood or a random parameter vector
+            from the current live point population.
+        lower_bounds : numpy1dArray
+            current lower bounds vector
+        upper_bounds : numpy1dArray
+            current upper bounds vector
+        num_of_movs : int
+            Number of movements before acceptance (for decorrelation). 
+        Returns
+        ----------
+        logp_new : float
+            New log-likelihood value
+        parameter_vec_new : numpy 1dArray
+            New samples value
+        """
+        attempt_num = 0
+        # init attempt_num
+        move_num = 0 # number of attempts made
+        # Origin of random walk
+        parameter_vec_new = np.copy(pt_of_origin)
+        while move_num <= num_of_movs or attempt_num <= max_up_attempts:
+            # Get a random adjustment by random walking the original point
+            parameter_vec_new, _ =\
+                ut_is.random_move(origin = parameter_vec_new, 
+                                  lower_bounds = lower_bounds, 
+                                  upper_bounds = upper_bounds)
+            # Evaluate logp of suggested parameter vector
+            logp_new = self.likelihood_fun(model_par = parameter_vec_new)
+            # # Evaluate if the move increased likelihood
+            # self.evaluate_move(logp_new, parameter_vec_new)
+            if logp_new > self.logp_live[self.worst_logp_index]:
+                move_num += 1
+                # self.update_successful = True
+            # else:
+            #     self.update_successful = False
+            # increase attempt_num
+            attempt_num += 1
+            if move_num>=num_of_movs:
+                self.num_evals += 1
+        if logp_new > self.logp_live[self.worst_logp_index]:
+            self.logp_live[self.worst_logp_index] = logp_new
+            self.live_pts[self.worst_logp_index, :] = np.copy(parameter_vec_new)
+            self.update_successful = True
+            self.num_evals_sucessful += 1
             
     def slice_step(self, it_num, theta, win_size = 0.2, max_up_attempts = 200):
         """ Move a parameter vector according to slice sampling.
@@ -698,8 +794,11 @@ class BayesianSampler(object):
                                         max_up_attempts = max_up_attempts)
             # Evaluate log-likelihood
             new_logp = self.likelihood_fun(model_par = theta_try)
+            # num_evals
+            self.num_evals += 1
             # If evaluation is sucessful, we can stop moving the sample.
             if new_logp > self.logp_dead[it_num]:
+                self.num_evals_sucessful += 1
                 theta_new = theta_try
                 break
         # If failed after a number of iterations, just resample the prior as a desperate attempot.
@@ -711,7 +810,7 @@ class BayesianSampler(object):
         
     def nested_sampling(self, n_live = 250, max_iter = 1000, 
                         tol_evidence_increase = 1e-3, seed = 42,
-                        max_up_attempts = 50):
+                        max_up_attempts = 50, dlogz=0.001):
         """ Nested sampling loop.
         
         Performs nested sampling for the problem. The steps are
@@ -766,119 +865,113 @@ class BayesianSampler(object):
         max_up_attempts : int
             number of attempts to update the parameter set of lowest log-likelihood
             to a parameter set with higher likelihood.
+        dlogz : float
+            Target evidence uncertainty
         """
+        self.n_live = n_live
+        # number of evaluations and efficiency metric
+        self.num_evals = 0
+        self.num_evals_sucessful = 0
         # Initialize seed
         np.random.seed(seed)
         # Sample the prior and compute the logp of initial population
-        self.live_pts, _, self.logp_live = self.brute_force_sampling(num_samples = n_live)
+        self.live_pts, _, self.logp_live = self.brute_force_sampling(num_samples = self.n_live)
         # The initial population is the set of samples from brute_force_sampling
         self.init_pop = np.copy(self.live_pts)
         # Initialize variables (dead_pts and log-likelihood of the dead set.)
         self.dead_pts = np.zeros((max_iter, self.num_model_par))
         self.logp_dead = np.zeros(max_iter)
-        self.current_evid_increase = np.zeros(max_iter)
-        self.current_logevid = np.zeros(max_iter)
-        self.mass = np.zeros(max_iter)
-        curr_evid = 0
-        
-        
-        
-        self.logZ = -1e300#-np.inf #-0/n_live#-1e9 # Log evidence init np.log(np.finfo(np.float64).eps)# -np.inf
-        # log_ksi = 0.0
-        ksi_prev = 1
-        logXprev = 0.0
+        # Initialize logZ (evidence)
+        self.logZ = -1e300 # very low log number 10^-300
+        # Initialize prior mass (at the start the whole prior mass)
+        self.ksi_prev = 1
+        # Initialize information (H)
         self.info = 0.0 # information init
-        self.logwidth = np.log(1.0 - np.exp(-1.0/n_live))  # initial shrinkage
-        # init things that might not be used later (for checking)
-        # Initialize variables (spread of live_pts - keep track of shrinking)
+        # Initialize spread of live_pts - keep track of shrinking
         self.spread = np.zeros((max_iter, self.num_model_par))
-        # Initialize variables (other stuff for checking)
-        self.random_par_id = []
-        self.worst_logp_index_list = []
+        # Init bar and main loop
         bar = tqdm(total = max_iter, desc='Nested sampling loop...', ascii=False)
-        
         for i in range(max_iter):
-            self.current_logevid[i] = self.logZ
             # 1 - Find index of worst log-likelihood and update variables
             self.get_worst_logp(it_num = i)
-            self.worst_logp_index_list.append(self.worst_logp_index)
             # 2 - Update evidence Z using log-sum-exp for stability
-            logX = -(i+1)/n_live
-            log_ksi_k = -(i+1)/n_live
-            delta_ksi = ksi_prev - np.exp(log_ksi_k)
-            log_delta_ksi = np.log(delta_ksi)
-            ksi_prev = np.exp(log_ksi_k)
-            # log_Zk = np.logaddexp(self.logp_dead[i], log_delta_ksi) 
-            # log_ksi = log_ksi_k
-            self.mass[i] = logX
-            w_i = np.logaddexp(-logXprev, -logX)#np.exp(logXprev) - np.exp(logX)
-            # logZ_new = np.logaddexp(self.logZ, self.logp_dead[i] + np.log(w_i)) # This one (previous)
-            logZ_new = np.logaddexp(self.logZ, self.logp_dead[i]+log_delta_ksi)
-            # logZ_new = np.logaddexp(self.logZ, self.logwidth + self.logp_dead[i])
-            
-            self.info = np.exp(self.logp_dead[i] + log_delta_ksi -logZ_new) * self.logp_dead[i] +\
-                np.exp(self.logZ-logZ_new)*(self.info+self.logZ) - logZ_new
-            
-            # self.info = np.exp(self.logZ-logZ_new)*(self.info+self.logZ)
-            
-            self.logZ = logZ_new
-            logXprev = logX
-            # delta_logZ = np.exp(self.logp_dead[i] + self.logwidth - logZ_new)
-            # self.info = delta_logZ * self.logp_dead[i] + (1 - delta_logZ) *\
-            #     (self.info + self.logZ) - logZ_new
-            # self.info += np.exp(self.logp_dead[i] + np.log(w_i) - logZ_new) *\
-            #     (self.logp_dead[i] - logZ_new)
-            
-            
-            # self.logZ = logZ_new
-            self.logwidth -= 1.0 / n_live
-            # self.delta_mu[i] = self.logwidth
-            # 3 - Propose the update.
-            ################################ Ultranest ###########
-            # # Worst object in collection and its weight (= volume * likelihood)
-            # logwt = logvol + self.logp_dead[i]
-            # # Update evidence Z and information h.
-            # logz_new = np.logaddexp(logz, logwt)
-            # self.logZ = logz_new
-            
-            
+            fraction_remain = self.update_evid_and_info(it_num = i)
+            # 3 - Update sample
             self.sample_update_fun(i, max_up_attempts)                   
-            # self.constrained_resample(i, max_up_attempts)
-            # self.constrained_resample_rw(i, max_up_attempts)
-            # self.constrained_resample_slice(i, max_up_attempts)
             # 4 - Test if iteration can be stopped
-            self.current_evid_increase[i] = (self.logp_dead[i] + self.logwidth)-curr_evid
-            curr_evid = self.logp_dead[i] + self.logwidth
+            if fraction_remain < dlogz:
+                bar.update(max_iter-i) # update bar and break loop
+                break
             bar.update(1)
-        # bar.reset()
         bar.close()
+        # delete non-used indexes
+        self.delete_zeros(i, max_iter)
+        # Concatenate the log-likelihood of dead and sorted live-points (and the samples)
+        self.concatenate_live_and_dead()
+        # Normalized weights calculation.
+        self.weights = np.exp(self.logp_concat - np.max(self.logp_concat))
+        self.weights /= np.sum(self.weights)
+        # Update evidence and info (final - live pts).
+        self.final_update_evid_and_info(it_num = i)
+        # Estimate uncertainty in evidence      
+        self.logZ_err = np.sqrt(self.info/self.n_live)
+        # Efficiency
+        self.efficiency = 100*self.num_evals_sucessful/self.num_evals
+
+    def update_evid_and_info(self, it_num):
+        """ Updates the log-evidence and information
+        """
+        # log of current prior mass
+        log_ksi_k = -(it_num + 1)/self.n_live
+        # delta of prior mass (lin & log scale) - integration goes from 1 to 0
+        delta_ksi = self.ksi_prev - np.exp(log_ksi_k)
+        log_delta_ksi = np.log(delta_ksi)
+        # Update prior mass (lin scale)
+        self.ksi_prev = np.exp(log_ksi_k)
+        # Update log-evidence and Information (H)
+        logZ_new = np.logaddexp(self.logZ, self.logp_dead[it_num]+log_delta_ksi)            
+        self.info = np.exp(self.logp_dead[it_num] +\
+                           log_delta_ksi -logZ_new) * self.logp_dead[it_num] +\
+            np.exp(self.logZ-logZ_new)*(self.info+self.logZ) - logZ_new
+        self.logZ = logZ_new
+        # Calculate stopping criteria
+        logz_remain = np.max(self.logp_live) - it_num / self.n_live
+        fraction_remain = np.logaddexp(self.logZ, logz_remain) - self.logZ
+        return fraction_remain
+    
+    def final_update_evid_and_info(self, it_num):
+        """ Final update the log-evidence and information (from live points)
+        """
+        # Average remaining prior log-volume
+        logvol = -(it_num+1) / self.n_live - np.log(self.n_live)
+        for jl in range(self.n_live):
+            # log(likelihood*dX)
+            logwt = logvol + self.logp_live[jl]
+            #logZ and info update
+            logz_new = np.logaddexp(self.logZ, logwt)
+            self.info = (np.exp(logwt - logz_new) * self.logp_live[jl] +\
+                 np.exp(self.logZ - logz_new) * (self.info + self.logZ) - logz_new)
+            self.logZ = logz_new
+        
+    def delete_zeros(self, it_num, max_iter):
+        """ Delete zeros from variables
+        
+        Happens because inference converged earlier then max_iter
+        """
+        ranger = range(it_num+1, max_iter)
+        self.logp_dead = np.delete(self.logp_dead, ranger)
+        self.dead_pts = np.delete(self.dead_pts, ranger, axis = 0)
+        self.spread = np.delete(self.spread, ranger, axis = 0)
+
+    def concatenate_live_and_dead(self,):
+        """ Concatenates live and dead points and the live and dead likelihoods
+        """
         # Sort the live points population and associated log-likelihood.
         sorted_logp_live, sorted_live_pts = self.sort_livepop()
         # Concatenate the log-likelihood of dead and sorted live-points (and the samples)
         self.logp_concat = np.concatenate((self.logp_dead, sorted_logp_live))
         self.prior_samples = np.concatenate((self.dead_pts, sorted_live_pts))
-        # Normalized weights calculation.
-        self.weights = np.exp(self.logp_concat - np.max(self.logp_concat))
-        self.weights /= np.sum(self.weights)
-        
-        # Update evidence (final) value with the max(live log-likelihood) info.
-        logL_max = np.max(self.logp_live)
-        L_mean = np.mean(np.exp(self.logp_live))
-        w_final = np.exp(logX)
-        
-        logvol = -max_iter / n_live - np.log(n_live)
-        for i in range(n_live):
-            logwt = logvol + self.logp_live[i]
-            logz_new = np.logaddexp(self.logZ, logwt)
-            self.info = (np.exp(logwt - logz_new) * self.logp_live[i] +\
-                 np.exp(self.logZ - logz_new) * (self.info + self.logZ) - logz_new)
-            self.logZ = logz_new
-        
-        self.logZ_err = np.sqrt(self.info/n_live)
-        # self.logZ = np.logaddexp(self.logZ, logL_max)
-        # self.logZ = np.logaddexp(self.logZ, np.log(w_final*L_mean))
 
-    
     def sort_livepop(self, ):
         """ Computes sorted version of logp_live and live_pts.
         """

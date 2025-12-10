@@ -49,7 +49,7 @@ y_pred_test = line_model(x_meas, model_par = [m, b])
 #%%
 ba = BayesianSampler(measured_coords = x_meas, measured_data = y_meas,
                      num_model_par = 2, parameters_names = ["m", "b"],
-                     likelihood = "logt") #"Gaussian1D"
+                     likelihood = "logt", sampling_scheme='slice') #"Gaussian1D"
 ba.set_model_fun(model_fun = line_model)
 ba.set_uniform_prior_limits(lower_bounds = [-10, 0], upper_bounds = [10, 10])
 #ba.set_convergence_tolerance(convergence_tol = [0.1, 0.1])
@@ -57,11 +57,12 @@ ba.set_uniform_prior_limits(lower_bounds = [-10, 0], upper_bounds = [10, 10])
 #prior_samples, weights, _ = ba.brute_force_sampling(num_samples = 100000)
 
 #%%
-ba.nested_sampling(n_live = 50, max_iter = 800, max_up_attempts = 100, seed = 42)
-print("\n My Nested log-evidence: {:.4f} +/- {:.4f}".format(ba.logZ, ba.logZ_err))
+ba.nested_sampling(n_live = 50, max_iter = 1000, max_up_attempts = 100, seed = 42,
+                   dlogz = 0.001)
+print("\n My Nested log-evidence: {:.4f} +/- {:.4f}c".format(ba.logZ, ba.logZ_err))
 print("\n My Nested h: {:.4f}".format(ba.info))
 #%%
-ba.ultranested_sampling(n_live = 50, max_iter = 800)
+sampler = ba.ultranested_sampling(n_live = 50, max_iter = 600)
 #%%
 # plt.figure()
 # plt.scatter(ba.dead_pts[:,0], ba.dead_pts[:,1], alpha = 0.1)
