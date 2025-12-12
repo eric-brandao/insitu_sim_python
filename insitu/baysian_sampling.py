@@ -11,6 +11,10 @@ from tqdm import tqdm
 import utils_insitu as ut_is
 try:
     import ultranest
+    from ultranest.popstepsampler import PopulationSimpleSliceSampler, PopulationRandomWalkSampler
+    from ultranest.mlfriends import (AffineLayer, LocalAffineLayer, MLFriends,
+                            RobustEllipsoidRegion, ScalingLayer, WrappingEllipsoid,
+                            find_nearby)
 except:
     print("Not possible to use Ultranest in this environment")
         
@@ -167,7 +171,7 @@ class BayesianSampler(object):
         for jp in range(self.num_model_par):
             prior_samples[:, jp] = prior_cube[:, jp] *\
                 (self.upper_bounds[jp]-self.lower_bounds[jp]) + self.lower_bounds[jp]
-        return prior_samples
+        return prior_samples, prior_cube
     
     def set_log_normal_1d_std(self, sigma = 1):
         """ Set std for 1D normal distribution
@@ -252,7 +256,7 @@ class BayesianSampler(object):
         logp
             log-likelihood values.
         """
-        self.prior_samples = self.sample_uniform_prior(num_samples = num_samples)
+        self.prior_samples, self.prior_cube = self.sample_uniform_prior(num_samples = num_samples)
         # Initialize logp
         logp = np.zeros(num_samples)
         # bar
@@ -266,7 +270,7 @@ class BayesianSampler(object):
         # Compute likelihood normalized weights
         self.weights = np.exp(logp - np.max(logp))
         self.weights /= np.sum(self.weights)
-        return self.prior_samples, self.weights, logp      
+        return self.prior_samples, self.prior_cube, self.weights, logp      
     
     def brute_force_sampling(self, num_samples = 1000):
         """ Brute force sampling of the parameter space.
@@ -290,7 +294,7 @@ class BayesianSampler(object):
             log-likelihood values.
         """
         # sample values from prior.
-        self.prior_samples = self.sample_uniform_prior(num_samples = num_samples)
+        self.prior_samples, self.prior_cube = self.sample_uniform_prior(num_samples = num_samples)
         # Initialize logp
         logp = np.zeros(num_samples)
         # Compute log-likelihood
@@ -299,7 +303,7 @@ class BayesianSampler(object):
         # Compute likelihood normalized weights
         self.weights = np.exp(logp - np.max(logp))
         self.weights /= np.sum(self.weights)
-        return self.prior_samples, self.weights, logp 
+        return self.prior_samples, self.prior_cube, self.weights, logp 
     
     def update_values(self, random_par, adjust_suggested, current_worst_par_val,
                       type_of_update = "adding"):
@@ -803,11 +807,88 @@ class BayesianSampler(object):
                 break
         # If failed after a number of iterations, just resample the prior as a desperate attempot.
         if theta_new is None:
-            theta_new = self.sample_uniform_prior(num_samples = 1)
+            theta_new, prior_cube = self.sample_uniform_prior(num_samples = 1)
         # The newly proposed sample substitutes the worst parameter vector (and likelihood)
         self.live_pts[self.worst_logp_index, :] = theta_new
         self.logp_live[self.worst_logp_index] = self.likelihood_fun(model_par = theta_new)
         
+    def get_transformLayer(self):
+        """ Get transform layer (Ultranest)
+        """
+        if self.num_model_par > 1:
+            self.transformLayer = AffineLayer()
+        else:
+            self.transformLayer = ScalingLayer()
+        self.transformLayer.optimize(self.prior_cube, self.prior_cube)
+        
+    def get_region(self, ):
+        """ Get region from MLfriends (Ultranest)
+        """
+        self.region = MLFriends(self.prior_cube, self.transformLayer)
+        self.volfactor = ultranest.utils.vol_prefactor(n = self.num_model_par)
+        # return region
+    
+    def ml_mover(self, it_num = 0, max_up_attempts = 200):
+        """ sampling new point according to ultranest MLfriends algorithm
+        """
+        if it_num == 0:
+            nextregion = self.region
+        else:
+            nextTransformLayer = self.transformLayer.create_new(self.prior_cube, 
+                                                                self.region.maxradiussq)
+            nextregion = MLFriends(self.prior_cube, nextTransformLayer)
+        r, f = ultranest.integrator._update_region_bootstrap(nextregion, nbootstraps = 30, 
+                                                             minvol=0., comm=None, mpi_size=1)
+        nextregion.maxradiussq = r
+        nextregion.enlarge = f
+        # force shrinkage of volume
+        # this is to avoid re-connection of dying out nodes
+        if nextregion.estimate_volume() < self.region.estimate_volume():
+            self.region = nextregion
+            self.transformLayer = self.region.transformLayer
+        self.region.create_ellipsoid(minvol = np.exp(-it_num / self.n_live) * self.volfactor)
+        u = self.region.sample(nsamples = 100)
+        return u
+    
+    def ultranest_slice_sampler(self, it_num = 0, max_up_attempts = 20):
+        """ ultranest slice sampler
+        """
+        # slice_un = PopulationSimpleSliceSampler(popsize = 1,
+        #                                         nsteps = max_up_attempts, 
+        #                                         generate_direction = ultranest.popstepsampler.generate_random_direction)
+        slice_un = PopulationRandomWalkSampler(popsize = 1, 
+                                               nsteps = max_up_attempts, 
+                                               generate_direction = ultranest.popstepsampler.generate_random_direction, 
+                                               scale = 1)
+        self.get_transformLayer()
+        self.get_region()
+        u, p, L, nc = slice_un.__next__(region = self.region, 
+                                        Lmin = self.logp_live[self.worst_logp_index], 
+                                        us = self.prior_cube, 
+                                        Ls = self.logp_live, 
+                                        transform = self.prior_un2, 
+                                        loglike = self.log_t2)
+        self.prior_cube[self.worst_logp_index, :] = u
+        
+    
+    def log_t2(self, model_par):
+        """ Computes log-like Student-t likelihood
+        
+        Parameters
+        ----------
+        model_par : numpy1dArray
+            parameters for a giving tried solution vector
+            
+        Returns
+        ----------
+        logp : float
+            Value of log - like Student-t distribution
+        
+        """
+        logp = np.zeros((1, 1))
+        logp[0,0] = self.log_t(model_par)
+        return logp
+    
     def nested_sampling(self, n_live = 250, max_iter = 1000, 
                         tol_evidence_increase = 1e-3, seed = 42,
                         max_up_attempts = 50, dlogz=0.001):
@@ -875,7 +956,8 @@ class BayesianSampler(object):
         # Initialize seed
         np.random.seed(seed)
         # Sample the prior and compute the logp of initial population
-        self.live_pts, _, self.logp_live = self.brute_force_sampling(num_samples = self.n_live)
+        self.live_pts, self.prior_cube,_ , self.logp_live =\
+            self.brute_force_sampling(num_samples = self.n_live)
         # The initial population is the set of samples from brute_force_sampling
         self.init_pop = np.copy(self.live_pts)
         # Initialize variables (dead_pts and log-likelihood of the dead set.)
@@ -989,13 +1071,40 @@ class BayesianSampler(object):
                 (self.upper_bounds[jp]-self.lower_bounds[jp]) + self.lower_bounds[jp]
         return prior_samples
     
+    def prior_un2(self, cube):
+        prior_cube = cube.copy()
+        # transform location parameter: uniform prior
+        prior_samples = np.zeros(prior_cube.shape)
+        for row in range(prior_cube.shape[0]):
+            for jp in range(self.num_model_par):
+                prior_samples[row, jp] = prior_cube[row, jp] *\
+                    (self.upper_bounds[jp]-self.lower_bounds[jp]) + self.lower_bounds[jp]
+        return prior_samples
+    
     def ultranested_sampling(self, n_live = 250, max_iter = 1000):
         """ Run via ultranest
         """       
         sampler = ultranest.NestedSampler(param_names = self.parameters_names,
                                           loglike = self.log_t, 
                                           transform = self.prior_un, num_live_points = n_live)
+        # sampler.log = False
         result = sampler.run(max_iters = max_iter)
+        self.logp_concat = sampler.results['weighted_samples']['logl']
+        self.logZ = sampler.results['logz']
+        self.prior_samples = sampler.results['weighted_samples']['points']
+        self.weights = sampler.results['weighted_samples']['weights']
+        return sampler
+    
+    def ultranested_sampling_react(self, n_live = 250, max_iter = 1000):
+        """ Run via ultranest
+        """       
+        sampler = ultranest.ReactiveNestedSampler(param_names = self.parameters_names,
+                                                  loglike = self.log_t,
+                                                  transform = self.prior_un)
+        # sampler.log = False
+        result = sampler.run(max_iters = max_iter, show_status=False, 
+                             viz_callback=False, frac_remain=0.01,
+                             min_num_live_points = n_live)
         self.logp_concat = sampler.results['weighted_samples']['logl']
         self.logZ = sampler.results['logz']
         self.prior_samples = sampler.results['weighted_samples']['points']

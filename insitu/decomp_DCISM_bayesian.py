@@ -327,7 +327,8 @@ class DCISM_Bayesian(object):
                                     upper_bounds = self.upper_bounds)
         # ba.nested_sampling(n_live = n_live, max_iter = max_iter, 
         #                    max_up_attempts = max_iter, seed = seed)
-        ba.ultranested_sampling(n_live = n_live, max_iter = max_iter)
+        # ba.ultranested_sampling(n_live = n_live, max_iter = max_iter)
+        ba.ultranested_sampling_react(n_live = n_live, max_iter = max_iter)
         ba.compute_statistics()
         return ba
     

@@ -79,8 +79,11 @@ dcism_b.set_mic_pairs()
 #                          upper_bounds = [189.00, -1.00, 17.00, -0.15])
 # dcism_b.set_prior_limits(lower_bounds = [15.00, -30.00, 1.22, -20.00], 
 #                           upper_bounds = [35.00, -1.00, 10.00, -0.05])
-dcism_b.set_prior_limits(lower_bounds = [15.00/k0, -30.00/k0, 1.22/air.rho0, -20.00/air.rho0], 
-                          upper_bounds = [35.00/k0, -1.00/k0, 10.00/air.rho0, -0.05/air.rho0])
+lb = np.array([ 1.11850897, -1.54665128,  1.21      , -4.22293647])
+ub = np.array([ 1.94567735, -0.21245895,  2.47578128, -0.39200635])
+# dcism_b.set_prior_limits(lower_bounds = [15.00/k0, -30.00/k0, 1.22/air.rho0, -20.00/air.rho0], 
+#                           upper_bounds = [35.00/k0, -1.00/k0, 10.00/air.rho0, -0.05/air.rho0])
+dcism_b.set_prior_limits(lower_bounds = lb, upper_bounds = ub)
 dcism_b.setup_dDCISM(T0 = 7.5, dt = 0.1, tol = 1e-6, gamma=1.0)
 dcism_b.set_sample_thickness(t_p = field_nlr.material.thickness)
 #dcism_b.set_reference_sensor(ref_sens = 0)

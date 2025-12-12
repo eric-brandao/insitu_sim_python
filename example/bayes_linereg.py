@@ -62,7 +62,7 @@ ba.nested_sampling(n_live = 50, max_iter = 1000, max_up_attempts = 100, seed = 4
 print("\n My Nested log-evidence: {:.4f} +/- {:.4f}c".format(ba.logZ, ba.logZ_err))
 print("\n My Nested h: {:.4f}".format(ba.info))
 #%%
-sampler = ba.ultranested_sampling(n_live = 50, max_iter = 600)
+sampler = ba.ultranested_sampling(n_live = 50, max_iter = 2000)
 #%%
 # plt.figure()
 # plt.scatter(ba.dead_pts[:,0], ba.dead_pts[:,1], alpha = 0.1)
@@ -95,24 +95,20 @@ plt.legend()
 plt.tight_layout();
 
 #%%
-import scipy
-def Phi(z):
-    return 0.5 * (1.0 + scipy.special.erf(z / np.sqrt(2.0)))
-
-def analytic_logZ_uniform_prior_on_cube(a, b, D):
-    L = b - a
-    p = Phi(b) - Phi(a)   # mass per dimension inside [a,b]
-    if p <= 0:
-        return -np.inf
-    logZ = D * (np.log(p) - np.log(L))
-    return logZ
-
-logZ = analytic_logZ_uniform_prior_on_cube(ba.lower_bounds[0], ba.upper_bounds[0], 
-                                           ba.num_model_par)
-print("Analytical logZ: {:.4f}".format(logZ))
-analytic_approx = (1/(ba.upper_bounds[0]-ba.lower_bounds[0]))**len(ba.lower_bounds)
-print("Analytical approx logZ: {:.4f}".format(np.log(analytic_approx)))
-print("Numerical logZ: {:.4f}".format(ba.logZ))
-print("Numerical information: {:.4f}".format(ba.info))
+ba.ultranest_slice_sampler()
 
 #%%
+def line_model2(x_meas, model_par = [[1, 0]]):
+    """ Model for a line. It will be evoked during baysian inference multiple times
+        Parameters
+    ----------
+    x_meas : coordinates of the measurements
+    m : flat (inclication of line)
+    b : flat (cross of line)
+    Returns
+    ----------
+    y_pred : predicted line a meas coordinates
+    """
+    y_pred = model_par[0,0] * x_meas + model_par[0,1]
+    return y_pred
+ba.model_fun = line_model2
