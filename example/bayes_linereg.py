@@ -36,8 +36,8 @@ def line_model(x_meas, model_par = [1, 0]):
         Parameters
     ----------
     x_meas : coordinates of the measurements
-    m : flat (inclication of line)
-    b : flat (cross of line)
+    m : float (inclication of line)
+    b : float (cross of line)
     Returns
     ----------
     y_pred : predicted line a meas coordinates
@@ -49,29 +49,34 @@ y_pred_test = line_model(x_meas, model_par = [m, b])
 #%%
 ba = BayesianSampler(measured_coords = x_meas, measured_data = y_meas,
                      num_model_par = 2, parameters_names = ["m", "b"],
-                     likelihood = "logt", sampling_scheme='slice') #"Gaussian1D"
+                     likelihood = "logt", sampling_scheme='single ellipsoid',
+                     enlargement_factor = 1.5) #"Gaussian1D"
 ba.set_model_fun(model_fun = line_model)
 ba.set_uniform_prior_limits(lower_bounds = [-10, 0], upper_bounds = [10, 10])
-#ba.set_convergence_tolerance(convergence_tol = [0.1, 0.1])
-#prior_samples = ba.sample_uniform_prior(num_samples = 100)
-#prior_samples, weights, _ = ba.brute_force_sampling(num_samples = 100000)
 
+print("Old bounds: lower: {} / upper: {}".format(ba.lower_bounds, ba.upper_bounds))
+# ba.wide_prior_range(widening_factor=0.5)
+# print("New bounds: lower: {} / upper: {}".format(ba.lower_bounds, ba.upper_bounds))
 #%%
-ba.nested_sampling(n_live = 50, max_iter = 1000, max_up_attempts = 100, seed = 42,
+ba.nested_sampling(n_live = 100, max_iter = 1000, max_up_attempts = 100, seed = 0,
                    dlogz = 0.001)
-print("\n My Nested log-evidence: {:.4f} +/- {:.4f}c".format(ba.logZ, ba.logZ_err))
+print("\n My Nested log-evidence: {:.4f} +/- {:.4f}".format(ba.logZ, ba.logZ_err))
 print("\n My Nested h: {:.4f}".format(ba.info))
 #%%
-sampler = ba.ultranested_sampling(n_live = 50, max_iter = 2000)
+sampler = ba.ultranested_sampling(n_live = 500, max_iter = 6000)
 #%%
-# plt.figure()
+plt.figure()
+plt.scatter(ba.live_cube[:,0], ba.live_cube[:,1])
 # plt.scatter(ba.dead_pts[:,0], ba.dead_pts[:,1], alpha = 0.1)
 # plt.scatter(ba.live_pts[:,0], ba.live_pts[:,1])
 # plt.scatter(m, b, marker='x')
 # plt.xlim((ba.lower_bounds[0], ba.upper_bounds[0]))
 # plt.ylim((ba.lower_bounds[1], ba.upper_bounds[1]))
-# plt.xlabel("m")
-# plt.ylabel("b")
+plt.grid(linestyle = '--', alpha = 0.7)
+plt.xlim((0,1))
+plt.ylim((0,1))
+plt.xlabel("m")
+plt.ylabel("b")
 #%%
 #ba.plot_histograms()
 ba.plot_smooth_marginal_posterior(figshape = (1,2), figsize = (9, 2.5))
@@ -95,20 +100,20 @@ plt.legend()
 plt.tight_layout();
 
 #%%
-ba.ultranest_slice_sampler()
+# ba.ultranest_slice_sampler()
 
 #%%
-def line_model2(x_meas, model_par = [[1, 0]]):
-    """ Model for a line. It will be evoked during baysian inference multiple times
-        Parameters
-    ----------
-    x_meas : coordinates of the measurements
-    m : flat (inclication of line)
-    b : flat (cross of line)
-    Returns
-    ----------
-    y_pred : predicted line a meas coordinates
-    """
-    y_pred = model_par[0,0] * x_meas + model_par[0,1]
-    return y_pred
-ba.model_fun = line_model2
+# def line_model2(x_meas, model_par = [[1, 0]]):
+#     """ Model for a line. It will be evoked during baysian inference multiple times
+#         Parameters
+#     ----------
+#     x_meas : coordinates of the measurements
+#     m : flat (inclication of line)
+#     b : flat (cross of line)
+#     Returns
+#     ----------
+#     y_pred : predicted line a meas coordinates
+#     """
+#     y_pred = model_par[0,0] * x_meas + model_par[0,1]
+#     return y_pred
+# ba.model_fun = line_model2

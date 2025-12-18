@@ -68,9 +68,9 @@ new_array, new_pres_data = field_nlr.receivers.remove_z_coords(z = 0.02,
 #%% DCISM estimation (Bayesian)
 dcism_b = DCISM_Bayesian(p_mtx = new_pres_data, controls=field_nlr.controls,
                          air = air, receivers = new_array, 
-                         source = field_nlr.sources, sampling_scheme = 'slice')
-# dcism_b.show_available_models()
-dcism_b.choose_forward_model(chosen_model = 3)
+                         source = field_nlr.sources, sampling_scheme = 'single ellipsoid')
+dcism_b.show_available_models()
+dcism_b.choose_forward_model(chosen_model = 4)
 dcism_b.set_mic_pairs()
 #dcism_b.show_chosen_model_parameters()
 # dcism_b.set_prior_limits(lower_bounds = [15.00, -30.00, 1.22, -20.00, 0.1, -np.pi], 
@@ -79,7 +79,7 @@ dcism_b.set_mic_pairs()
 #                          upper_bounds = [189.00, -1.00, 17.00, -0.15])
 # dcism_b.set_prior_limits(lower_bounds = [15.00, -30.00, 1.22, -20.00], 
 #                           upper_bounds = [35.00, -1.00, 10.00, -0.05])
-lb = np.array([ 1.11850897, -1.54665128,  1.21      , -4.22293647])
+lb = np.array([ 0.9, -1.54665128,  1.00      , -4.22293647])
 ub = np.array([ 1.94567735, -0.21245895,  2.47578128, -0.39200635])
 # dcism_b.set_prior_limits(lower_bounds = [15.00/k0, -30.00/k0, 1.22/air.rho0, -20.00/air.rho0], 
 #                           upper_bounds = [35.00/k0, -1.00/k0, 10.00/air.rho0, -0.05/air.rho0])
@@ -88,13 +88,13 @@ dcism_b.setup_dDCISM(T0 = 7.5, dt = 0.1, tol = 1e-6, gamma=1.0)
 dcism_b.set_sample_thickness(t_p = field_nlr.material.thickness)
 #dcism_b.set_reference_sensor(ref_sens = 0)
 ba = dcism_b.nested_sampling_single_freq(jf = id_f, n_live = 50, max_iter = 2000,
-                                          max_up_attempts = 50, seed = 0)
+                                          max_up_attempts = 200, seed = 0)
 ba.confidence_interval(ci_percent = 80)
 #ba.reconstruct_mean(x_meas = dcism_b.receivers.coord)
 # dcism_b.pk_bayesian(n_live = 250, max_iter = 500, max_up_attempts = 50, seed = 0)
 #%%
 ba.plot_loglike()
-axs = ba.plot_smooth_marginal_posterior(figshape = (2, 2))
+axs = ba.plot_smooth_marginal_posterior(figshape = (3, 2))
 axs[0,0].axvline(np.real(field_nlr.material.kp[id_f]/k0), linestyle = '--', color = 'k', linewidth = 2)
 axs[0,1].axvline(np.imag(field_nlr.material.kp[id_f]/k0), linestyle = '--', color = 'k', linewidth = 2)
 axs[1,0].axvline(np.real(field_nlr.material.rhop[id_f]/air.rho0), linestyle = '--', color = 'k', linewidth = 2)

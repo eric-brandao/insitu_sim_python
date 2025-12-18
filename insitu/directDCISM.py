@@ -6,13 +6,13 @@ Created on October 21 2025
 """
 
 import numpy as np
-import matplotlib.pyplot as plt
-import scipy 
+# import matplotlib.pyplot as plt
+# import scipy 
 from tqdm import tqdm
 import utils_insitu as ut_is
-from receivers import Receiver
-from sources import Source
-from material import PorousAbsorber
+# from receivers import Receiver
+# from sources import Source
+# from material import PorousAbsorber
 
 class dDCISM(object):
     """ Direct Discrete Image Source Method
@@ -117,7 +117,35 @@ class dDCISM(object):
         kz = self.gamma * k * (1j*self.sampling_path-1.0)
         return kz
     
-    def sample_Vp_single_layer(self, k, k_p, rho_p, t_p):
+    def sample_Vp_lr(self, k, beta):
+        """ Sample the locally reacting reflection coefficient.
+        
+        This method samples the reflection coefficient. It applies to
+        a locally reacting sample. 
+        The material will have a complex surface admittance.
+        
+        The sampling is used to estimate the complex sources locations
+        (in the complex plane) and amplitudes.
+        
+        Parameters
+        -------------
+        k : float
+            wave-number magnitude in [rad/m]
+        beta : complex
+            surface adimmitance        
+        Returns
+        -------------
+        Vp_sampled : numpy1dArray
+            Sampled version of the reflection coefficient
+        """
+        # get Kz0 (vertical wave-number above layer)
+        kz0 = self.get_vertical_wavenum(k = k)
+        num = kz0 - k*beta
+        den = kz0 + k*beta
+        Vp_sampled = num / den
+        return Vp_sampled
+    
+    def sample_Vp_nlr_layer(self, k, k_p, rho_p, t_p):
         """ Sample the Non-locally reacting reflection coefficient.
         
         This method samples the reflection coefficient. It applies to
@@ -221,7 +249,74 @@ class dDCISM(object):
         dn = np.sqrt(r_mtx**2 + (self.hs + zr_mtx + 1j*bn_mtx)**2)
         return dn
     
-    def predict_p(self, k, k_p, rho_p, t_p):
+    def predict_p(self, k, Vp_sampled):
+        """ Uses MPM to predict the sound pressure
+        
+        Valid for any material configuration
+        
+        Parameters
+        -------------
+        k : float
+            wave-number magnitude in [rad/m]
+        Vp_sampled : numpy1dArray
+            Sampled version of the reflection coefficient
+        """
+        # Compute source amplitudes
+        An, Bn = self.compute_AnBn(Vp_sampled = Vp_sampled)
+        an, bn = self.compute_anbn(An, Bn, k = k)
+        dn = self.get_cplx_rec_parameters(an, bn)
+        # Compute sound pressure for all receivers  
+        g_mtx = self.kernel_p(k, dn)
+        pcim = g_mtx @ an
+        pres = self.kernel_p(k, self.r1) + pcim
+        return pres
+    
+    def predict_p_lr(self, k, beta):
+        """ Predict sound pressure at all receivers (single frequency)
+        
+        Parameters
+        -------------
+        k : float
+            wave-number magnitude in [rad/m]
+        beta : complex
+            surface adimmitance   
+        
+        Returns
+        -------------
+        pres : numpy1dArray
+            complex sound pressure at all receivers.
+        """
+        # Sample Vp
+        Vp_sampled = self.sample_Vp_lr(k = k, beta = beta)
+        # Compute source amplitudes
+        pres = self.predict_p(k, Vp_sampled)
+        return pres
+    
+    def predict_p_spk_lr(self):
+        """ Predict the sound pressure spectra
+        
+        If a material object is passed, this is used to predict the sound field
+        spectrum at all receivers. This is useful for numerical simulations of
+        the sound field (but not so much inverse problems)
+        """
+        # Initalize pressure matrix
+        self.pres_mtx = np.zeros((self.receivers.coord.shape[0], 
+                             len(self.controls.k0)), dtype = complex)
+        # Initialize bar
+        bar = tqdm(total=len(self.controls.k0),
+                   desc='Calculating pressure spectra', ascii=False)
+        
+        # Freq loop
+        for jk, k0 in enumerate(self.controls.k0):
+            beta = (self.air.rho0 * self.air.c0)/self.material.Zs[jk]
+            # beta = 1/self.material.Zs[jk]
+            # beta = 0
+            self.pres_mtx[:, jk] = self.predict_p_lr(k = k0,
+                                                     beta = beta)
+            bar.update(1)
+        bar.close()
+    
+    def predict_p_nlr_layer(self, k, k_p, rho_p, t_p):
         """ Predict sound pressure at all receivers (single frequency)
         
         Parameters
@@ -241,27 +336,13 @@ class dDCISM(object):
             complex sound pressure at all receivers.
         """
         # Sample Vp
-        Vp_sample = self.sample_Vp_single_layer(k = k, k_p = k_p, 
+        Vp_sampled = self.sample_Vp_nlr_layer(k = k, k_p = k_p, 
                                   rho_p = rho_p, t_p = t_p)
         # Compute source amplitudes
-        An, Bn = self.compute_AnBn(Vp_sampled = Vp_sample)
-        an, bn = self.compute_anbn(An, Bn, k = k)
-        dn = self.get_cplx_rec_parameters(an, bn)
-        # Compute sound pressure for all receivers  
-        g_mtx = self.kernel_p(k, dn)
-        pcim = g_mtx @ an
-        pres = self.kernel_p(k, self.r1) + pcim
-        # pres = np.zeros(self.receivers.coord.shape[0], dtype = complex)
-        # for jrec in range(self.receivers.coord.shape[0]):
-        #     # Calculate complex positions of all complex image sources
-        #     dn = np.sqrt(self.r[jrec]**2 + (self.hs + self.zr[jrec] + 1j * bn) ** 2)
-        #     # Summation of contributions from all complex image sources
-        #     pcim = np.dot(an, (np.exp(-1j * k * dn)) / dn)
-        #     # Calculation of total sound pressure, Eq. (14) in Eser, 2021
-        #     pres[jrec] = np.exp(-1j * (k * self.r1[jrec])) / self.r1[jrec] + pcim
+        pres = self.predict_p(k, Vp_sampled)
         return pres
     
-    def predict_p_spk(self):
+    def predict_p_spk_nlr_layer(self):
         """ Predict the sound pressure spectra
         
         If a material object is passed, this is used to predict the sound field
@@ -277,9 +358,10 @@ class dDCISM(object):
         
         # Freq loop
         for jk, k0 in enumerate(self.controls.k0):
-            self.pres_mtx[:, jk] = self.predict_p(k = k0, k_p = self.material.kp[jk],
-                                             rho_p = self.material.rhop[jk],
-                                             t_p = self.material.thickness)
+            self.pres_mtx[:, jk] = self.predict_p_nlr_layer(k = k0, 
+                                                            k_p = self.material.kp[jk],
+                                                            rho_p = self.material.rhop[jk],
+                                                            t_p = self.material.thickness)
             bar.update(1)
         bar.close()
         #return self.pres_mtx

@@ -7,14 +7,17 @@ Created on Sep  2025
 import numpy as np
 import scipy
 import matplotlib.pyplot as plt
+import arviz as az
 from tqdm import tqdm
 import utils_insitu as ut_is
+from elipsesampling import ElipsoidalSampling
 try:
     import ultranest
-    from ultranest.popstepsampler import PopulationSimpleSliceSampler, PopulationRandomWalkSampler
-    from ultranest.mlfriends import (AffineLayer, LocalAffineLayer, MLFriends,
-                            RobustEllipsoidRegion, ScalingLayer, WrappingEllipsoid,
-                            find_nearby)
+    import corner
+    # from ultranest.popstepsampler import PopulationSimpleSliceSampler, PopulationRandomWalkSampler
+    # from ultranest.mlfriends import (AffineLayer, LocalAffineLayer, MLFriends,
+    #                         RobustEllipsoidRegion, ScalingLayer, WrappingEllipsoid,
+    #                         find_nearby)
 except:
     print("Not possible to use Ultranest in this environment")
         
@@ -25,7 +28,8 @@ class BayesianSampler(object):
     
     def __init__(self, measured_coords = None, measured_data = None, 
                  num_model_par = 1, parameters_names = None,
-                 likelihood = None, sampling_scheme = 'slice'):
+                 likelihood = None, sampling_scheme = 'single ellipsoid',
+                 enlargement_factor = 1.25):
         """ Bayesian sampling schemes
         
         Parameters
@@ -76,19 +80,12 @@ class BayesianSampler(object):
             self.sample_update_fun = self.constrained_resample_slice
         elif sampling_scheme == 'random walk':
             self.sample_update_fun = self.constrained_resample_rw
-        elif sampling_scheme == 'constrained':
-            self.sample_update_fun = self.constrained_resample
+        elif sampling_scheme == "single ellipsoid":
+            self.sample_update_fun = self.sample_from_single_ellipse
         else:
-            self.sample_update_fun = self.constrained_resample_slice
-            # self.seed = seed
-            # self.rng = np.random.default_rng(seed)
-        # Make sure there is model function and get number of parameters to estimate
-        # if not callable(model_fun):    
-        #     raise ValueError("model_fun must be a callable function!")
-        # else:
-        #     self.model_fun = model_fun
-        #     self.num_par = self.model_fun.__code__.co_argcount - 1
-            
+            self.sample_update_fun = self.sample_from_single_ellipse
+        self.enlargement_factor = enlargement_factor
+        
     def set_model_fun(self, model_fun):
         """ Set the model function which will be called multiple times at inference
         
@@ -128,27 +125,19 @@ class BayesianSampler(object):
         self.lower_bounds = lower_bounds
         self.upper_bounds = upper_bounds
         
-    def set_convergence_tolerance(self, convergence_tol = [0.01]):
-        """ Set convergence tolerance for nested sampling.
-        
-        This can be used to stop the nested sampling algorithm. When the spread
-        of the current live point population becomes smaller than the convergence_tol,
-        then, the algorithm has converged.
-        
-        Parameters
-        ----------
-        convergence_tol : numpy1dArray
-            Array containing the tolerance values for each of the model's parameters
+    def wide_prior_range(self, widening_factor = 2):
+        """ Wide your prior by a given factor
         """
-        # Make sure lower / upper bonds has the same size of num_par
-        if len(convergence_tol) != self.num_model_par:
-            raise ValueError("convergence_tol must be a vector with the same size of num_par")
-        self.convergence_tol = convergence_tol
+        assert widening_factor >= 0
+        delta = np.array(self.upper_bounds) - np.array(self.lower_bounds)
+        delta2sum = (delta/2)*((widening_factor-1))#-(delta/4)
+        self.lower_bounds -= delta2sum
+        self.upper_bounds += delta2sum
     
-    def sample_uniform_prior(self, num_samples = 1):
-        """ Sample uniform prior - all that is available for now
+    def sample_uniform_prior_cube(self, num_samples = 1):
+        """ Sample uniform prior cube.
         
-        Draw a number of samples from a uniform prior volume.
+        Draw a number of samples from a uniform cube.
         
         Parameters
         ----------
@@ -159,19 +148,20 @@ class BayesianSampler(object):
         ----------
         prior_samples : numpyndArray
             samples of the uniform prior distribution with dimensions (num_pts, num_model_par)
-        """
-        # prior_samples = np.random.uniform(low = self.lower_bounds, 
-        #                                   high = self.upper_bounds,
-        #                                   size = (num_samples, self.num_model_par))
-        
+        """      
         prior_cube = np.random.uniform(low = np.zeros(self.num_model_par), 
-                                          high = np.ones(self.num_model_par),
-                                          size = (num_samples, self.num_model_par))
+                                       high = np.ones(self.num_model_par),
+                                       size = (num_samples, self.num_model_par))
+        return prior_cube      
+        
+    def transform_cube(self, prior_cube):
+        """ Get prior samples in the transformed space
+        """
         prior_samples = np.zeros(prior_cube.shape)
         for jp in range(self.num_model_par):
             prior_samples[:, jp] = prior_cube[:, jp] *\
                 (self.upper_bounds[jp]-self.lower_bounds[jp]) + self.lower_bounds[jp]
-        return prior_samples, prior_cube
+        return prior_samples
     
     def set_log_normal_1d_std(self, sigma = 1):
         """ Set std for 1D normal distribution
@@ -192,23 +182,12 @@ class BayesianSampler(object):
             Value of log - like Student-t distribution
         
         """
-        # mu = np.array([1.0, -1.0])
-        # d = model_par - mu
-    
-        # Sigma = np.array([[1.0, 0.8],
-        #           [0.8, 1.5]])
-        # invSigma = np.linalg.inv(Sigma)
-        # return -0.5 * d @ invSigma @ d
         y_pred = self.model_fun(x_meas = self.measured_coords, 
                                 model_par = model_par)
         # error norm
         error_norm = np.linalg.norm(self.measured_data - y_pred)
         logp = - 0.5 * self.num_of_meas * np.log(2*np.pi*self.sigma*2) -\
             error_norm**2/(2*self.sigma**2)
-        # logp = -0.5*self.num_of_meas * np.log(2*np.pi) -\
-        #     self.num_of_meas * np.log(self.sigma) -\
-        #     0.5*error_norm**2/(self.sigma**2)
-
         return logp
         
     def log_t(self, model_par):
@@ -222,8 +201,7 @@ class BayesianSampler(object):
         Returns
         ----------
         logp : float
-            Value of log - like Student-t distribution
-        
+            Value of log - like Student-t distribution        
         """
         # prediction
         y_pred = self.model_fun(x_meas = self.measured_coords, 
@@ -251,26 +229,30 @@ class BayesianSampler(object):
         prior_samples : numpyndArray
             Array containing the samples of your prior. Its dimensions will be
             num_model_par x num_samples.
+        prior_cube : numpyndArray
+            Array containing the samples of your prior in cube space. Its dimensions will be
+            num_model_par x num_samples.
         weights : numpy1dArray
             Normalized weights (linear scale).
         logp
             log-likelihood values.
         """
-        self.prior_samples, self.prior_cube = self.sample_uniform_prior(num_samples = num_samples)
+        prior_cube = self.sample_uniform_prior_cube(num_samples = num_samples)
+        prior_samples = self.transform_cube(prior_cube)
         # Initialize logp
         logp = np.zeros(num_samples)
         # bar
         bar = tqdm(total = num_samples,
                    desc='Brute force sampling...', ascii=False)
         # Compute log-likelihood
-        for jp, pr_sam in enumerate(self.prior_samples):
+        for jp, pr_sam in enumerate(prior_samples):
             logp[jp] = self.likelihood_fun(model_par = pr_sam)
             bar.update(1)
         bar.close()
         # Compute likelihood normalized weights
-        self.weights = np.exp(logp - np.max(logp))
-        self.weights /= np.sum(self.weights)
-        return self.prior_samples, self.prior_cube, self.weights, logp      
+        weights = np.exp(logp - np.max(logp))
+        weights /= np.sum(weights)
+        return prior_samples, prior_cube, weights, logp 
     
     def brute_force_sampling(self, num_samples = 1000):
         """ Brute force sampling of the parameter space.
@@ -288,39 +270,27 @@ class BayesianSampler(object):
         prior_samples : numpyndArray
             Array containing the samples of your prior. Its dimensions will be
             num_model_par x num_samples.
+        prior_cube : numpyndArray
+            Array containing the samples of your prior in cube space. Its dimensions will be
+            num_model_par x num_samples.
         weights : numpy1dArray
             Normalized weights (linear scale).
         logp
             log-likelihood values.
         """
         # sample values from prior.
-        self.prior_samples, self.prior_cube = self.sample_uniform_prior(num_samples = num_samples)
+        prior_cube = self.sample_uniform_prior_cube(num_samples = num_samples)
+        prior_samples = self.transform_cube(prior_cube)
         # Initialize logp
         logp = np.zeros(num_samples)
         # Compute log-likelihood
-        for jp, pr_sam in enumerate(self.prior_samples):
+        for jp, pr_sam in enumerate(prior_samples):
             logp[jp] = self.likelihood_fun(model_par = pr_sam)
         # Compute likelihood normalized weights
-        self.weights = np.exp(logp - np.max(logp))
-        self.weights /= np.sum(self.weights)
-        return self.prior_samples, self.prior_cube, self.weights, logp 
-    
-    def update_values(self, random_par, adjust_suggested, current_worst_par_val,
-                      type_of_update = "adding"):
-        """ Update a given parameter value and logp from a set of parameter vector 
-        """
-        
-        # Update (Adding)
-        if type_of_update == "adding":
-            updated_sample_par = current_worst_par_val[random_par] + adjust_suggested
-        else:
-            updated_sample_par = current_worst_par_val[random_par] - adjust_suggested
-        updated_model_par = current_worst_par_val
-        updated_model_par[random_par] = updated_sample_par
-        updated_logp = self.likelihood_fun(updated_model_par)
-        return updated_logp, updated_model_par       
-    
-    
+        weights = np.exp(logp - np.max(logp))
+        weights /= np.sum(weights)
+        return prior_samples, prior_cube, weights, logp      
+       
     def get_worst_logp(self, it_num = 0):
         """ Find the worst log-likelihood value in the current live pts population.
         
@@ -336,7 +306,8 @@ class BayesianSampler(object):
             iteration number
         """
         # Find index of worst log-likelihood and update dead_pts and logp_dead
-        self.worst_logp_index = np.argmin(self.logp_live)
+        self.worst_logp_index = np.argmin(self.logp_live) # index
+        # Put this value in the dead-pts set
         self.logp_dead[it_num] = self.logp_live[self.worst_logp_index]
         self.dead_pts[it_num, :] = self.live_pts[self.worst_logp_index, :]
 
@@ -353,7 +324,7 @@ class BayesianSampler(object):
         spread = np.amax(pop_pts, axis = 0) - np.amin(pop_pts, axis = 0)
         return spread
     
-    def evaluate_move(self, logp_new, parameter_vec_new):
+    def evaluate_move(self, logp_new, parameter_vec_new, cube_vec_new):
         """ Evaluate if the proposed move increases likelihood
         
         Evaluate if the proposed move generated a higher likelihood. If so,
@@ -372,169 +343,9 @@ class BayesianSampler(object):
         if logp_new > self.logp_live[self.worst_logp_index]:
             self.logp_live[self.worst_logp_index] = logp_new
             self.live_pts[self.worst_logp_index, :] = np.copy(parameter_vec_new)
+            self.live_cube[self.worst_logp_index, :] = np.copy(cube_vec_new)
             self.update_successful = True
             self.num_evals_sucessful += 1
-    
-    def suggest_random_adjustment(self, spread):
-        """ Suggest a random adjustment for a single random parameter
-        
-        These are Steps 2-3 (Beaton and Xiang - Sec. IV.B.1)
-        
-        1. Select a random parameter in the reference point.
-        2. Use a uniform distribution to generate a random adjustment
-        value for the parameter. The uniform distribution
-        will have limits from zero to a maximum value dependent
-        on the type of parameter selected. The MAX-MIN (spread/2) of the
-        current live_pts population is used as suggestion for this update.
-        
-        Parameters
-        ----------
-        spread : numpy1dArray
-            The Array containing the spread of the current population
-        
-        Returns
-        ----------
-        random_par_id : int
-            index of the parameter to update. It will be between 0 and num_model_par-1
-        suggested_adjustment : float
-            value of ajustment.
-        """
-        # Select a random parameter index
-        random_par_id = np.random.randint(low = 0, high = self.num_model_par, size = 1)[0]
-        # Generate a random adjustment value for the parameter (uniform dist)
-        suggested_adjustment = np.random.uniform(low = 0,
-                                                 high = spread[random_par_id]/2, 
-                                                 size = 1)[0]
-        return random_par_id, suggested_adjustment
-    
-    def update_parameter(self, parameter_vec, 
-                         random_par_id = 0, suggested_adjustment = 0.0):
-        """ Updates the choosen parameter.
-        
-        We need to decide if we add or subtract the random suggestion. To do so, 
-        we will calculate which is the closest border of the parameter we want to alter.
-        If the parameter is closer to the lower bound we add. If the parameter is closer
-        to the upper bound we subtract.
-        
-        This is Step 4 (Beaton and Xiang - Sec. IV.B.1)
-        
-        Parameters
-        ----------
-        parameter_vec : numpy1dArray
-            Parameter vector to adjust
-        random_par_id : int
-            Parameter to update
-        suggested_adjustment : float
-            Value to add or subtract from current parameter.
-        """
-        # Get parameter vector to ajust (this is a guessed solution)
-        suggested_parameter_vec = np.copy(parameter_vec)
-        # compute distances from upper and lower bounds
-        lower_bound_distance = parameter_vec[random_par_id] - self.lower_bounds[random_par_id]
-        upper_bound_distance = self.upper_bounds[random_par_id] - parameter_vec[random_par_id]
-        # Summing or subtracting
-        if lower_bound_distance <= upper_bound_distance:
-            suggested_parameter_vec[random_par_id] += np.abs(suggested_adjustment)
-        else:
-            suggested_parameter_vec[random_par_id] -= np.abs(suggested_adjustment)
-        return suggested_parameter_vec
-    
-    def update_from_lowest_likelihood(self, current_spread, max_up_attempts):
-        """ Update the parameter vector of lowest likelihood.
-        
-        Updates the parameter of lowest likelihood and computes the new log likelihood.
-        It uses a random suggestion approach. A random index of the parameter vector is
-        selected and a random number is also generated serving as an update suggestion, 
-        which will be either summed or subtracted from the parameter vector value.
-        The suggestion is evaluated. If the move is sucessful (higher likelihood), it stops.
-        If not, a new suggestion is performed.
-        
-        Parameters
-        ----------
-        current_spread : numpy1dArray
-            The Array containing the spread of the current population
-        max_up_attempts : int
-            Maximum number of update attempts.
-        """
-        attempt_num = 0 # number of attempts made
-        while attempt_num <= max_up_attempts and not self.update_successful:
-            # Get a random adjustment suggestion        
-            random_par_id, suggested_adjustment = self.suggest_random_adjustment(current_spread)
-            self.random_par_id.append(random_par_id)
-            # Get a parameter vec suggestion
-            parameter_vec_new =\
-                self.update_parameter(parameter_vec = self.live_pts[self.worst_logp_index],
-                                      random_par_id = random_par_id, 
-                                      suggested_adjustment = suggested_adjustment)
-            # Evaluate logp of suggested parameter vector
-            logp_new = self.likelihood_fun(model_par = parameter_vec_new)
-            # Evaluate if the move increased likelihood
-            self.evaluate_move(logp_new, parameter_vec_new)
-            attempt_num += 1
-            
-    def update_from_random_par_vec(self, current_spread):
-        """ Update from a random parameter vector from the remaining live-pts population.
-        
-        Try to update a random parameter vector from the the remaining live-pts population,
-        excluding the one with the lowest likelihood. This is only tried after trying to 
-        update the parameter vector with lowest likelihood for a number of trials.
-        It uses a random suggestion approach as in "update_from_lowest_likelihood"
-        
-        1 - Exclude the lowest likelihood parameter from the pool.
-        2 - Shuffle remaining index (for a random ordering)
-        3 - Try to update until sucessful.
-        
-        Parameters
-        ----------
-        current_spread : numpy1dArray
-            The Array containing the spread of the current population
-        """
-        # Get all indexes from the live_pts population
-        all_indexes = np.arange(0, self.live_pts.shape[0])
-        # Delete index with the lowest likelihood
-        remaining_indexes = np.delete(all_indexes, self.worst_logp_index)
-        # suffle remaining indexes
-        np.random.shuffle(remaining_indexes)
-        # Start loop
-        i = 0
-        while i < len(remaining_indexes) and not self.update_successful:
-            # Get a adjustment suggestion
-            random_par_id, suggested_adjustment = self.suggest_random_adjustment(current_spread)
-            self.random_par_id.append(random_par_id)
-            # Get a parameter suggestion
-            parameter_vec_new =\
-                self.update_parameter(parameter_vec = self.live_pts[remaining_indexes[i]],
-                                      random_par_id = random_par_id, 
-                                      suggested_adjustment = suggested_adjustment)
-            # Evaluate logp of suggested parameter vector
-            logp_new = self.likelihood_fun(model_par = parameter_vec_new)
-            self.evaluate_move(logp_new, parameter_vec_new)
-            # increment i
-            i += 1
-    
-    def constrained_resample(self, i, max_up_attempts = 5):
-        """ Sample movement in the parameter space.
-        
-        1 - Computes the spread in the current live-pts population
-        2 - Try to update from lowest likelihood (using random parameter suggestion)
-        3 - Try to update from random parameter vector (using random parameter suggestion)
-        
-        Parameters
-        ----------
-        i : int
-            iteration value
-        max_up_attempts : int
-            Maximum number of update attempts.
-        """
-        # Compute current spread in the given live_pts population
-        self.spread[i,:] = self.compute_spread(self.live_pts)
-        # initialize while loop variables
-        self.update_successful = False # success of update is set to False first
-        # Try updating the parameter vector with lowest likelihood
-        self.update_from_lowest_likelihood(self.spread[i,:], max_up_attempts)
-        # If still not sucessful after max_up_attempts, then try updating a random parameter.
-        if not self.update_successful:
-            self.update_from_random_par_vec(self.spread[i,:])
                 
     def update_rw(self, pt_of_origin, lower_bounds, upper_bounds,
                   max_up_attempts):
@@ -811,109 +622,86 @@ class BayesianSampler(object):
         # The newly proposed sample substitutes the worst parameter vector (and likelihood)
         self.live_pts[self.worst_logp_index, :] = theta_new
         self.logp_live[self.worst_logp_index] = self.likelihood_fun(model_par = theta_new)
-        
-    def get_transformLayer(self):
-        """ Get transform layer (Ultranest)
-        """
-        if self.num_model_par > 1:
-            self.transformLayer = AffineLayer()
-        else:
-            self.transformLayer = ScalingLayer()
-        self.transformLayer.optimize(self.prior_cube, self.prior_cube)
-        
-    def get_region(self, ):
-        """ Get region from MLfriends (Ultranest)
-        """
-        self.region = MLFriends(self.prior_cube, self.transformLayer)
-        self.volfactor = ultranest.utils.vol_prefactor(n = self.num_model_par)
-        # return region
     
-    def ml_mover(self, it_num = 0, max_up_attempts = 200):
-        """ sampling new point according to ultranest MLfriends algorithm
+    def remove_lowestlike_from_livepts(self,):
+        """ Remove the lowest parameter vector with lowest likelihood from the set of live pts.
         """
-        if it_num == 0:
-            nextregion = self.region
-        else:
-            nextTransformLayer = self.transformLayer.create_new(self.prior_cube, 
-                                                                self.region.maxradiussq)
-            nextregion = MLFriends(self.prior_cube, nextTransformLayer)
-        r, f = ultranest.integrator._update_region_bootstrap(nextregion, nbootstraps = 30, 
-                                                             minvol=0., comm=None, mpi_size=1)
-        nextregion.maxradiussq = r
-        nextregion.enlarge = f
-        # force shrinkage of volume
-        # this is to avoid re-connection of dying out nodes
-        if nextregion.estimate_volume() < self.region.estimate_volume():
-            self.region = nextregion
-            self.transformLayer = self.region.transformLayer
-        self.region.create_ellipsoid(minvol = np.exp(-it_num / self.n_live) * self.volfactor)
-        u = self.region.sample(nsamples = 100)
-        return u
+        live_pts = np.copy(self.live_pts)
+        cube_pts = np.copy(self.live_cube)
+        live_pts = np.delete(live_pts, self.worst_logp_index, axis = 0)
+        cube_pts = np.delete(cube_pts, self.worst_logp_index, axis = 0)
+        return live_pts, cube_pts
     
-    def ultranest_slice_sampler(self, it_num = 0, max_up_attempts = 20):
-        """ ultranest slice sampler
+    def sample_from_single_ellipse(self, it_num = 0, max_up_attempts = 200):
+        """ Sample random pts inside a ellipsoidal region
+        
+        Construct one ellipsoid region based on the remaining live pts. 
+        Sample inside the region. Then test the likelihood to hopefully find a suitable
+        replacement.
         """
-        # slice_un = PopulationSimpleSliceSampler(popsize = 1,
-        #                                         nsteps = max_up_attempts, 
-        #                                         generate_direction = ultranest.popstepsampler.generate_random_direction)
-        slice_un = PopulationRandomWalkSampler(popsize = 1, 
-                                               nsteps = max_up_attempts, 
-                                               generate_direction = ultranest.popstepsampler.generate_random_direction, 
-                                               scale = 1)
-        self.get_transformLayer()
-        self.get_region()
-        u, p, L, nc = slice_un.__next__(region = self.region, 
-                                        Lmin = self.logp_live[self.worst_logp_index], 
-                                        us = self.prior_cube, 
-                                        Ls = self.logp_live, 
-                                        transform = self.prior_un2, 
-                                        loglike = self.log_t2)
-        self.prior_cube[self.worst_logp_index, :] = u
-        
-    
-    def log_t2(self, model_par):
-        """ Computes log-like Student-t likelihood
-        
-        Parameters
-        ----------
-        model_par : numpy1dArray
-            parameters for a giving tried solution vector
-            
-        Returns
-        ----------
-        logp : float
-            Value of log - like Student-t distribution
-        
-        """
-        logp = np.zeros((1, 1))
-        logp[0,0] = self.log_t(model_par)
-        return logp
+        # Compute current spread
+        self.spread[it_num,:] = self.compute_spread(self.live_pts)
+        # Remove the current point with lowest likelihood from the livept set
+        remaining_live, remaining_cube = self.remove_lowestlike_from_livepts()
+        # build the ellipsoidal object and sample (cube)
+        es = ElipsoidalSampling(coords = remaining_cube)
+        prop_samples_cube = es.sample_multi_in_ellipse(n_samples = max_up_attempts,  
+                                                       enlargement_factor = self.enlargement_factor, 
+                                                       eps = 1e-12)
+        # clip to 0 an 1
+        prop_samples_cube = np.clip(prop_samples_cube, 0, 1)
+        # transform to your dommain
+        prop_samples = self.transform_cube(prop_samples_cube)
+        # likelihood evals
+        self.update_successful = False
+        # theta_new = None
+        attempt_num = 0
+        while attempt_num < max_up_attempts and not self.update_successful:   
+            # Evaluate log-likelihood
+            new_logp = self.likelihood_fun(model_par = prop_samples[attempt_num, :])
+            # num_evals
+            self.num_evals += 1
+            # Evaluate move
+            self.evaluate_move(new_logp, prop_samples[attempt_num, :], 
+                               prop_samples_cube[attempt_num, :])
+            attempt_num += 1        
     
     def nested_sampling(self, n_live = 250, max_iter = 1000, 
-                        tol_evidence_increase = 1e-3, seed = 42,
-                        max_up_attempts = 50, dlogz=0.001):
+                        seed = 42, max_up_attempts = 50, dlogz=0.001):
         """ Nested sampling loop.
         
         Performs nested sampling for the problem. The steps are
             1. Sample the prior for n_live pts. This will give you your initial
             population, a set of live points and a set of log-likelihood values.
+            
             2. Initialize your variables. This includes initializing a set of
-            dead points and their associated log-likelihoods. At the iterations,
-            these sets will be filled in ascending order of log-likelihood.
+            dead points and their associated log-likelihoods. We also initialize
+            the evidence and information variables (computed iteratively)
+            At the iterations, the dead points set will be filled in ascending order 
+            of log-likelihood.
+            
             3. Run iterative sampling procedure
                 3.1. Get the worst log-likelihood value in the current live point
-                population and the associated parameters. Then these values becomes
+                population and the associated parameters. These values becomes
                 the values of the logp_dead (log-likelihood of the dead points) and
                 the dead_points parameter at the i-th iteration.
-                3.2. Update evidence
-                3.3. Propose an updade for the worst parameter set of parameters
-                found. This is a constrained move in the parameter space, where 
+                3.2. Update evidence and information
+                3.3. Propose an updade for the worst parameter set of the live-pts set
+                This is a constrained move in the parameter space, where 
                 the updated parameters must have a higher log-likelihood than
                 the one found in step 3.1. The proposed parameter set 
                 will substitute the live point value with the worst 
                 log-likelihood (found in step 1). The log-likelihood (live) will
-                be updated accordingly. This way, two things happen: 
-                    (a) The live_pts will shrink around the most likely spot in
+                be updated accordingly. 
+                
+                There are several ways to update. Here is my best so far: 
+                    (a) The worst live pt set is removed from the pop of live pts.
+                    (b) We create an elippsoidal region around the remaining live pts
+                    (c) We sample points inside that enlarged region.
+                    (d) We test each random set of proposed parameter and choose the first
+                    one with a higher likelihood.
+                    
+                    live_pts will shrink around the most likely spot in
                     the parameter space (that can explain the data);
                     (b) The dead points (and dead log-likelihood) will consist of
                     a set of increasing likelihood.
@@ -923,10 +711,10 @@ class BayesianSampler(object):
                         (c) - slice sampling: current the best one.
                 3.4. Test if iteration can be stopped. Essentially when the evidence
                 stops increasing, it is time to stop exploring the parameter space.
-            4. Sort the live points population and associated log-likelihood.
+            4. Sort the updated live points population and associated log-likelihood.
             5. Concatenate the log-likelihood of dead and sorted live-points (and the samples).
             6. Normalized weights calculation.
-            7. Update evidence (final) value with the max(live log-likelihood) info.
+            7. Update evidence and info with the set of remaining live pts.
             
         Parameters
         ----------
@@ -936,11 +724,6 @@ class BayesianSampler(object):
             go on, the likelihood of such set of points will increase until termination.
         max_iter : int
             The maximum number of iterations allowed.
-        tol_evidence_increase : float
-            The tolerance of evidence increase - used for iteration stop. 
-            If the maximum log-likelihood multiplied by the current mass 
-            does not help to increase the evidence*tol_evidence_increase,
-            then the iterations can stop.
         seed : int
             seed for random number generator.
         max_up_attempts : int
@@ -956,7 +739,7 @@ class BayesianSampler(object):
         # Initialize seed
         np.random.seed(seed)
         # Sample the prior and compute the logp of initial population
-        self.live_pts, self.prior_cube,_ , self.logp_live =\
+        self.live_pts, self.live_cube, _ , self.logp_live =\
             self.brute_force_sampling(num_samples = self.n_live)
         # The initial population is the set of samples from brute_force_sampling
         self.init_pop = np.copy(self.live_pts)
@@ -1091,6 +874,7 @@ class BayesianSampler(object):
         result = sampler.run(max_iters = max_iter)
         self.logp_concat = sampler.results['weighted_samples']['logl']
         self.logZ = sampler.results['logz']
+        self.logZ_err = sampler.results['logzerr']
         self.prior_samples = sampler.results['weighted_samples']['points']
         self.weights = sampler.results['weighted_samples']['weights']
         return sampler
@@ -1107,9 +891,101 @@ class BayesianSampler(object):
                              min_num_live_points = n_live)
         self.logp_concat = sampler.results['weighted_samples']['logl']
         self.logZ = sampler.results['logz']
+        self.logZ_err = sampler.results['logzerr']
         self.prior_samples = sampler.results['weighted_samples']['points']
         self.weights = sampler.results['weighted_samples']['weights']
         return sampler
+    
+    def plot_evolution(self,):
+        """ plot evolution of nested sampling algorithm.
+        
+        unit cube scatter plot of dead and live pts
+        """
+        plt.figure(figsize = (4,3))
+        plt.scatter(self.live_cube[:,0], self.live_cube[:,1])
+        plt.title(r"$log(Z)$ = {:.4f} [Np]".format(self.logZ), 
+                  loc = 'right')
+        plt.grid(linestyle = '--', alpha = 0.7)
+        plt.xlim((0,1))
+        plt.ylim((0,1))
+        plt.xlabel(self.parameters_names[0])
+        plt.ylabel(self.parameters_names[1])
+        plt.tight_layout();
+    
+    def didatic_nested_sampling(self, n_live = 250, max_iter = 1000, 
+                                seed = 42, max_up_attempts = 50, dlogz=0.001,
+                                it2plot = 100):
+        """ Nested sampling loop with didatic plots.
+            
+        Parameters
+        ----------
+        n_live : int
+            The number of live points in your initial and final population.
+            It will contain your initial population, and be updated. As the iterations
+            go on, the likelihood of such set of points will increase until termination.
+        max_iter : int
+            The maximum number of iterations allowed.
+        seed : int
+            seed for random number generator.
+        max_up_attempts : int
+            number of attempts to update the parameter set of lowest log-likelihood
+            to a parameter set with higher likelihood.
+        dlogz : float
+            Target evidence uncertainty
+        """
+        self.n_live = n_live
+        # number of evaluations and efficiency metric
+        self.num_evals = 0
+        self.num_evals_sucessful = 0
+        # Initialize seed
+        np.random.seed(seed)
+        # Sample the prior and compute the logp of initial population
+        self.live_pts, self.live_cube, _ , self.logp_live =\
+            self.brute_force_sampling(num_samples = self.n_live)
+        # The initial population is the set of samples from brute_force_sampling
+        self.init_pop = np.copy(self.live_pts)
+        # Initialize variables (dead_pts and log-likelihood of the dead set.)
+        self.dead_pts = np.zeros((max_iter, self.num_model_par))
+        self.logp_dead = np.zeros(max_iter)
+        # Initialize logZ (evidence)
+        self.logZ = -1e300 # very low log number 10^-300
+        # Initialize prior mass (at the start the whole prior mass)
+        self.ksi_prev = 1
+        # Initialize information (H)
+        self.info = 0.0 # information init
+        # Initialize spread of live_pts - keep track of shrinking
+        self.spread = np.zeros((max_iter, self.num_model_par))
+        # Init bar and main loop
+        bar = tqdm(total = max_iter, desc='Nested sampling loop...', ascii=False)
+        for i in range(max_iter):
+            # 1 - Find index of worst log-likelihood and update variables
+            self.get_worst_logp(it_num = i)
+            # 2 - Update evidence Z using log-sum-exp for stability
+            fraction_remain = self.update_evid_and_info(it_num = i)
+            # 3 - Update sample
+            self.sample_update_fun(i, max_up_attempts)
+            # plot
+            if i%it2plot == 0:
+                self.plot_evolution()                
+            # 4 - Test if iteration can be stopped
+            if fraction_remain < dlogz:
+                bar.update(max_iter-i) # update bar and break loop
+                break
+            bar.update(1)
+        bar.close()
+        # delete non-used indexes
+        self.delete_zeros(i, max_iter)
+        # Concatenate the log-likelihood of dead and sorted live-points (and the samples)
+        self.concatenate_live_and_dead()
+        # Normalized weights calculation.
+        self.weights = np.exp(self.logp_concat - np.max(self.logp_concat))
+        self.weights /= np.sum(self.weights)
+        # Update evidence and info (final - live pts).
+        self.final_update_evid_and_info(it_num = i)
+        # Estimate uncertainty in evidence      
+        self.logZ_err = np.sqrt(self.info/self.n_live)
+        # Efficiency
+        self.efficiency = 100*self.num_evals_sucessful/self.num_evals
         
     def weighted_mean(self, ):
         """ Weighted mean
@@ -1211,6 +1087,16 @@ class BayesianSampler(object):
                                              model_par = self.ci[jci, :])
         return y_recon
     
+    def resample_posterior(self, num_samples = 5000):
+        """ draw samples using choice and weights
+        """
+        samples = np.zeros((num_samples, self.num_model_par))
+        for jdim in range(self.num_model_par):
+            samples[:, jdim] = np.random.choice(self.prior_samples[:, jdim],
+                                                size = num_samples,
+                                                p = self.weights)
+        return samples
+    
     def plot_histograms(self, ):
         """ Plot histograms
         """
@@ -1224,16 +1110,16 @@ class BayesianSampler(object):
         plt.ylabel(r"$p(\Theta)$")
         plt.tight_layout();
         
-    def plot_smooth_marginal_posterior(self, figshape = None,
-                                       figsize = None):
+    def plot_smooth_marginal_posterior(self, ax = None, figshape = None,
+                                       figsize = None, color = 'mediumpurple', label = ''):
         """ Plot smooth posteriors using scipy KDE
         """
-        if figshape is None:
-            raise ValueError("I need a shape for the figure.")
-        if figsize is None:
-            figsize = (figshape[0]*4, figshape[1]*2)
-           
-        _, ax = ut_is.give_me_an_ax(figshape = figshape, figsize = figsize)
+        if ax is None:
+            if figshape is None:
+                raise ValueError("I need a shape for the figure.")
+            if figsize is None:
+                figsize = (figshape[0]*4, figshape[1]*2)
+            _, ax = ut_is.give_me_an_ax(figshape = figshape, figsize = figsize)
         
         jdim = 0
         for row in range(ax.shape[0]):
@@ -1244,15 +1130,15 @@ class BayesianSampler(object):
                     x_grid = np.linspace(self.prior_samples[:, jdim].min(), 
                                          self.prior_samples[:, jdim].max(), 500)
                     pdf = kde(x_grid)
-                    ax[row, col].plot(x_grid, pdf, linewidth = 1.5, 
-                                      label = self.parameters_names[jdim], 
-                                      alpha = 0.7, color = 'mediumpurple')
+                    ax[row, col].plot(x_grid, pdf, linewidth = 1.5,  
+                                      alpha = 0.7, color = color, label = label)
                     # ax[row, col].legend()
                     ax[row, col].grid(linestyle = '--')
                     ax[row, col].set_xlim((self.lower_bounds[jdim], self.upper_bounds[jdim]))
                     ax[row, col].set_xlabel(self.parameters_names[jdim])
                     ax[row, col].set_ylabel(r"$p(\theta)$")
                     jdim += 1
+        ax[0,0].legend()
         plt.tight_layout();
         return ax
     
@@ -1327,7 +1213,7 @@ class BayesianSampler(object):
         ax[0,0].set_xlim((0, 1))
         plt.tight_layout();
         
-    def plot_loglike(self, ax = None):
+    def plot_loglike(self, ax = None, color = 'k', label = ''):
         """ Plots the evolution of the log-likelihood as a function of iteration number
         
         Parameters
@@ -1336,9 +1222,10 @@ class BayesianSampler(object):
         """
         # Create axis if axis is None
         if ax is None:
-            _, ax = ut_is.give_me_an_ax()        
+            _, ax = ut_is.give_me_an_ax()      
         # ax[0,0].plot(self.logp_dead, '-k', linewidth = 1.5, alpha = 0.85)
-        ax[0,0].plot(self.logp_concat, '-k', linewidth = 1.5, alpha = 0.85)
+        ax[0,0].plot(self.logp_concat, color = color, linewidth = 1.5, 
+                     label = label, alpha = 0.85)
         ax[0,0].grid(linestyle = '--')
         ax[0,0].set_xlabel(r"Iteration Number [-]")
         # ax[0,0].set_ylabel(r"$\mathrm{log}(\mathcal{L}(\theta))$ [Np]")
@@ -1372,208 +1259,437 @@ class BayesianSampler(object):
         # ax.set_ylim((np.amin(self.lower_bounds), np.amax(self.upper_bounds)))
         plt.tight_layout();
         
-    # def plot_marginal_posterior(self, prior_samples, weights):
-    #     """ Plot smooth posteriors
-    #     """
-    #     plt.figure(figsize = (7,3))
-    #     for jdim in range(prior_samples.shape[1]):
-    #         samples = prior_samples[:, jdim]
-    #         idx = np.argsort(samples)
+    def plot_corner(self, color = 'dodgerblue', bins = 50, reverse = False,
+                    min_weight_factor = 1e-3, plot_datapoints = True,
+                    use_rasample = False, num_samples = 5000):
+        """ Corner plot using corner.
+        """
+        if use_rasample:
+            samples = self.resample_posterior(num_samples)
+            fig = corner.corner(samples,
+                                labels = self.parameters_names, show_titles=True,
+                                color=color, hist_kwargs={"color": color},
+                                bins = bins, plot_contours = True,
+                                reverse = reverse, plot_density = True,
+                                #levels = np.linspace(0.1, 0.9999, 50),
+                                plot_datapoints = plot_datapoints)
+            # samples_av = az.convert_to_inference_data(samples)
+            # # fig = plt.figure(figsize=(5,5))
+            # samples_av = {"m": samples[:,0],
+            #               "b": samples[:,1]}
+            # ax = az.plot_pair(samples_av,
+            #                   # var_names = self.parameters_names,
+            #                   kind=["scatter", "kde"],
+            #                   kde_kwargs={"fill_last": False},
+            #                   marginals=True,
+            #                   # coords = self.parameters_names,
+            #                   point_estimate="median",
+            #                   figsize=(11.5, 5),
+            #                   )
+        else:
+            cumsumweights = np.cumsum(self.weights)
+            min_weight = min_weight_factor*np.amax(self.weights)
+            mask = cumsumweights > min_weight
+            weights = self.weights[mask]
+            samples = self.prior_samples[mask,:]
+            # Plot
+            fig = corner.corner(samples, weights = weights,
+                                labels = self.parameters_names, show_titles=True,
+                                color=color, hist_kwargs={"color": color},
+                                bins = bins, plot_contours = True,
+                                reverse = reverse, plot_density = True,
+                                #levels = np.linspace(0.1, 0.9999, 50),
+                                plot_datapoints = plot_datapoints)
+        # axes = fig.get_axes()
+        # add mean values and ci
+        # if not reverse:
+        #     id_order = 
             
-    #         plt.plot(samples[idx], weights[idx], linewidth = 2, label = r"$\theta_{}$".format(jdim), 
-    #                  alpha = 0.7)
-    #     plt.legend()
-    #     plt.grid(linestyle = '--')
-    #     plt.xlabel(r"$\theta$")
-    #     plt.ylabel(r"$p(\Theta)$")
-    #     plt.tight_layout();
+            # axes[0].axvline(x = self.mean_values[0], linestyle = '--',
+            #                   color = color, linewidth = 1.0)
+            # axes[0].axvline(x = self.ci[0,0], linestyle = '--',
+            #                   color = color, linewidth = 1.0)
+            # axes[0].axvline(x = self.ci[1,0], linestyle = '--',
+            #                   color = color, linewidth = 1.0)
+        # return fig, axes
         
+    def gaussian_kde_2d(self, dim2calc = [0, 1], 
+                        xlim = None, ylim = None,
+                        loglike = False):
+        """ 2D gauss kde (normalized)
+        """
+        # Get KDE kernel
+        kernel = scipy.stats.gaussian_kde(self.prior_samples[:, dim2calc].T)
+        # Create a meshgrid
+        if xlim is None:
+            xmin = self.lower_bounds[dim2calc[0]]
+            xmax = self.upper_bounds[dim2calc[0]]
+        if ylim is None:
+            ymin = self.lower_bounds[dim2calc[1]]
+            ymax = self.upper_bounds[dim2calc[1]]
+        x_m, y_m = np.mgrid[xmin:xmax:100j, ymin:ymax:100j]
+        positions = np.vstack([x_m.ravel(), y_m.ravel()])
+        if loglike:
+            z = kernel.logpdf(positions)
+            z = np.exp(z)
+            z /= np.amax(z)
+            z = np.log(z)
+        else:
+            z = kernel.pdf(positions)
+            z /= np.amax(z)
+            
+        z_m = np.reshape(z.T, x_m.shape)
+        return x_m, y_m, z_m
     
+    def plot_single_2d_kde(self, ax = None, dim2calc = [0, 1], 
+                           cmap = 'inferno', mode = 'mesh',
+                           xlim = None, ylim = None):
+        
+        x, y, p = self.gaussian_kde_2d(dim2calc = dim2calc, loglike = False)
+        if ax is None:
+            _, ax = ut_is.give_me_an_ax(figshape = (1, 1), figsize = (4,4))
+            ax = ax[0,0]
+        if mode == 'mesh':
+            ax.pcolormesh(x, y, p, cmap = cmap, shading = 'gouraud')
+        else:
+            ax.contourf(x, y, p, cmap = cmap, 
+                        levels = np.linspace(0, np.amax(p.ravel()), 10))
+        return ax
+            
+    def plot_multi_2d_kde(self, ax = None, cmap = 'inferno', 
+                          mode = 'mesh', figsize = None,
+                          fine_tune_subplt = [0.1, 0, 0.9, 0.99]):
+        if figsize is None:
+            figsize = ((self.num_model_par-1)*2, (self.num_model_par-1)*2)
+        if ax is None:
+            figshape = (self.num_model_par-1, self.num_model_par-1)
+            # _, ax = ut_is.give_me_an_ax(figshape = figshape, figsize = figsize)
+            fig, ax = plt.subplots(figsize = figsize,
+                                   nrows = figshape[0], ncols = figshape[1],
+                                   sharex = 'col', sharey = 'row')
+        
+        for row in range(self.num_model_par-1):
+            for col in range(self.num_model_par-1):
+                if col > row:       # Target subplots above the diagonal
+                    ax[row, col].set_visible(False)
+                else:
+                    ax[row, col] = self.plot_single_2d_kde(ax[row,col],
+                                       dim2calc = [col, row+1], cmap = cmap,
+                                       mode = mode)
+        for col in range(self.num_model_par-1):
+            ax[ax.shape[0]-1, col].set_xlabel(self.parameters_names[col])
+        for row in range(self.num_model_par-1):
+            ax[row, 0].set_ylabel(self.parameters_names[row+1])
+        
+        # fig.subplots_adjust(left = fine_tune_subplt[0], bottom = fine_tune_subplt[1],
+        #                     right = fine_tune_subplt[2], top = fine_tune_subplt[3])
+        fig.subplots_adjust(wspace = 0.02, hspace = 0.02)
         
         
-# returned_tuple =\
-#     self.constrained_resample2(
-#         current_worst_samplevec = self.dead_pts[i, :],
-#         current_spread = current_spread,
-#         current_worst_logp = self.logp_dead[i],
-#         max_attempts = max_attempts)
-# self.logp_live[self.worst_logp_index] = returned_tuple[0] 
-# self.live_pts[self.worst_logp_index, :] = returned_tuple[1] 
-# update_unsuccessful = returned_tuple[2]
-# # 2 - If unsuccessful - select a random parameter as base and try again
-# if update_unsuccessful:
-#     all_indexes = np.arange(0, n_live)
-#     remaining_indexes = np.delete(all_indexes, self.worst_logp_index)
-#     random_index_id = np.random.randint(low = 0, 
-#                                         high = len(remaining_indexes), 
-#                                         size = 1)[0]
-#     choosen_index = remaining_indexes[random_index_id]
-#     returned_tuple =\
-#         self.constrained_resample(
-#             current_worst_samplevec = self.live_pts[choosen_index, :],
-#             current_spread = current_spread,
-#             current_worst_logp = self.logp_dead[i],
-#             max_attempts = max_attempts)
-#     self.logp_live[self.worst_logp_index] = returned_tuple[0] 
-#     self.live_pts[self.worst_logp_index, :] = returned_tuple[1] 
-#     update_unsuccessful = returned_tuple[2]
-# # 3 - If unsuccessful - resample prior using the spread
-# if update_unsuccessful:
-#     mean = np.mean(self.live_pts, axis = 0)
-#     prior_sample = np.random.uniform(low = mean-current_spread/2, 
-#                                       high = mean+current_spread/2,
-#                                       size = (1, self.num_model_par))[0]
-#     # print(prior_sample)
-#     logp_new = self.log_t(model_par = prior_sample)
-#     if logp_new > self.logp_dead[i]:
-#         self.logp_live[self.worst_logp_index] = logp_new 
-#         self.live_pts[self.worst_logp_index, :] = np.copy(prior_sample) 
-        #update_unsuccessful = False
-    # else:
-    #     logp_new = np.copy(current_worst_logp)
-    #     suggested_parameter_vec = np.copy(current_worst_samplevec)        
-    
-
-# def nested_sampling2(self, n_live=200, max_iter=2000):
-    
-#     # thetas = self.sample_uniform_prior(num_samples = n_live) #sample_prior(n_live)
-#     thetas, _, logLs = self.brute_force_sampling(num_samples = n_live) #logLs = np.array([loglike(th) for th in thetas])
-#     dead_points, dead_logLs, dead_logw = [], [], []
-#     logX_prev = 0.0 # Initialize logX
-#     Z = 0 # Initialize evidence
-#     bar = tqdm(total = max_iter,
-#                desc='Nested sampling loop...', ascii=False)
-#     for i in range(max_iter):
-#         worst = np.argmin(logLs) # index of worst likelihood
-#         logL_star = logLs[worst] # worst likelihood value
-#         theta_star = thetas[worst] # worst theta value
-#         logX = -(i+1)/n_live # Current log X
-#         logw = np.log(np.exp(logX_prev)-np.exp(logX)) # Log of the weights (simple)
-#         dead_points.append(theta_star) # Append worst theta value
-#         dead_logLs.append(logL_star) # Append worst likelihood value
-#         dead_logw.append(logw) # Append weight value
-#         # Make the move of worst point
-#         seed = thetas[self.rng.integers(n_live)]
-#         new_theta, new_logL = self.constrained_move(seed, logL_star)
-#         # new_theta, new_logL = self.move_towards(theta_star, logL_star, 
-#         #                                         np.delete(thetas, worst, axis=0),
-#         #                                         dist_factor = 0.05)
-#         thetas[worst], logLs[worst] = new_theta, new_logL
-#         logX_prev = logX
-#         # Evidence update (Check it)
-#         # Z += np.exp(logX) * np.exp(logw) # Update evidence
-#         Z_dead = np.exp(logX) * np.exp(logw)
-#         Xm = np.exp(-i/n_live)
-#         Z_live = (Xm/n_live) * np.sum(np.exp(logLs))
-#         Z = Z + Z_dead + Z_live
-#         # Bar update
-#         bar.update(1)
-#     bar.close()
-#     # Posterior weights
-#     lw = np.array(dead_logLs) + np.array(dead_logw)
-#     # self.weights = np.exp(lw - np.max(lw))
-#     # self.weights /= np.sum(self.weights)
-#     # self.prior_samples = np.array(dead_points)
-#     log_dead_weights = lw
-#     log_live_weights = logLs
-#     log_weights_concat = np.concatenate((log_dead_weights, log_live_weights))
-#     self.weights = np.exp(log_weights_concat - np.max(log_weights_concat))
-#     self.weights /= np.sum(self.weights)
-#     self.prior_samples = np.concatenate((np.array(dead_points), thetas))
-#     return self.prior_samples, self.weights, log_weights_concat
-
-
-# def constrained_resample2(self, current_worst_samplevec, current_spread,
-#                           current_worst_logp = -1e6, max_attempts = 5):
-#     """ Sample movement in the parameter space.
-    
-#     Parameters
-#     ----------
-#     """
-#     # initialize while loop variables
-#     attempt_num = 0 # number of attempts made
-#     update_unsuccessful = True # success of update is set to False first
-          
-#     # worst_logp = current_worst_logp-1
-#     while attempt_num <= max_attempts and update_unsuccessful:
-#         # Get a adjustment suggestion
-#         random_par_id, suggested_adjustment = self.suggest_random_adjustment(current_spread)
-#         self.random_par_id.append(random_par_id)
-#         # Get a parameter suggestion
-#         suggested_parameter_vec =\
-#             self.update_parameter(parameter_vec = current_worst_samplevec,
-#                                   random_par_id = random_par_id, 
-#                                   suggested_adjustment = suggested_adjustment)
-#         # Evaluate logp of suggested parameter vector
-#         logp_new = self.log_t(model_par = suggested_parameter_vec)
-#         # print(attempt_num)
-#         if logp_new > current_worst_logp:
-#             # current_worst_logp =  np.copy(logp_new)
-#             # current_worst_samplevec = np.copy(suggested_parameter_vec)
-#             update_unsuccessful = False
-#         else:
-#             logp_new = np.copy(current_worst_logp)
-#             suggested_parameter_vec = np.copy(current_worst_samplevec)
-                    
-#         attempt_num += 1
-#         return logp_new, suggested_parameter_vec, update_unsuccessful
-
-
-   # def get_destination(self, theta_start, theta_cluster, dist_factor = 0.2):
-   #     # Mean of cluster
-   #     cluster_mean = np.mean(theta_cluster, axis = 0)
-   #     # Direction vector
-   #     dir_vec = cluster_mean - theta_start
-   #     # Compute total distance to mean
-   #     distance = np.linalg.norm(dir_vec)
-   #     # Make the move
-   #     theta_dest = theta_start + dist_factor * distance * dir_vec/np.linalg.norm(dir_vec)
-   #     return theta_dest
-   
-   # def move_towards(self, theta_current, logL_current, theta_cluster,
-   #                  dist_factor = 0.2, num_trials = 20):
-   #     trial_num = 0
-   #     logL_prop = np.log(np.finfo(float).eps)
-   #     while trial_num <= num_trials or logL_prop < logL_current:
-   #         theta_dest = self.get_destination(theta_current, theta_cluster,
-   #                                           dist_factor = dist_factor)
-   #         logL_prop = self.log_t(theta_dest)
-   #         if logL_prop > logL_current:
-   #             theta, logL = theta_dest, logL_prop
-   #         trial_num += 1
-   #     return theta, logL
-   
-   # def constrained_move(self, theta0, logL_thresh, step=0.05, n_steps=50):
-   #     theta = theta0.copy()
-   #     logL = self.log_t(theta)
-   #     for _ in range(n_steps):
-   #         prop = theta + self.rng.normal(scale = step, size = self.num_model_par)
-   #         # prop = self.sample_uniform_prior(num_samples = 1)[0,:]
-   #         # reflect to stay inside bounds
-   #         for j in range(self.num_model_par):
-   #             if prop[j] < self.lower_bounds[j]:
-   #                 prop[j] = self.lower_bounds[j] #2*self.lower_bounds[j] - prop[j]
-   #             if prop[j] > self.upper_bounds[j]:
-   #                 prop[j] = self.upper_bounds[j] #2*self.upper_bounds[j] - prop[j]
-   #         logL_prop = self.log_t(prop)
-   #         if logL_prop > logL_thresh:
-   #             theta, logL = prop, logL_prop
-   #     return theta, logL
-   
-   # def constrained_move2(self, theta0, logL_thresh, num_trials = 20):
-   #     theta = theta0.copy()
-   #     logL = self.log_t(theta)
-   #     trial_num = 0
-   #     logL_prop = np.log(np.finfo(float).eps)
-   #     while trial_num <= num_trials or logL_prop < logL_thresh:
-   #         prop = prop = theta + self.rng.normal(scale = 0.05, size = self.num_model_par)#self.sample_uniform_prior(num_samples = 1)[0,:]
-   #         for j in range(self.num_model_par):
-   #             if prop[j] < self.lower_bounds[j]:
-   #                 prop[j] = self.lower_bounds[j] + 0.0001 #2*self.lower_bounds[j] - prop[j]
-   #             if prop[j] > self.upper_bounds[j]:
-   #                 prop[j] = self.upper_bounds[j] - 0.0001 #2*self.upper_bounds[j] - prop[j]
-   #         logL_prop = self.log_t(prop)
-   #         if logL_prop > logL_thresh:
-   #             theta, logL = prop, logL_prop
-   #         trial_num += 1
-   #     return theta, logL
+    def plot_like_surf(self, figsize = (5,5), textsize = None, 
+                       marginals = False, contour = True,
+                       cmap = 'inferno', use_rasample = False, num_samples=5000,
+                       bw = 0.5):
+        """ Plot likelihood contours in pairs
+        """
+        if use_rasample:
+            samples = self.resample_posterior(num_samples)
+        else:
+            samples = self.prior_samples
+        
+        arviz_dict = {name: samples[:, i] for i,
+                      name in enumerate(self.parameters_names)}
+        # contour_kwargs_dict = {
+        #                        "cmap" : cmap,
+        #                        "colors" : None}
+        
+        # contourf_kwargs_dict = {"alpha" : 0.5,
+        #                        }
+        
+        # pcolormesh_kwargs_dict = {"alpha" : 0.5,
+        #                        "cmap" : cmap,
+        #                        }
+        
+        # kde_kwargs_dict = {"bw" : 0.5}
+        kde_kwargs_dict = {"rug": True, 
+                           "contour" : contour,
+                           "fill_last": False,
+                           "bw" : bw}
+        
+        
+        
+        ax = az.plot_pair(arviz_dict, var_names=self.parameters_names,
+            kind="kde", textsize=textsize, figsize = figsize,
+            marginals = marginals, kde_kwargs=kde_kwargs_dict)
+        plt.tight_layout()
+        return ax
+        
+############# DEPRECATED STUFF ###########################        
+        
+    # def set_convergence_tolerance(self, convergence_tol = [0.01]):
+    #     """ Set convergence tolerance for nested sampling.
+        
+    #     This can be used to stop the nested sampling algorithm. When the spread
+    #     of the current live point population becomes smaller than the convergence_tol,
+    #     then, the algorithm has converged.
+        
+    #     Parameters
+    #     ----------
+    #     convergence_tol : numpy1dArray
+    #         Array containing the tolerance values for each of the model's parameters
+    #     """
+    #     # Make sure lower / upper bonds has the same size of num_par
+    #     if len(convergence_tol) != self.num_model_par:
+    #         raise ValueError("convergence_tol must be a vector with the same size of num_par")
+    #     self.convergence_tol = convergence_tol
+        
+     # def update_values(self, random_par, adjust_suggested, current_worst_par_val,
+     #                   type_of_update = "adding"):
+     #     """ Update a given parameter value and logp from a set of parameter vector 
+     #     """        
+     #     # Update (Adding)
+     #     if type_of_update == "adding":
+     #         updated_sample_par = current_worst_par_val[random_par] + adjust_suggested
+     #     else:
+     #         updated_sample_par = current_worst_par_val[random_par] - adjust_suggested
+     #     updated_model_par = current_worst_par_val
+     #     updated_model_par[random_par] = updated_sample_par
+     #     updated_logp = self.likelihood_fun(updated_model_par)
+     #     return updated_logp, updated_model_par  
+     
+     # def suggest_random_adjustment(self, spread):
+     #     """ Suggest a random adjustment for a single random parameter
+         
+     #     These are Steps 2-3 (Beaton and Xiang - Sec. IV.B.1)
+         
+     #     1. Select a random parameter in the reference point.
+     #     2. Use a uniform distribution to generate a random adjustment
+     #     value for the parameter. The uniform distribution
+     #     will have limits from zero to a maximum value dependent
+     #     on the type of parameter selected. The MAX-MIN (spread/2) of the
+     #     current live_pts population is used as suggestion for this update.
+         
+     #     Parameters
+     #     ----------
+     #     spread : numpy1dArray
+     #         The Array containing the spread of the current population
+         
+     #     Returns
+     #     ----------
+     #     random_par_id : int
+     #         index of the parameter to update. It will be between 0 and num_model_par-1
+     #     suggested_adjustment : float
+     #         value of ajustment.
+     #     """
+     #     # Select a random parameter index
+     #     random_par_id = np.random.randint(low = 0, high = self.num_model_par, size = 1)[0]
+     #     # Generate a random adjustment value for the parameter (uniform dist)
+     #     suggested_adjustment = np.random.uniform(low = 0,
+     #                                              high = spread[random_par_id]/2, 
+     #                                              size = 1)[0]
+     #     return random_par_id, suggested_adjustment
+     
+     # def update_parameter(self, parameter_vec, 
+     #                      random_par_id = 0, suggested_adjustment = 0.0):
+     #     """ Updates the choosen parameter.
+         
+     #     We need to decide if we add or subtract the random suggestion. To do so, 
+     #     we will calculate which is the closest border of the parameter we want to alter.
+     #     If the parameter is closer to the lower bound we add. If the parameter is closer
+     #     to the upper bound we subtract.
+         
+     #     This is Step 4 (Beaton and Xiang - Sec. IV.B.1)
+         
+     #     Parameters
+     #     ----------
+     #     parameter_vec : numpy1dArray
+     #         Parameter vector to adjust
+     #     random_par_id : int
+     #         Parameter to update
+     #     suggested_adjustment : float
+     #         Value to add or subtract from current parameter.
+     #     """
+     #     # Get parameter vector to ajust (this is a guessed solution)
+     #     suggested_parameter_vec = np.copy(parameter_vec)
+     #     # compute distances from upper and lower bounds
+     #     lower_bound_distance = parameter_vec[random_par_id] - self.lower_bounds[random_par_id]
+     #     upper_bound_distance = self.upper_bounds[random_par_id] - parameter_vec[random_par_id]
+     #     # Summing or subtracting
+     #     if lower_bound_distance <= upper_bound_distance:
+     #         suggested_parameter_vec[random_par_id] += np.abs(suggested_adjustment)
+     #     else:
+     #         suggested_parameter_vec[random_par_id] -= np.abs(suggested_adjustment)
+     #     return suggested_parameter_vec
+     
+     # def update_from_lowest_likelihood(self, current_spread, max_up_attempts):
+     #     """ Update the parameter vector of lowest likelihood.
+         
+     #     Updates the parameter of lowest likelihood and computes the new log likelihood.
+     #     It uses a random suggestion approach. A random index of the parameter vector is
+     #     selected and a random number is also generated serving as an update suggestion, 
+     #     which will be either summed or subtracted from the parameter vector value.
+     #     The suggestion is evaluated. If the move is sucessful (higher likelihood), it stops.
+     #     If not, a new suggestion is performed.
+         
+     #     Parameters
+     #     ----------
+     #     current_spread : numpy1dArray
+     #         The Array containing the spread of the current population
+     #     max_up_attempts : int
+     #         Maximum number of update attempts.
+     #     """
+     #     attempt_num = 0 # number of attempts made
+     #     while attempt_num <= max_up_attempts and not self.update_successful:
+     #         # Get a random adjustment suggestion        
+     #         random_par_id, suggested_adjustment = self.suggest_random_adjustment(current_spread)
+     #         self.random_par_id.append(random_par_id)
+     #         # Get a parameter vec suggestion
+     #         parameter_vec_new =\
+     #             self.update_parameter(parameter_vec = self.live_pts[self.worst_logp_index],
+     #                                   random_par_id = random_par_id, 
+     #                                   suggested_adjustment = suggested_adjustment)
+     #         # Evaluate logp of suggested parameter vector
+     #         logp_new = self.likelihood_fun(model_par = parameter_vec_new)
+     #         # Evaluate if the move increased likelihood
+     #         self.evaluate_move(logp_new, parameter_vec_new)
+     #         attempt_num += 1
+             
+     # def update_from_random_par_vec(self, current_spread):
+     #     """ Update from a random parameter vector from the remaining live-pts population.
+         
+     #     Try to update a random parameter vector from the the remaining live-pts population,
+     #     excluding the one with the lowest likelihood. This is only tried after trying to 
+     #     update the parameter vector with lowest likelihood for a number of trials.
+     #     It uses a random suggestion approach as in "update_from_lowest_likelihood"
+         
+     #     1 - Exclude the lowest likelihood parameter from the pool.
+     #     2 - Shuffle remaining index (for a random ordering)
+     #     3 - Try to update until sucessful.
+         
+     #     Parameters
+     #     ----------
+     #     current_spread : numpy1dArray
+     #         The Array containing the spread of the current population
+     #     """
+     #     # Get all indexes from the live_pts population
+     #     all_indexes = np.arange(0, self.live_pts.shape[0])
+     #     # Delete index with the lowest likelihood
+     #     remaining_indexes = np.delete(all_indexes, self.worst_logp_index)
+     #     # suffle remaining indexes
+     #     np.random.shuffle(remaining_indexes)
+     #     # Start loop
+     #     i = 0
+     #     while i < len(remaining_indexes) and not self.update_successful:
+     #         # Get a adjustment suggestion
+     #         random_par_id, suggested_adjustment = self.suggest_random_adjustment(current_spread)
+     #         self.random_par_id.append(random_par_id)
+     #         # Get a parameter suggestion
+     #         parameter_vec_new =\
+     #             self.update_parameter(parameter_vec = self.live_pts[remaining_indexes[i]],
+     #                                   random_par_id = random_par_id, 
+     #                                   suggested_adjustment = suggested_adjustment)
+     #         # Evaluate logp of suggested parameter vector
+     #         logp_new = self.likelihood_fun(model_par = parameter_vec_new)
+     #         self.evaluate_move(logp_new, parameter_vec_new)
+     #         # increment i
+     #         i += 1
+     
+     # def constrained_resample(self, i, max_up_attempts = 5):
+     #     """ Sample movement in the parameter space.
+         
+     #     1 - Computes the spread in the current live-pts population
+     #     2 - Try to update from lowest likelihood (using random parameter suggestion)
+     #     3 - Try to update from random parameter vector (using random parameter suggestion)
+         
+     #     Parameters
+     #     ----------
+     #     i : int
+     #         iteration value
+     #     max_up_attempts : int
+     #         Maximum number of update attempts.
+     #     """
+     #     # Compute current spread in the given live_pts population
+     #     self.spread[i,:] = self.compute_spread(self.live_pts)
+     #     # initialize while loop variables
+     #     self.update_successful = False # success of update is set to False first
+     #     # Try updating the parameter vector with lowest likelihood
+     #     self.update_from_lowest_likelihood(self.spread[i,:], max_up_attempts)
+     #     # If still not sucessful after max_up_attempts, then try updating a random parameter.
+     #     if not self.update_successful:
+     #         self.update_from_random_par_vec(self.spread[i,:])
+     
+     # def get_transformLayer(self):
+     #     """ Get transform layer (Ultranest)
+     #     """
+     #     if self.num_model_par > 1:
+     #         self.transformLayer = AffineLayer()
+     #     else:
+     #         self.transformLayer = ScalingLayer()
+     #     self.transformLayer.optimize(self.prior_cube, self.prior_cube)
+         
+     # def get_region(self, ):
+     #     """ Get region from MLfriends (Ultranest)
+     #     """
+     #     self.region = MLFriends(self.prior_cube, self.transformLayer)
+     #     self.volfactor = ultranest.utils.vol_prefactor(n = self.num_model_par)
+     #     # return region
+     
+     # def ml_mover(self, it_num = 0, max_up_attempts = 200):
+     #     """ sampling new point according to ultranest MLfriends algorithm
+     #     """
+     #     if it_num == 0:
+     #         nextregion = self.region
+     #     else:
+     #         nextTransformLayer = self.transformLayer.create_new(self.prior_cube, 
+     #                                                             self.region.maxradiussq)
+     #         nextregion = MLFriends(self.prior_cube, nextTransformLayer)
+     #     r, f = ultranest.integrator._update_region_bootstrap(nextregion, nbootstraps = 30, 
+     #                                                          minvol=0., comm=None, mpi_size=1)
+     #     nextregion.maxradiussq = r
+     #     nextregion.enlarge = f
+     #     # force shrinkage of volume
+     #     # this is to avoid re-connection of dying out nodes
+     #     if nextregion.estimate_volume() < self.region.estimate_volume():
+     #         self.region = nextregion
+     #         self.transformLayer = self.region.transformLayer
+     #     self.region.create_ellipsoid(minvol = np.exp(-it_num / self.n_live) * self.volfactor)
+     #     u = self.region.sample(nsamples = 100)
+     #     return u
+     
+     # def ultranest_slice_sampler(self, it_num = 0, max_up_attempts = 20):
+     #     """ ultranest slice sampler
+     #     """
+     #     # slice_un = PopulationSimpleSliceSampler(popsize = 1,
+     #     #                                         nsteps = max_up_attempts, 
+     #     #                                         generate_direction = ultranest.popstepsampler.generate_random_direction)
+     #     slice_un = PopulationRandomWalkSampler(popsize = 1, 
+     #                                            nsteps = max_up_attempts, 
+     #                                            generate_direction = ultranest.popstepsampler.generate_random_direction, 
+     #                                            scale = 1)
+     #     self.get_transformLayer()
+     #     self.get_region()
+     #     u, p, L, nc = slice_un.__next__(region = self.region, 
+     #                                     Lmin = self.logp_live[self.worst_logp_index], 
+     #                                     us = self.prior_cube, 
+     #                                     Ls = self.logp_live, 
+     #                                     transform = self.prior_un2, 
+     #                                     loglike = self.log_t2)
+     #     self.prior_cube[self.worst_logp_index, :] = u
+     
+     # def log_t2(self, model_par):
+     #     """ Computes log-like Student-t likelihood
+         
+     #     Parameters
+     #     ----------
+     #     model_par : numpy1dArray
+     #         parameters for a giving tried solution vector
+             
+     #     Returns
+     #     ----------
+     #     logp : float
+     #         Value of log - like Student-t distribution
+         
+     #     """
+     #     logp = np.zeros((1, 1))
+     #     logp[0,0] = self.log_t(model_par)
+     #     return logp

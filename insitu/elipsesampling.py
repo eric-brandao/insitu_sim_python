@@ -5,9 +5,9 @@ Created on Fri Dec 12 08:29:34 2025
 @author: Eric Brandao
 """
 import numpy as np
-import scipy
-import matplotlib.pyplot as plt
-import utils_insitu as ut_is
+# import scipy
+# import matplotlib.pyplot as plt
+# import utils_insitu as ut_is
 
 class ElipsoidalSampling():
     """ Find elipsoidal region for sampling
@@ -55,10 +55,10 @@ class ElipsoidalSampling():
         E = np.amax(d2)
         return E
         
-    def ellipse_axis(self, E, eigvals, elargement_factor = 1.1):
+    def ellipse_axis(self, E, eigvals, enlargement_factor = 1.1):
         """ Compute ellipse axis with enlargement
         """
-        axes = np.sqrt(elargement_factor * E * eigvals)
+        axes = np.sqrt(enlargement_factor * E * eigvals)
         return axes
         
     def sample_in_sphere(self,):
@@ -81,6 +81,29 @@ class ElipsoidalSampling():
         E = self.mahalanobis_dist(eigvals, eigvecs, coords_minus_mean, eps = eps)
         axes = self.ellipse_axis(E, eigvals, elargement_factor = elargement_factor)
         theta_ell = mu + eigvecs @ (axes * theta_unit)
+        return theta_ell
+    
+    def sample_multi_in_sphere(self, n_samples = 10):
+        """ Sample multiple points inside a unit sphere
+        """
+        u = np.random.normal(size = (n_samples, self.Ndim))
+        u /= np.linalg.norm(u, axis=1)[:, None]     # random direction on the unit sphere
+        r = np.random.rand(n_samples) ** (1.0/self.Ndim)  # correct radius distribution
+        theta_unit = u * r[:, None]                 # uniform inside unit ball
+        return theta_unit
+    
+    def sample_multi_in_ellipse(self, n_samples = 10, enlargement_factor = 1.1, eps = 1e-12):
+        """ Sample multiple points inside a the ellipse
+        """
+        theta_unit = self.sample_multi_in_sphere(n_samples = n_samples)
+        mu = self.mean()
+        coords_minus_mean = self.subtract_mean(mu)
+        cov_mtx = self.covariance_mtx(coords_minus_mean)
+        eigvals, eigvecs = self.eigen_decomp(cov_mtx)
+        E = self.mahalanobis_dist(eigvals, eigvecs, coords_minus_mean, eps = eps)
+        axes = self.ellipse_axis(E, eigvals, enlargement_factor = enlargement_factor)
+        # theta_scaled = theta_unit * axes[None, :]
+        theta_ell = (eigvecs @ (theta_unit * axes[None, :]).T).T + mu[None, :]
         return theta_ell
         
         
