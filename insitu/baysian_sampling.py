@@ -7,6 +7,8 @@ Created on Sep  2025
 import numpy as np
 import scipy
 import matplotlib.pyplot as plt
+from numba import njit
+from matplotlib.ticker import StrMethodFormatter
 import arviz as az
 from tqdm import tqdm
 import utils_insitu as ut_is
@@ -157,6 +159,8 @@ class BayesianSampler(object):
     def transform_cube(self, prior_cube):
         """ Get prior samples in the transformed space
         """
+        # prior_samples = transform_cube_numba(prior_cube, self.lower_bounds, 
+        #                                      self.upper_bounds)
         prior_samples = np.zeros(prior_cube.shape)
         for jp in range(self.num_model_par):
             prior_samples[:, jp] = prior_cube[:, jp] *\
@@ -188,6 +192,7 @@ class BayesianSampler(object):
         error_norm = np.linalg.norm(self.measured_data - y_pred)
         logp = - 0.5 * self.num_of_meas * np.log(2*np.pi*self.sigma*2) -\
             error_norm**2/(2*self.sigma**2)
+        # logp = loglike_t_numba(self.measured_data, y_pred)
         return logp
         
     def log_t(self, model_par):
@@ -1128,7 +1133,7 @@ class BayesianSampler(object):
                     kde = scipy.stats.gaussian_kde(self.prior_samples[:, jdim], 
                                                    weights = self.weights)
                     x_grid = np.linspace(self.prior_samples[:, jdim].min(), 
-                                         self.prior_samples[:, jdim].max(), 500)
+                                         self.prior_samples[:, jdim].max(), 1000)
                     pdf = kde(x_grid)
                     ax[row, col].plot(x_grid, pdf, linewidth = 1.5,  
                                       alpha = 0.7, color = color, label = label)
@@ -1318,15 +1323,23 @@ class BayesianSampler(object):
                         loglike = False):
         """ 2D gauss kde (normalized)
         """
+        
         # Get KDE kernel
-        kernel = scipy.stats.gaussian_kde(self.prior_samples[:, dim2calc].T)
+        kernel = scipy.stats.gaussian_kde(self.prior_samples[:, dim2calc].T,
+                                          weights = self.weights)
         # Create a meshgrid
         if xlim is None:
             xmin = self.lower_bounds[dim2calc[0]]
             xmax = self.upper_bounds[dim2calc[0]]
+        else:
+            xmin = xlim[0]
+            xmax = xlim[1]
         if ylim is None:
             ymin = self.lower_bounds[dim2calc[1]]
             ymax = self.upper_bounds[dim2calc[1]]
+        else:
+            ymin = ylim[0]
+            ymax = ylim[1]
         x_m, y_m = np.mgrid[xmin:xmax:100j, ymin:ymax:100j]
         positions = np.vstack([x_m.ravel(), y_m.ravel()])
         if loglike:
@@ -1343,9 +1356,11 @@ class BayesianSampler(object):
     
     def plot_single_2d_kde(self, ax = None, dim2calc = [0, 1], 
                            cmap = 'inferno', mode = 'mesh',
-                           xlim = None, ylim = None):
+                           lb = None, ub = None):
         
-        x, y, p = self.gaussian_kde_2d(dim2calc = dim2calc, loglike = False)
+        x, y, p = self.gaussian_kde_2d(dim2calc = dim2calc, loglike = False,
+                                       xlim = (lb[dim2calc[0]], ub[[dim2calc[0]]]),
+                                       ylim = (lb[dim2calc[1]], ub[[dim2calc[1]]]))
         if ax is None:
             _, ax = ut_is.give_me_an_ax(figshape = (1, 1), figsize = (4,4))
             ax = ax[0,0]
@@ -1358,34 +1373,128 @@ class BayesianSampler(object):
             
     def plot_multi_2d_kde(self, ax = None, cmap = 'inferno', 
                           mode = 'mesh', figsize = None,
-                          fine_tune_subplt = [0.1, 0, 0.9, 0.99]):
+                          fine_tune_subplt = [0.15, 0.1, 0.98, 0.98],
+                          limit_to_ci = True):
+        """ Plots 2D multiple KDE relations
+        
+        Parameters
+        ----------
+        ax : matplotlib axes or None
+            Axes to plot
+        cmap : str
+            color map to use
+        mode : str
+            Can be "mesh" for pcolormesh or "contour" for contourf plots
+        figsize : tuple of 1,2
+            fig size
+        fine_tune_subplt : list
+            letf, bottom, right, up figure cropping
+        """
+        # Limits of analisis
+        if limit_to_ci:
+            lb = self.ci[0,:]
+            ub = self.ci[1,:]
+        else:
+            lb = self.lower_bounds
+            ub = self.upper_bounds
+        
+        # Decide fig size
         if figsize is None:
             figsize = ((self.num_model_par-1)*2, (self.num_model_par-1)*2)
+        # Decide fig axis
         if ax is None:
             figshape = (self.num_model_par-1, self.num_model_par-1)
-            # _, ax = ut_is.give_me_an_ax(figshape = figshape, figsize = figsize)
             fig, ax = plt.subplots(figsize = figsize,
                                    nrows = figshape[0], ncols = figshape[1],
-                                   sharex = 'col', sharey = 'row')
-        
+                                   sharex = 'col', sharey = 'row', squeeze = False)
+        # Loop through rows (bottom matrix)
         for row in range(self.num_model_par-1):
+            # Loop through cols (bottom matrix)
             for col in range(self.num_model_par-1):
-                if col > row:       # Target subplots above the diagonal
+                if col > row:  # Turn off above the diagonal
                     ax[row, col].set_visible(False)
                 else:
                     ax[row, col] = self.plot_single_2d_kde(ax[row,col],
                                        dim2calc = [col, row+1], cmap = cmap,
-                                       mode = mode)
+                                       mode = mode, lb = lb, ub = ub)
+                    ax[row, col].xaxis.set_major_formatter(StrMethodFormatter('{x:.1f}'))
+                    ax[row, col].yaxis.set_major_formatter(StrMethodFormatter('{x:.2f}'))
+        # labelling axis
         for col in range(self.num_model_par-1):
             ax[ax.shape[0]-1, col].set_xlabel(self.parameters_names[col])
         for row in range(self.num_model_par-1):
             ax[row, 0].set_ylabel(self.parameters_names[row+1])
+        # cropping white-spaces
+        fig.subplots_adjust(left = fine_tune_subplt[0], bottom = fine_tune_subplt[1],
+                            right = fine_tune_subplt[2], top = fine_tune_subplt[3],
+                            wspace = 0.025, hspace = 0.025)
         
+    
+    # def plot_multi_2d_kde2(self, ax = None, cmap = 'inferno', 
+    #                       mode = 'mesh', figsize = None,
+    #                       fine_tune_subplt = [0.15, 0.1, 0.98, 0.98]):
+    #     """ Plots 2D multiple KDE relations with 1d posteriors
+        
+    #     Parameters
+    #     ----------
+    #     ax : matplotlib axes or None
+    #         Axes to plot
+    #     cmap : str
+    #         color map to use
+    #     mode : str
+    #         Can be "mesh" for pcolormesh or "contour" for contourf plots
+    #     figsize : tuple of 1,2
+    #         fig size
+    #     fine_tune_subplt : list
+    #         letf, bottom, right, up figure cropping
+    #     """
+    #     # Decide fig size
+    #     if figsize is None:
+    #         figsize = ((self.num_model_par)*2, (self.num_model_par)*2)
+    #     # Decide fig axis
+    #     if ax is None:
+    #         figshape = (self.num_model_par, self.num_model_par)
+    #         fig, ax = plt.subplots(figsize = figsize,
+    #                                nrows = figshape[0], ncols = figshape[1],
+    #                                sharex = 'col', sharey = 'row', squeeze = False)
+    #     # Diagonal 1 D KDE plot
+    #     for d in range(self.num_model_par):
+    #         kde = scipy.stats.gaussian_kde(self.prior_samples[:, d], 
+    #                                        weights = self.weights)
+    #         x_grid = np.linspace(self.prior_samples[:, d].min(), 
+    #                              self.prior_samples[:, d].max(), 1000)
+    #         pdf = kde(x_grid)
+    #         ax[d, d].plot(x_grid, pdf, linewidth = 1.5, 
+    #                       alpha = 0.7, color = 'grey')
+    #         # ax[row, col].legend()
+    #         ax[d, d].grid(linestyle = '--')
+    #         ax[d, d].set_xlim((self.lower_bounds[jdim], self.upper_bounds[jdim]))
+    #         ax[d, d].set_xlabel(self.parameters_names[jdim])
+    #         ax[d, d].set_ylabel(r"$p(\theta)$")
+        
+        # # Loop through rows (bottom matrix)
+        # for row in range(self.num_model_par-1):
+        #     # Loop through cols (bottom matrix)
+        #     for col in range(self.num_model_par-1):
+        #         if col > row:  # Turn off above the diagonal
+        #             ax[row+1, col].set_visible(False)
+        #         else:
+        #             ax[row+1, col] = self.plot_single_2d_kde(ax[row,col],
+        #                                dim2calc = [col, row+1], cmap = cmap,
+        #                                mode = mode)
+        #             ax[row+1, col].xaxis.set_major_formatter(StrMethodFormatter('{x:.1f}'))
+        #             ax[row+1, col].yaxis.set_major_formatter(StrMethodFormatter('{x:.2f}'))
+        # # labelling axis
+        # for col in range(self.num_model_par-1):
+        #     ax[ax.shape[0]-1, col].set_xlabel(self.parameters_names[col])
+        # for row in range(self.num_model_par-1):
+        #     ax[row, 0].set_ylabel(self.parameters_names[row+1])
+        # # cropping white-spaces
         # fig.subplots_adjust(left = fine_tune_subplt[0], bottom = fine_tune_subplt[1],
-        #                     right = fine_tune_subplt[2], top = fine_tune_subplt[3])
-        fig.subplots_adjust(wspace = 0.02, hspace = 0.02)
-        
-        
+        #                     right = fine_tune_subplt[2], top = fine_tune_subplt[3],
+        #                     wspace = 0.025, hspace = 0.025)
+    
+    
     def plot_like_surf(self, figsize = (5,5), textsize = None, 
                        marginals = False, contour = True,
                        cmap = 'inferno', use_rasample = False, num_samples=5000,
@@ -1424,6 +1533,25 @@ class BayesianSampler(object):
         plt.tight_layout()
         return ax
         
+@njit  
+def loglike_t_numba(measured_data, y_pred):
+    num_of_meas = len(measured_data)
+    # error norm
+    error_norm = np.linalg.norm(measured_data - y_pred)
+    logp = -(num_of_meas/2)*np.log((error_norm**2)/2)
+    return logp
+
+@njit
+def transform_cube_numba(prior_cube, lower_bounds, upper_bounds):
+    """ Get prior samples in the transformed space
+    """
+    prior_samples = np.zeros(prior_cube.shape)
+    num_model_par = prior_cube.shape[1]
+    for jp in range(num_model_par):
+        prior_samples[:, jp] = prior_cube[:, jp] *\
+            (upper_bounds[jp]-lower_bounds[jp]) + lower_bounds[jp]
+    return prior_samples
+
 ############# DEPRECATED STUFF ###########################        
         
     # def set_convergence_tolerance(self, convergence_tol = [0.01]):

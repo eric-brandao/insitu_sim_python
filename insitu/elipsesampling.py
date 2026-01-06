@@ -5,6 +5,7 @@ Created on Fri Dec 12 08:29:34 2025
 @author: Eric Brandao
 """
 import numpy as np
+from numba import njit
 # import scipy
 # import matplotlib.pyplot as plt
 # import utils_insitu as ut_is
@@ -39,7 +40,8 @@ class ElipsoidalSampling():
     def eigen_decomp(self, cov_mtx):
         """ Eigenvalue decomposition of covariance matrix
         """
-        eigvals, eigvecs = np.linalg.eigh(cov_mtx)
+        # eigvals, eigvecs = np.linalg.eigh(cov_mtx)
+        eigvals, eigvecs = eigen_decomp_nu(cov_mtx)
         return eigvals, eigvecs
         
     def mahalanobis_dist(self, eigvals, eigvecs, coords_minus_mean, eps = 1e-12):
@@ -53,6 +55,7 @@ class ElipsoidalSampling():
         # compute squared Mahalanobis distances: sum_j (y_ij^2 / lambda_j)
         d2 = np.sum((Y ** 2) / eigvals_clipped[None, :], axis=1)
         E = np.amax(d2)
+        # E = mahalanobis_dist_nu(eigvals, eigvecs, coords_minus_mean, eps = eps)
         return E
         
     def ellipse_axis(self, E, eigvals, enlargement_factor = 1.1):
@@ -99,11 +102,44 @@ class ElipsoidalSampling():
         mu = self.mean()
         coords_minus_mean = self.subtract_mean(mu)
         cov_mtx = self.covariance_mtx(coords_minus_mean)
+        # cov_mtx = covariance_mtx_nu(coords_minus_mean)
         eigvals, eigvecs = self.eigen_decomp(cov_mtx)
+        # eigvals, eigvecs = eigen_decomp_nu(cov_mtx)
         E = self.mahalanobis_dist(eigvals, eigvecs, coords_minus_mean, eps = eps)
         axes = self.ellipse_axis(E, eigvals, enlargement_factor = enlargement_factor)
         # theta_scaled = theta_unit * axes[None, :]
         theta_ell = (eigvecs @ (theta_unit * axes[None, :]).T).T + mu[None, :]
         return theta_ell
+
+## Numba standalone functions
+
+@njit(cache=True)
+def covariance_mtx_nu(coords_minus_mean):
+    """ Computes the covariance matrix
+    """
+    cov_mtx = (coords_minus_mean.T @ coords_minus_mean) * (1/(coords_minus_mean.shape[0]-1))
+    return cov_mtx
+
+
+@njit(cache=True)
+def eigen_decomp_nu(cov_mtx):
+    """ Eigenvalue decomposition of covariance matrix
+    """
+    eigvals, eigvecs = np.linalg.eigh(cov_mtx)
+    return eigvals, eigvecs
+
+@njit
+def mahalanobis_dist_nu(eigvals, eigvecs, coords_minus_mean, eps = 1e-12):
+    """ Computes the mahalanobis distance to build elipse 
+    
+    Uses eigen decomposition
+    """
+    eigvals_clipped = np.clip(eigvals, eps, None)  # ensure >= eps
+    # project into eigenbasis: y = Xc @ V  (each row is y_i)
+    Y = coords_minus_mean.dot(eigvecs)
+    # compute squared Mahalanobis distances: sum_j (y_ij^2 / lambda_j)
+    d2 = np.sum((Y ** 2) / eigvals_clipped[None, :], axis=1)
+    E = np.amax(d2)
+    return E
         
         

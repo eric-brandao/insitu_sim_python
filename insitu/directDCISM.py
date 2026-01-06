@@ -140,8 +140,8 @@ class dDCISM(object):
         """
         # get Kz0 (vertical wave-number above layer)
         kz0 = self.get_vertical_wavenum(k = k)
-        num = kz0 - k*beta
-        den = kz0 + k*beta
+        num = -kz0 - k*beta
+        den = -kz0 + k*beta
         Vp_sampled = num / den
         return Vp_sampled
     

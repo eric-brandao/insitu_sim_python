@@ -244,6 +244,7 @@ class PorousAbsorber():
 def kp_rhop_range_study(resist = [3000, 60000], phi = [0.15, 1.0],
                         alpha_inf = [1.0, 3.00], Lam = [50e-6, 300e-6],
                         Lamlfac = [1.01, 3.0], n_samples = 20000,
+                        thickness = [2e-3, 20e-2], theta_deg = [0, 75],
                         freq_vec = [125, 250, 500, 1000, 2000, 4000]):
     # Air and controls
     air = AirProperties(c0 = 343.0, rho0 = 1.21)
@@ -255,15 +256,51 @@ def kp_rhop_range_study(resist = [3000, 60000], phi = [0.15, 1.0],
     Lam_s = np.random.uniform(low = Lam[0], high = Lam[1], size = n_samples)
     Laml_factor_s = np.random.uniform(low = Lamlfac[0], high = Lamlfac[1], size = n_samples)
     Laml_s = Laml_factor_s * Lam_s
+    tp_s = np.random.uniform(low = thickness[0], high = thickness[1], size = n_samples)
+    theta_deg_s = np.random.uniform(low = theta_deg[0], high = theta_deg[1], size = n_samples)
+    
     # Loop
     k_p = np.zeros((n_samples, len(controls.freq)), dtype = complex)
     rho_p = np.zeros((n_samples, len(controls.freq)), dtype = complex)
+    beta = np.zeros((n_samples, len(controls.freq)), dtype = complex)
     for jm in range(n_samples):
         material = PorousAbsorber(air, controls)
         #material.miki(resistivity=resist)
         material.jcal(resistivity = resist_s[jm], porosity = phi_s[jm], 
                       tortuosity = alpha_inf_s[jm], lam = Lam_s[jm], lam_l = Laml_s[jm])
-        k_p[jm, :] = material.kp#/controls.k0 # Normalized
-        rho_p[jm, :] = material.rhop#/air.rho0 # Normalized
-    return k_p, rho_p
+        k_p[jm, :] = material.kp/controls.k0 # Normalized
+        rho_p[jm, :] = material.rhop/air.rho0 # Normalized
+        
+        # surface admittance
+        Zs, _, _ = material.layer_over_rigid(thickness = tp_s[jm], theta = theta_deg_s[jm])
+        beta[jm, :] = (air.rho0*air.c0) / Zs
+    return k_p, rho_p, beta
+
+def get_min_kp_rhop(k_p, rho_p):
+    min_kp_r = np.amin(np.real(k_p), axis = 0)
+    min_kp_i = np.amin(np.imag(k_p), axis = 0)
+    min_rhop_r = np.amin(np.real(rho_p), axis = 0)
+    min_rhop_i = np.amin(np.imag(rho_p), axis = 0)
+    lower_bounds = np.array([min_kp_r, min_kp_i, min_rhop_r, min_rhop_i])
+    return lower_bounds 
+
+def get_max_kp_rhop(k_p, rho_p):
+    max_kp_r = np.amax(np.real(k_p), axis = 0)
+    max_kp_i = np.amax(np.imag(k_p), axis = 0)
+    max_rhop_r = np.amax(np.real(rho_p), axis = 0)
+    max_rhop_i = np.amax(np.imag(rho_p), axis = 0)
+    upper_bounds = np.array([max_kp_r, max_kp_i, max_rhop_r, max_rhop_i])
+    return upper_bounds
+
+def get_min_beta(beta):
+    min_beta_r = np.amin(np.real(beta), axis = 0)
+    min_beta_i = np.amin(np.imag(beta), axis = 0)
+    lower_bounds = np.array([min_beta_r, min_beta_i])
+    return lower_bounds 
+
+def get_max_beta(beta):
+    max_beta_r = np.amax(np.real(beta), axis = 0)
+    max_beta_i = np.amax(np.imag(beta), axis = 0)
+    lower_bounds = np.array([max_beta_r, max_beta_i])
+    return lower_bounds 
 

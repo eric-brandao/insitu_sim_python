@@ -1776,6 +1776,7 @@ def plot_1d_curve(xdata, ydata, ax, xlims = None, ylims = None,
     ax.set_ylim(ylims)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
+    return ax
 
 def plot_time(fs, sig, ax = None, xlims = None, ylims = None, 
               color = 'tab:blue', linewidth = 1.5, linestyle = '-',
@@ -1924,8 +1925,8 @@ def plot_absorption_theta(theta, abs_coeff, ax = None, xlim = None, ylim = None,
                   label = label, xlabel = r"$\theta$ [deg]", ylabel = r"$\alpha$  [-]",
                   linx = True, liny = True, xticks = np.arange(0, 105, 15))
     return ax
-    
-    
+# from numba import njit 
+# @njit
 def MPM(samp, L, Ts, tol):
     """ Matrix Pencil Method (implemented by Martin Eser - JASA 2021)
     

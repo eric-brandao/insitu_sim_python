@@ -8,11 +8,12 @@ Created on Wed Oct 15 2025
 #%% Imports
 import numpy as np
 import matplotlib.pyplot as plt
-from controlsair import AirProperties #AlgControls, 
-# from sources import Source
-# from receivers import Receiver
-# from material import PorousAbsorber  # Material
-from field_inf_nlr import NLRInfSph  # Field Inf NLR
+from controlsair import AirProperties, AlgControls
+from sources import Source
+from receivers import Receiver
+from material import PorousAbsorber  # Material
+#from field_inf_nlr import NLRInfSph  # Field Inf NLR
+from directDCISM import dDCISM
 # from decomp_quad_v2 import Decomposition_QDT
 from decomp_DCISM_bayesian import DCISM_Bayesian
 # import lcurve_functions as lc
@@ -20,122 +21,133 @@ import utils_insitu as ut_is
 
 #%%
 air = AirProperties(c0 = 343.0, rho0 = 1.21)
-#%% Import sound field for processing with ISM method
-field_nlr = NLRInfSph()
-path = 'D:/Work/UFSM/Pesquisa/insitu_arrays/TAMURA_DCISM/dcism_locallyreacting_Rtheta/'
-field_nlr.load(path = path, filename = "melamine_nlr_sim")
-field_nlr.add_noise(snr = 30, uncorr=False)
-field_nlr.material.jcal(resistivity = field_nlr.material.resistivity, 
-                        porosity = field_nlr.material.porosity, 
-                        tortuosity = field_nlr.material.tortuosity, 
-                        lam = field_nlr.material.lam, lam_l = field_nlr.material.lam_l)
-field_nlr.material.layer_over_rigid(thickness = field_nlr.material.thickness, theta = 0.0);
-field_nlr.material.layer_over_rigid_theta(thickness = field_nlr.material.thickness)
-
-
-# plt.figure(figsize=(8,3))
-# for jrec in range(field_nlr.receivers.coord.shape[0]):
-#     H = field_nlr.pres_s[0][jrec,:]/field_nlr.pres_s[0][0,:]
-#     plt.semilogx(field_nlr.controls.freq, 20*np.log10(np.abs(H)))
-#%% DCISM estimation (Tikhonov)
-# dcism = Decomposition_QDT(p_mtx = field_nlr.pres_s[0], controls=field_nlr.controls,
-#                        receivers = field_nlr.receivers, 
-#                        source_coord = field_nlr.sources.coord[0], quad_order=51,
-#                        a = 0, b = 30, retraction = 0, image_source_on = True,
-#                        regu_par = 'gcv')
-# dcism.gauss_legendre_sampling()
-# dcism.pk_tikhonov(plot_l=False, method='Tikhonov')
-# #decomp_mono.least_squares_pk()
-# _ = dcism.zs(Lx=0.1, n_x=21, Ly=0.1, n_y=21, theta=[0], avgZs=True);
-
+controls = AlgControls(c0 = air.c0, freq_vec = np.arange(100, 2000, 100))
+thickness =  25/1000
+material = PorousAbsorber(air, controls)
+material.jcal(resistivity = 12200, porosity = 0.98, tortuosity = 1.01, 
+              lam = 115e-6, lam_l = 116e-6)
+material.layer_over_rigid_theta(thickness = thickness)
+material.layer_over_rigid(thickness = thickness, theta = 0.0);
+#%%
+receivers = Receiver()
+receivers.double_line_array(line_len = 0.85, step = 0.01, axis = 'y', start_at = 0, 
+                            zr = 0.04, dz = 0.06)
+source = Source(coord = [0, 0, 0.3])
+#%%
+field = dDCISM(air = air, controls = controls, source = source, receivers = receivers, 
+               material = material, T0 = 7.5, dt = 0.1, tol = 1e-10, gamma=1.0)
+field.predict_p_spk_nlr_layer();
+field.add_noise(snr = 30)
 #%% True kp and rhop (single freq)
-id_f = 5
-k0 = field_nlr.controls.k0[id_f]
-print("Frequency is {} [Hz]".format(field_nlr.controls.freq[id_f]))
-print(r"True $k_p$: {}".format(field_nlr.material.kp[id_f]))
-print(r"True $\rho_p$: {}".format(field_nlr.material.rhop[id_f]))
-kp = field_nlr.material.kp[id_f]
-rhop = field_nlr.material.rhop[id_f]
-Zp = rhop * field_nlr.controls.w[id_f]/kp
-Zs = -1j*Zp*(1 / np.tan(kp*field_nlr.material.thickness))
+id_f = 3
+k0 = field.controls.k0[id_f]
+print("Frequency is {} [Hz]".format(field.controls.freq[id_f]))
+print(r"True $k_p$: {}".format(field.material.kp[id_f]))
+print(r"True $\rho_p$: {}".format(field.material.rhop[id_f]))
+kp = field.material.kp[id_f]
+rhop = field.material.rhop[id_f]
+Zp = rhop * field.controls.w[id_f]/kp
+Zs = -1j*Zp*(1 / np.tan(kp*field.material.thickness))
 Vp_true = (Zs-(air.rho0*air.c0))/(Zs+(air.rho0*air.c0))
 alpha_true = 1-(np.abs(Vp_true))**2
 
-#%% Filtering the array
-new_array, new_pres_data = field_nlr.receivers.remove_z_coords(z = 0.02, 
-                                                               pres_data = field_nlr.pres_s[0])
 
 #%% DCISM estimation (Bayesian)
-dcism_b = DCISM_Bayesian(p_mtx = new_pres_data, controls=field_nlr.controls,
-                         air = air, receivers = new_array, 
-                         source = field_nlr.sources, sampling_scheme = 'single ellipsoid')
-dcism_b.show_available_models()
+dcism_b = DCISM_Bayesian(p_mtx = field.pres_mtx, controls = controls, air = air, 
+                         receivers = receivers, source = source, 
+                         sampling_scheme = 'single ellipsoid', enlargement_factor = 1.1)
 dcism_b.choose_forward_model(chosen_model = 4)
+dcism_b.show_chosen_model_parameters()
 dcism_b.set_mic_pairs()
-#dcism_b.show_chosen_model_parameters()
-# dcism_b.set_prior_limits(lower_bounds = [15.00, -30.00, 1.22, -20.00, 0.1, -np.pi], 
-#                          upper_bounds = [35.00, -1.00, 10.00, -0.05, 1.5, np.pi])
-# dcism_b.set_prior_limits(lower_bounds = [3.00, -56.00, 1.19, -64.00], 
-#                          upper_bounds = [189.00, -1.00, 17.00, -0.15])
-# dcism_b.set_prior_limits(lower_bounds = [15.00, -30.00, 1.22, -20.00], 
-#                           upper_bounds = [35.00, -1.00, 10.00, -0.05])
-lb = np.array([ 0.9, -1.54665128,  1.00      , -4.22293647])
-ub = np.array([ 1.94567735, -0.21245895,  2.47578128, -0.39200635])
-# dcism_b.set_prior_limits(lower_bounds = [15.00/k0, -30.00/k0, 1.22/air.rho0, -20.00/air.rho0], 
-#                           upper_bounds = [35.00/k0, -1.00/k0, 10.00/air.rho0, -0.05/air.rho0])
-dcism_b.set_prior_limits(lower_bounds = lb, upper_bounds = ub)
 dcism_b.setup_dDCISM(T0 = 7.5, dt = 0.1, tol = 1e-6, gamma=1.0)
-dcism_b.set_sample_thickness(t_p = field_nlr.material.thickness)
-#dcism_b.set_reference_sensor(ref_sens = 0)
-ba = dcism_b.nested_sampling_single_freq(jf = id_f, n_live = 50, max_iter = 2000,
-                                          max_up_attempts = 200, seed = 0)
-ba.confidence_interval(ci_percent = 80)
-#ba.reconstruct_mean(x_meas = dcism_b.receivers.coord)
-# dcism_b.pk_bayesian(n_live = 250, max_iter = 500, max_up_attempts = 50, seed = 0)
-#%%
-ba.plot_loglike()
-axs = ba.plot_smooth_marginal_posterior(figshape = (3, 2))
-axs[0,0].axvline(np.real(field_nlr.material.kp[id_f]/k0), linestyle = '--', color = 'k', linewidth = 2)
-axs[0,1].axvline(np.imag(field_nlr.material.kp[id_f]/k0), linestyle = '--', color = 'k', linewidth = 2)
-axs[1,0].axvline(np.real(field_nlr.material.rhop[id_f]/air.rho0), linestyle = '--', color = 'k', linewidth = 2)
-axs[1,1].axvline(np.imag(field_nlr.material.rhop[id_f]/air.rho0), linestyle = '--', color = 'k', linewidth = 2)
+dcism_b.set_sample_thickness(t_p = field.material.thickness)
 
 #%%
-kp_b, rhop_b, _, _, _, alpha_calc = dcism_b.recon_mat_props_nlr(ba, id_f, 
-                                                            theta = np.deg2rad(field_nlr.material.theta_deg))
-_, _, _, _, _, alpha_calc_l = dcism_b.recon_mat_props_nlr(ba, id_f,
-                                                          theta = np.deg2rad(field_nlr.material.theta_deg),
-                                                          mode = "lower_ci")
-_, _, _, _, _, alpha_calc_u = dcism_b.recon_mat_props_nlr(ba, id_f,
-                                                          theta = np.deg2rad(field_nlr.material.theta_deg),
-                                                          mode = "upper_ci")
+# lb = np.array([ 1.11227786, -2.19880499,  1.01076591, -7.81169135])
+# ub = np.array([ 2.30502799, -0.20300751,  2.46813061, -0.37826622])
+dcism_b.kp_rhop_range(resist = [3000, 60000], phi = [0.8, 0.99], alpha_inf = [1.0, 1.5], 
+                      Lam = [100e-6, 300e-6], Lamlfac = [1.01, 2.0], n_samples = 20000)
+lb = dcism_b.lb_mtx[:,id_f]
+ub = dcism_b.ub_mtx[:,id_f]
+dcism_b.set_prior_limits(lower_bounds = lb, upper_bounds = ub)
+#%%
+print("Running inference for {:.1f} [Hz]".format(controls.freq[id_f]))
+ba = dcism_b.nested_sampling_single_freq(jf = id_f, n_live = 50, max_iter = 2000, 
+                                          max_up_attempts = 50, seed = 0, dlogz = 0.1)
+ba.confidence_interval(ci_percent = 99)
+print(r"log(Z) = {:.2f} +/- {:.2f}".format(ba.logZ, ba.logZ_err))
+
+#%%
+ba.plot_loglike()
+axs = ba.plot_smooth_marginal_posterior(figshape = (2, 2))
+axs[0,0].axvline(np.real(field.material.kp[id_f]/k0), linestyle = '--', color = 'k', linewidth = 1)
+axs[0,1].axvline(np.imag(field.material.kp[id_f]/k0), linestyle = '--', color = 'k', linewidth = 1)
+axs[1,0].axvline(np.real(field.material.rhop[id_f]/air.rho0), linestyle = '--', color = 'k', linewidth =1)
+axs[1,1].axvline(np.imag(field.material.rhop[id_f]/air.rho0), linestyle = '--', color = 'k', linewidth = 1)
+
+#%%
+ba.plot_multi_2d_kde(cmap = 'magma', mode = 'contour', limit_to_ci = True)
+
+#%%
+_, alpha_calc = dcism_b.recon_vp_nlr_1layer(controls.k0[id_f], air.rho0, 
+                                            ba.mean_values, np.deg2rad(field.material.theta_deg))
+_, alpha_calc_l = dcism_b.recon_vp_nlr_1layer(controls.k0[id_f], air.rho0, 
+                                             ba.ci[0,:], np.deg2rad(field.material.theta_deg))
+_, alpha_calc_u = dcism_b.recon_vp_nlr_1layer(controls.k0[id_f], air.rho0, 
+                                              ba.ci[1,:], np.deg2rad(field.material.theta_deg))
 
 #%% Plot absorption
 _, ax = ut_is.give_me_an_ax()
-ut_is.plot_absorption_theta(field_nlr.material.theta_deg, field_nlr.material.alpha_ft[id_f,:], 
+ut_is.plot_absorption_theta(field.material.theta_deg, field.material.alpha_ft[id_f,:], 
                             ax = ax[0,0], color = 'k', linewidth = 1.5, linestyle = '--',
                             alpha = 1.0, label = "JCA")
-ut_is.plot_absorption_theta(field_nlr.material.theta_deg, alpha_calc, 
+ut_is.plot_absorption_theta(field.material.theta_deg, alpha_calc, 
                             ax = ax[0,0], color = 'm', linewidth = 1.5, linestyle = '-',
                             alpha = 0.7, label = "Bayesian")
-ax[0,0].fill_between(field_nlr.material.theta_deg, alpha_calc_l, alpha_calc_u,
+ax[0,0].fill_between(field.material.theta_deg, alpha_calc_l, alpha_calc_u,
                      color='grey', alpha=0.3)
 plt.tight_layout()
+
+#%% DCISM estimation (Bayesian - LR)
+dcism_b_lr = DCISM_Bayesian(p_mtx = field.pres_mtx, controls = controls, air = air, 
+                         receivers = receivers, source = source, 
+                         sampling_scheme = 'single ellipsoid', enlargement_factor = 1.1)
+dcism_b_lr.choose_forward_model(chosen_model = 0)
+dcism_b_lr.set_mic_pairs()
+dcism_b_lr.setup_dDCISM(T0 = 7.5, dt = 0.1, tol = 1e-6, gamma=1.0)
+
 #%%
+dcism_b_lr.kp_rhop_range(resist = [3000, 60000], phi = [0.8, 0.99], alpha_inf = [1.0, 1.5], 
+                      Lam = [100e-6, 300e-6], Lamlfac = [1.01, 2.0],
+                      thickness = [2e-3, 20e-2], theta_deg = [0, 75], n_samples = 20000)
+lb = dcism_b_lr.lb_mtx[:,id_f]
+ub = dcism_b_lr.ub_mtx[:,id_f]
+dcism_b_lr.set_prior_limits(lower_bounds = lb, upper_bounds = ub)
+#%%
+ba = dcism_b_lr.nested_sampling_single_freq(jf = id_f, n_live = 50, max_iter = 2000,
+                                          max_up_attempts = 50, seed = 0, dlogz = 0.1)
+ba.confidence_interval(ci_percent = 99)
+print(r"log(Z) = {:.2f} +/- {:.2f}".format(ba.logZ, ba.logZ_err))
+#%%
+ba.plot_loglike()
+axs = ba.plot_smooth_marginal_posterior(figshape = (1, 2), figsize = (6,3))
+ba.plot_multi_2d_kde(cmap = 'magma', mode = 'contour', limit_to_ci = True)
+#%%
+_, alpha_calc = dcism_b_lr.recon_vp_lr(controls.k0[id_f], ba.mean_values, 
+                                       np.deg2rad(field.material.theta_deg))
+_, alpha_calc_l = dcism_b_lr.recon_vp_lr(controls.k0[id_f], ba.ci[0,:], 
+                                         np.deg2rad(field.material.theta_deg))
+_, alpha_calc_u = dcism_b_lr.recon_vp_lr(controls.k0[id_f], ba.ci[1,:], 
+                                         np.deg2rad(field.material.theta_deg))
+
+#%% Plot absorption
 _, ax = ut_is.give_me_an_ax()
-field_nlr.material.layer_over_rigid(thickness = field_nlr.material.thickness, theta = 0.0);
-
-
-ut_is.plot_absorption(field_nlr.controls.freq, field_nlr.material.alpha.flatten(), ax[0,0],  
-                      label = 'JCA', color = 'k', linestyle = '--')
-# ut_is.plot_absorption(dcism.controls.freq, dcism.alpha.flatten(), ax[0,0], 
-#                       label = 'DCISM (Tikhonov)', color = 'm', linestyle = '--')
-# ax[0,0].semilogx(field_nlr.controls.freq[id_f], alpha_true, 'ok')
-ax[0,0].semilogx(field_nlr.controls.freq[id_f], field_nlr.material.alpha_ft[id_f, 0], 'ok')
-ax[0,0].semilogx(field_nlr.controls.freq[id_f], alpha_calc[0], 'sm')
-# ut_is.plot_absorption(ism_b.controls.freq, alpha_vp, ax[0,0], 
-#                       label = 'ISM (Bayesian)', color = 'dodgerblue', linestyle = '-')
-# ax[0,0].fill_between(ism_b.controls.freq, 10*np.log10(edc_recon_ci[0,:]/np.amax(edc_recon_ci[0,:])),
-#                   10*np.log10(edc_recon_ci[1,:]/np.amax(edc_recon_ci[1,:])),
-#                   color='grey', alpha=0.3)
+ut_is.plot_absorption_theta(field.material.theta_deg, field.material.alpha_ft[id_f,:], 
+                            ax = ax[0,0], color = 'k', linewidth = 1.5, linestyle = '--',
+                            alpha = 1.0, label = "JCA")
+ut_is.plot_absorption_theta(field.material.theta_deg, alpha_calc, 
+                            ax = ax[0,0], color = 'm', linewidth = 1.5, linestyle = '-',
+                            alpha = 0.7, label = "Bayesian")
+ax[0,0].fill_between(field.material.theta_deg, alpha_calc_l, alpha_calc_u,
+                     color='grey', alpha=0.3)
 plt.tight_layout()
