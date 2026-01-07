@@ -69,47 +69,67 @@ class DCISM_Bayesian(object):
         available_models = {0:
                             {"name": "Locally reacting sample - H(f)",
                              "num_model_par": 2,
-                             "parameters_names" : [r"$Re\{\beta\}$", r"$Im\{\beta\}$"]},
+                             "parameters_names" : [r"$Re\{\beta\}$", r"$Im\{\beta\}$"],
+                             'known_thickness': True,
+                             'TF' : True},
                             1:
                             {"name": "Locally reacting sample - P(f)",
                              "num_model_par": 4,
                              "parameters_names" : [r"$Re\{\beta\}$", r"$Im\{\beta\}$", 
-                                                   r"$|Q|$", r"$\angle Q$"]},                   
+                                                   r"$|S|$", r"$\angle S$"],
+                             'known_thickness': True,
+                             'TF' : False},                   
                             2:
                             {"name": "NLR semi-infinite layer - H(f)",
                              "num_model_par": 4,
-                             "parameters_names" : [r"$Re\{k_p\}$", r"$Im\{k_p\}$",
-                                                   r"$Re\{\rho_p\}$", r"$Im\{\rho_p\}$"]},
+                             "parameters_names" : [r"$Re\{k_p/k_0\}$", r"$Im\{k_p/k_0\}$",
+                                                   r"$Re\{\rho_p/\rho_0\}$", 
+                                                   r"$Im\{\rho_p/\rho_0\}$"],
+                             'known_thickness': True,
+                             'TF' : True},
                             3:
                             {"name": "NLR semi-infinite layer - P(f)",
                              "num_model_par": 6,
-                             "parameters_names" : [r"$Re\{k_p\}$", r"$Im\{k_p\}$",
-                                                   r"$Re\{\rho_p\}$", r"$Im\{\rho_p\}$",
-                                                   r"$|Q|$", r"$\angle Q$"]},
+                             "parameters_names" : [r"$Re\{k_p/k_0\}$", r"$Im\{k_p/k_0\}$",
+                                                   r"$Re\{\rho_p/\rho_0\}$", 
+                                                   r"$Im\{\rho_p/\rho_0\}$",
+                                                   r"$|S|$", r"$\angle S$"],
+                             'known_thickness': True,
+                             'TF' : False},
                             4:
                             {"name": "NLR single layer with known thickness - H(f)",
                              "num_model_par": 4,
-                             "parameters_names" : [r"$Re\{k_p\}$", r"$Im\{k_p\}$",
-                                                   r"$Re\{\rho_p\}$", r"$Im\{\rho_p\}$"]},
+                             "parameters_names" : [r"$Re\{k_p/k_0\}$", r"$Im\{k_p/k_0\}$",
+                                                   r"$Re\{\rho_p/\rho_0\}$", 
+                                                   r"$Im\{\rho_p/\rho_0\}$"],
+                             'known_thickness': True,
+                             'TF' : True},
                             5:
                             {"name": "NLR single layer with unknown thickness - H(f)",
                              "num_model_par": 5,
-                             "parameters_names" : [r"$Re\{k_p\}$", r"$Im\{k_p\}$",
-                                                   r"$Re\{\rho_p\}$", r"$Im\{\rho_p\}$", 
-                                                   r"$t_p$"]},
+                             "parameters_names" : [r"$Re\{k_p/k_0\}$", r"$Im\{k_p/k_0\}$",
+                                                   r"$Re\{\rho_p/\rho_0\}$", 
+                                                   r"$Im\{\rho_p/\rho_0\}$", 
+                                                   r"$t_p$"],
+                             'known_thickness': False,
+                             'TF' : True},
                             6:
                             {"name": "NLR single layer with known thickness - P(f)",
                              "num_model_par": 6,
-                             "parameters_names" : [r"$Re\{k_p\}$", r"$Im\{k_p\}$",
-                                                   r"$Re\{\rho_p\}$", r"$Im\{\rho_p\}$",
-                                                   r"$|Q|$", r"$\angle Q$"]},
+                             "parameters_names" : [r"$Re\{k_p/k_0\}$", r"$Im\{k_p/k_0\}$",
+                                                   r"$Re\{\rho_p/\rho_0\}$", r"$Im\{\rho_p/\rho_0\}$",
+                                                   r"$|S|$", r"$\angle S$"],
+                             'known_thickness': True,
+                             'TF' : False},
                             7:
                             {"name": "NLR single layer with unknown thickness - P(f)",
                              "num_model_par": 7,
-                             "parameters_names" : [r"$Re\{k_p\}$", r"$Im\{k_p\}$",
-                                                   r"$Re\{\rho_p\}$", r"$Im\{\rho_p\}$", 
-                                                   r"$t_p$",
-                                                   r"$|Q|$", r"$\angle Q$"]}
+                             "parameters_names" : [r"$Re\{k_p/k_0\}$", r"$Im\{k_p/k_0\}$",
+                                                   r"$Re\{\rho_p/\rho_0\}$", r"$Im\{\rho_p/\rho_0\}$",
+                                                   r"$|S|$", r"$\angle S$",  
+                                                   r"$t_p$"],
+                             'known_thickness': False,
+                             'TF' : False}
                             }
         return available_models
     
@@ -128,6 +148,7 @@ class DCISM_Bayesian(object):
         """
         self.chosen_model = chosen_model
         available_models  = self.dict_forward_models()
+        self.chosen_model_dict = available_models[self.chosen_model]
         self.chosen_model_name = available_models[self.chosen_model]['name']
         self.num_model_par = available_models[self.chosen_model]['num_model_par']
         self.parameters_names = available_models[self.chosen_model]['parameters_names']
@@ -165,6 +186,19 @@ class DCISM_Bayesian(object):
             Material layer thickness
         """
         self.t_p = t_p
+        
+    def set_thickness_prior_limits(self, tp_bounds = [0.001, 1]):
+        self.tp_bounds = tp_bounds
+        if self.tp_bounds[0] < 0.001: #1mm thickness limit
+            self.tp_bounds[0] = 0.001
+        if self.tp_bounds[1] > 1.0: #1.0 m thickness limit
+            self.tp_bounds[1] = 1.0
+            
+    def set_source_stength_prior_limits(self, mag_s_bounds = [0.001, 2]):
+        self.mag_s_bounds = mag_s_bounds
+        if self.mag_s_bounds[0] < 0.001: #1mm thickness limit
+            self.mag_s_bounds[0] = 0.001
+        self.pha_s_bounds = [-np.pi, np.pi]
     
     def set_prior_limits(self, 
                          lower_bounds = [1.01, -5.00, 1.00, -5.00, 0.04, 0.5, -np.pi], 
@@ -183,32 +217,54 @@ class DCISM_Bayesian(object):
         # Make sure lower / upper bonds has the same size of num_par
         if len(lower_bounds) != self.num_model_par or len(upper_bounds) != self.num_model_par:
             raise ValueError("Lower and Upper bonds must be a vector with size {}".format(self.num_model_par))
-        self.lower_bounds = lower_bounds      
-        self.upper_bounds = upper_bounds
         
-        # if self.chosen_model != 0 or self.chosen_model != 1:
-        self.set_physical_limits()
+        lower_bounds, upper_bounds = self.set_physical_limits(lower_bounds, upper_bounds)
+        return lower_bounds, upper_bounds
         
-    def set_physical_limits(self,):
+    def set_prior_limits_from_study(self, jf = 0):
+        """ Set the uniform prior limits.
+        
+        The specified range on k_p and \rho_p was set with simulation. 
+        
+        Parameters
+        ----------
+        
+        """
+        # Apply physical filter
+        lower_bounds, upper_bounds = self.set_physical_limits(lower_bounds = self.lb_mtx[:, jf], 
+                                                              upper_bounds = self.ub_mtx[:, jf])
+        # Add source strength
+        if not self.chosen_model_dict['TF']:
+            lower_bounds = np.append(lower_bounds, self.mag_s_bounds[0])
+            upper_bounds = np.append(upper_bounds, self.mag_s_bounds[1])
+            lower_bounds = np.append(lower_bounds, self.pha_s_bounds[0])
+            upper_bounds = np.append(upper_bounds, self.pha_s_bounds[1])
+        # Add thickness
+        if not self.chosen_model_dict['known_thickness']:
+            lower_bounds = np.append(lower_bounds, self.tp_bounds[0])
+            upper_bounds = np.append(upper_bounds, self.tp_bounds[1])
+        return lower_bounds, upper_bounds
+        
+    def set_physical_limits(self, lower_bounds, upper_bounds):
         """ Set sensible physical limits to wave-number and density
         """
         if self.chosen_model != 0 and self.chosen_model != 1:
             # Re{k_p} constraint
-            if self.lower_bounds[0] < 1.00:
-                self.lower_bounds[0] = 1.00
+            if lower_bounds[0] < 1.00:
+                lower_bounds[0] = 1.00
             # Im{k_p} constraint
-            if self.upper_bounds[1] > -0.01:
-                self.upper_bounds[1] = -0.01
+            if upper_bounds[1] > -0.01:
+                upper_bounds[1] = -0.01
             # Re{rho_p} constraint    
-            if self.lower_bounds[2] < 0.9: # 1.18/1.3
-                self.lower_bounds[2] = 0.9
+            if lower_bounds[2] < 0.9: # 1.18/1.3
+                lower_bounds[2] = 0.9
             # Im{rho_p} constraint    
-            if self.upper_bounds[3] > -0.01: # 1.18/1.3
-                self.upper_bounds[3] = -0.01
+            if upper_bounds[3] > -0.01: # 1.18/1.3
+                upper_bounds[3] = -0.01
         else:
-            if self.lower_bounds[0] < 0.001: # Do not allow for real part lower than zero
-                self.lower_bounds[0] = 0.001
-            
+            if lower_bounds[0] < 0.001: # Do not allow for real part lower than zero
+                lower_bounds[0] = 0.001
+        return lower_bounds, upper_bounds
     
     def wide_prior_range(self, widening_factor = 2):
         """ Wide your prior by a given factor
@@ -221,7 +277,37 @@ class DCISM_Bayesian(object):
         if self.chosen_model != 0 or self.chosen_model != 1:
             self.set_physical_limits()
     
-
+    def set_nested_sampling_parameters(self, n_live = 50, max_iter = 2000, 
+                                       max_up_attempts = 50, seed = 0, dlogz = 0.1,
+                                       ci_percent = 95):
+        """ Setup nested sampling parameters. Valid for all runs
+        
+        Parameters
+        ----------
+        n_live : int
+            The number of live points in your initial and final live population.
+            It will contain your initial population, and be updated. As the iterations
+            go on, the likelihood of such set of points will increase until termination.
+        max_iter : int
+            The maximum number of iterations allowed.
+        max_up_attempts : int
+            number of attempts to update the parameter set of lowest log-likelihood
+            to a parameter set with higher likelihood.
+        seed : int
+            seed for random number generator.
+        dlogz : float
+            minimum uncertainty in logZ (for termination)
+        ci_percent : float
+            Confidence interval for uncertainty estimation. You can specify it for running,
+            but recompute it easily later on.
+        """
+        self.n_live = n_live
+        self.max_iter = max_iter
+        self.max_up_attempts = max_up_attempts
+        self.seed = seed
+        self.dlogz = dlogz
+        self.ci_percent = ci_percent
+    
     def set_reference_sensor(self, ref_sens = 0):
         """ Set the reference sensor index, new receiver array and measured data.
         
@@ -420,30 +506,17 @@ class DCISM_Bayesian(object):
         pred = source_strength * green_fun
         return pred
     
-    def nested_sampling_single_freq(self, jf = 0, n_live = 250, max_iter = 10000, 
-                    max_up_attempts = 100, seed = 0, dlogz=0.01):
+    def nested_sampling_single_freq(self, lower_bounds, upper_bounds, 
+                                    jf = 0):
         """ Run single freq inference
         
         Parameters
         ----------
+        lower_bounds : numpy 1dArray
+            lower bounds for that frequency. If None, then we choose the lower bounds from
+            the studied search range.
         jf : int
             Freq index to run
-        n_live : int
-            The number of live points in your initial and final population.
-            It will contain your initial population, and be updated. As the iterations
-            go on, the likelihood of such set of points will increase until termination.
-        max_iter : int
-            The maximum number of iterations allowed.
-        tol_evidence_increase : float
-            The tolerance of evidence increase - used for iteration stop. 
-            If the maximum log-likelihood multiplied by the current mass 
-            does not help to increase the evidence*tol_evidence_increase,
-            then the iterations can stop.
-        seed : int
-            seed for random number generator.
-        max_up_attempts : int
-            number of attempts to update the parameter set of lowest log-likelihood
-            to a parameter set with higher likelihood.
         """
         self.current_k0 = self.controls.k0[jf]
         ba = BayesianSampler(measured_coords = self.receivers.coord[self.id_z_list[0],:], 
@@ -453,37 +526,59 @@ class DCISM_Bayesian(object):
                               sampling_scheme = self.sampling_scheme,
                               enlargement_factor = self.enlargement_factor)
         ba.set_model_fun(model_fun = self.model_fun)
-        ba.set_uniform_prior_limits(lower_bounds = self.lower_bounds, 
-                                    upper_bounds = self.upper_bounds)
-        ba.nested_sampling(n_live = n_live, max_iter = max_iter, 
-                           max_up_attempts = max_up_attempts, seed = seed,
-                           dlogz = dlogz)
-        # ba.ultranested_sampling(n_live = n_live, max_iter = max_iter)
-        # ba.ultranested_sampling_react(n_live = n_live, max_iter = max_iter)
-        ba.compute_statistics()
+        ba.set_uniform_prior_limits(lower_bounds = lower_bounds, 
+                                    upper_bounds = upper_bounds)
+        ba.nested_sampling(n_live = self.n_live, max_iter = self.max_iter, 
+                           max_up_attempts = self.max_up_attempts, seed = self.seed,
+                           dlogz = self.dlogz)
+        # ba.ultranested_sampling(n_live = self.n_live, max_iter = self.max_iter)
+        # ba.ultranested_sampling_react(n_live = self.n_live, max_iter = self.max_iter)
+        ba.compute_statistics(ci_percent = self.ci_percent)
         return ba
     
-    def pk_bayesian(self, n_live = 250, max_iter = 10000, 
-                    max_up_attempts = 100, seed = 0):
+    def nested_sampling_spk(self):
+        """ Run inference for all frequency bins
         
+        Parameters
+        ----------
+        """
+        # empty list with all Bayesian inference objects.
         self.ba_list = []
-        
-        # bar = tqdm(total=len(self.controls.k0),
-        #            desc='Calculating Bayesian inversion (dDCISM)...', ascii=False)
-        
         # Freq loop
         for jf, self.current_k0 in enumerate(self.controls.k0):
-            print("Baysian inversion for freq {} [Hz]. {} of {}".format(self.controls.freq[jf],
-                                                                        jf+1, len(self.controls.k0)))
-            ba = self.nested_sampling_single_freq(jf = jf, n_live = n_live, 
-                                                  max_iter = max_iter,
-                                                  max_up_attempts = max_up_attempts, 
-                                                  seed = seed)
+            # Message
+            print("NS run for {} [Hz] ({} of {} bins)".format(self.controls.freq[jf],
+                                                              jf+1, len(self.controls.k0)))
+            
+            # get bounds from study
+            lb, ub = self.set_prior_limits_from_study(jf = jf)
+            # run Bayesian inference
+            ba = self.nested_sampling_single_freq(lb, ub, jf = jf)
             self.ba_list.append(ba)
-        #     bar.update(1)
-        # bar.close()
+        self.get_kp_spk()
+        self.get_rhop_spk()
+        
+    # def pk_bayesian(self, n_live = 250, max_iter = 10000, 
+    #                 max_up_attempts = 100, seed = 0):
+        
+    #     self.ba_list = []
         
         
+    #     # bar = tqdm(total=len(self.controls.k0),
+    #     #            desc='Calculating Bayesian inversion (dDCISM)...', ascii=False)
+        
+    #     # Freq loop
+    #     for jf, self.current_k0 in enumerate(self.controls.k0):
+    #         print("Baysian inversion for freq {} [Hz]. {} of {}".format(self.controls.freq[jf],
+    #                                                                     jf+1, len(self.controls.k0)))
+    #         ba = self.nested_sampling_single_freq(jf = jf, n_live = n_live, 
+    #                                               max_iter = max_iter,
+    #                                               max_up_attempts = max_up_attempts, 
+    #                                               seed = seed)
+    #         self.ba_list.append(ba)
+    #     #     bar.update(1)
+    #     # bar.close()
+            
     def get_kp(self, inf_value, k0):
         """ Get the complex wave-number inferred value for single frequency
         
@@ -500,6 +595,19 @@ class DCISM_Bayesian(object):
             complex-valued wave-number
         """
         return k0*(inf_value[0] + 1j*inf_value[1])
+    
+    def get_kp_spk(self,):
+        # Initialization
+        self.kp_mean = np.zeros(len(self.controls.k0), dtype = complex)
+        self.kp_ci = np.zeros((2, len(self.controls.k0)), dtype = complex)
+        # Freq loop
+        for jf, self.current_k0 in enumerate(self.controls.k0):
+            self.kp_mean[jf] = self.get_kp(self.ba_list[jf].mean_values,
+                                           self.current_k0)
+            self.kp_ci[0, jf] = self.get_kp(self.ba_list[jf].ci[0,:],
+                                            self.current_k0)
+            self.kp_ci[1, jf] = self.get_kp(self.ba_list[jf].ci[1,:],
+                                            self.current_k0)            
 
     def get_rhop(self, inf_value, rho0):
         """ Get the complex density inferred value for single frequency
@@ -517,6 +625,19 @@ class DCISM_Bayesian(object):
             complex-valued density
         """
         return rho0*(inf_value[2] + 1j*inf_value[3])
+    
+    def get_rhop_spk(self,):
+        # Initialization
+        self.rhop_mean = np.zeros(len(self.controls.k0), dtype = complex)
+        self.rhop_ci = np.zeros((2, len(self.controls.k0)), dtype = complex)
+        # Freq loop
+        for jf, self.current_k0 in enumerate(self.controls.k0):
+            self.rhop_mean[jf] = self.get_rhop(self.ba_list[jf].mean_values,
+                                               self.current_k0)
+            self.rhop_ci[0, jf] = self.get_rhop(self.ba_list[jf].ci[0,:],
+                                                self.current_k0)
+            self.rhop_ci[1, jf] = self.get_rhop(self.ba_list[jf].ci[1,:],
+                                                self.current_k0) 
 
     def get_cp(self, kp, omega):
         """ Get the complex sound speed inferred value for single frequency
@@ -705,7 +826,33 @@ class DCISM_Bayesian(object):
             self.lb_mtx = mat.get_min_kp_rhop(k_p_samples, rho_p_samples)
             self.ub_mtx = mat.get_max_kp_rhop(k_p_samples, rho_p_samples)
     
-    def plot_search_space(self,):
+    def plot_kp(self, figshape = (1, 2), figsize = (8, 3)):
+        """ Plots the wave-number as a function of frequency
+        """
+        fig, ax = ut_is.give_me_an_ax(figshape, figsize)
+        ax = ut_is.plot_spk_re_imag(self.controls.freq, self.kp_mean, ax = ax, 
+                                    xlims = (self.controls.freq[0], self.controls.freq[-1]), 
+                                    ylims = None, color = 'r', 
+                                    linewidth = 1.5, linestyle = '-',
+                                    alpha = 1.0, label = None)
+        ax[0,0].fill_between(self.controls.freq, np.real(self.kp_ci[0,:]), 
+                             np.real(self.kp_ci[1,:]), color='r', alpha = 0.5,
+                             edgecolor = 'none')
+        ax[0,1].fill_between(self.controls.freq, np.imag(self.kp_ci[0,:]), 
+                             np.imag(self.kp_ci[1,:]), color='r', alpha = 0.5,
+                             edgecolor = 'none')
+        ax[0,0].set_ylim((np.amin(np.real(self.kp_ci[0,:])), 
+                          np.amax(np.real(self.kp_ci[1,:])))) 
+        ax[0,1].set_ylim((np.amin(np.imag(self.kp_ci[0,:])), 
+                          np.amax(np.imag(self.kp_ci[1,:]))))
+        ax[0,0].set_ylabel(r"$Re\{k_p\}$")
+        ax[0,1].set_ylabel(r"$Im\{k_p\}$")
+        plt.tight_layout()
+        
+        return ax
+        
+    
+    def plot_search_space(self):
         """ plots the search space as a function of frequency (sanity check)
         """
         if self.chosen_model == 0 or self.chosen_model == 1:
