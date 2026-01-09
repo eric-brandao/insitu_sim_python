@@ -1874,13 +1874,16 @@ def plot_spk_re_imag(freq, spk, ax = None, xlims = None, ylims = None,
                   color = color, linewidth = linewidth, 
                   linestyle = linestyle, alpha = alpha, 
                   label = label, xlabel = "Frequency [Hz]", ylabel = "Real [-]",
-                  linx = False, liny = True)
+                  linx = False, liny = True, 
+                  xticks = [31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000])
     # plot imag
-    plot_1d_curve(freq, spk_im, ax[0,1], xlims = xlims, ylims = ylims,
+    plot_1d_curve(freq, spk_im, ax[ax.shape[0]-1,ax.shape[1]-1], 
+                  xlims = xlims, ylims = ylims,
                   color = color, linewidth = linewidth, 
                   linestyle = linestyle, alpha = alpha, 
                   label = label, xlabel = "Frequency [Hz]", ylabel = "Imag. [-]",
-                  linx = False, liny = True)    
+                  linx = False, liny = True, 
+                  xticks = [31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000])    
     return ax
 
 def plot_absorption(freq, abs_coeff, ax = None, xlim = None, ylim = None, 

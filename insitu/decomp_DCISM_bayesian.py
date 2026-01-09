@@ -544,6 +544,8 @@ class DCISM_Bayesian(object):
         """
         # empty list with all Bayesian inference objects.
         self.ba_list = []
+        self.logZ_spk = np.zeros(len(self.controls.k0))
+        self.logZ_err_spk = np.zeros(len(self.controls.k0))
         # Freq loop
         for jf, self.current_k0 in enumerate(self.controls.k0):
             # Message
@@ -555,29 +557,23 @@ class DCISM_Bayesian(object):
             # run Bayesian inference
             ba = self.nested_sampling_single_freq(lb, ub, jf = jf)
             self.ba_list.append(ba)
+            self.logZ_spk[jf] = ba.logZ
+            self.logZ_err_spk[jf] = ba.logZ_err
+        
+        # if self.chosen_model > 1:
+        #     self.get_kp_spk()
+        #     self.get_rhop_spk()
+        #     self.get_zp_spk()
+        
+    def recon_nlr_1layer(self,):
+        """ Reconstruct all quantities for single NLR layer vs. freq
+        """
+        # wave number
         self.get_kp_spk()
+        # Density
         self.get_rhop_spk()
-        
-    # def pk_bayesian(self, n_live = 250, max_iter = 10000, 
-    #                 max_up_attempts = 100, seed = 0):
-        
-    #     self.ba_list = []
-        
-        
-    #     # bar = tqdm(total=len(self.controls.k0),
-    #     #            desc='Calculating Bayesian inversion (dDCISM)...', ascii=False)
-        
-    #     # Freq loop
-    #     for jf, self.current_k0 in enumerate(self.controls.k0):
-    #         print("Baysian inversion for freq {} [Hz]. {} of {}".format(self.controls.freq[jf],
-    #                                                                     jf+1, len(self.controls.k0)))
-    #         ba = self.nested_sampling_single_freq(jf = jf, n_live = n_live, 
-    #                                               max_iter = max_iter,
-    #                                               max_up_attempts = max_up_attempts, 
-    #                                               seed = seed)
-    #         self.ba_list.append(ba)
-    #     #     bar.update(1)
-    #     # bar.close()
+        # Characteristic impedance
+        self.get_zp_spk()
             
     def get_kp(self, inf_value, k0):
         """ Get the complex wave-number inferred value for single frequency
@@ -594,50 +590,41 @@ class DCISM_Bayesian(object):
         kp : complex
             complex-valued wave-number
         """
-        return k0*(inf_value[0] + 1j*inf_value[1])
+        return k0*(inf_value[:,0] + 1j*inf_value[:,1])
     
     def get_kp_spk(self,):
         # Initialization
         self.kp_mean = np.zeros(len(self.controls.k0), dtype = complex)
         self.kp_ci = np.zeros((2, len(self.controls.k0)), dtype = complex)
         # Freq loop
-        for jf, self.current_k0 in enumerate(self.controls.k0):
-            self.kp_mean[jf] = self.get_kp(self.ba_list[jf].mean_values,
-                                           self.current_k0)
-            self.kp_ci[0, jf] = self.get_kp(self.ba_list[jf].ci[0,:],
-                                            self.current_k0)
-            self.kp_ci[1, jf] = self.get_kp(self.ba_list[jf].ci[1,:],
-                                            self.current_k0)            
+        for jf, k0 in enumerate(self.controls.k0):
+            self.kp_mean[jf] = self.get_kp(np.array([self.ba_list[jf].mean_values]), k0)
+            self.kp_ci[0, jf] = self.get_kp(np.array([self.ba_list[jf].ci[0,:]]), k0)
+            self.kp_ci[1, jf] = self.get_kp(np.array([self.ba_list[jf].ci[1,:]]), k0)            
 
-    def get_rhop(self, inf_value, rho0):
+    def get_rhop(self, inf_value):
         """ Get the complex density inferred value for single frequency
         
         Parameters
         ----------
         inf_value : np1dArray or list
             values inferred of all parameters (Re and Im)
-        rho0 : float
-            air density
-        
         Returns
         ----------
         rhop : complex
             complex-valued density
         """
-        return rho0*(inf_value[2] + 1j*inf_value[3])
+        return self.air.rho0*(inf_value[:,2] + 1j*inf_value[:,3])
     
     def get_rhop_spk(self,):
         # Initialization
         self.rhop_mean = np.zeros(len(self.controls.k0), dtype = complex)
         self.rhop_ci = np.zeros((2, len(self.controls.k0)), dtype = complex)
         # Freq loop
-        for jf, self.current_k0 in enumerate(self.controls.k0):
-            self.rhop_mean[jf] = self.get_rhop(self.ba_list[jf].mean_values,
-                                               self.current_k0)
-            self.rhop_ci[0, jf] = self.get_rhop(self.ba_list[jf].ci[0,:],
-                                                self.current_k0)
-            self.rhop_ci[1, jf] = self.get_rhop(self.ba_list[jf].ci[1,:],
-                                                self.current_k0) 
+        for jf, k0 in enumerate(self.controls.k0):
+            self.rhop_mean[jf] = self.get_rhop(np.array([self.ba_list[jf].mean_values]))
+            self.rhop_ci[0, jf] = self.get_rhop(np.array([self.ba_list[jf].ci[0,:]]))
+            self.rhop_ci[1, jf] = self.get_rhop(np.array([self.ba_list[jf].ci[1,:]])) 
 
     def get_cp(self, kp, omega):
         """ Get the complex sound speed inferred value for single frequency
@@ -675,6 +662,55 @@ class DCISM_Bayesian(object):
         """
         return rhop*omega/kp
     
+    def ba_recon(self, samples, weights):
+        """ Reconstruct quantities that are functions of infferred parameters
+        """
+        # Get number of parameters
+        num_model_par = samples.shape[1]
+        parameters_names = ['a'] * num_model_par
+        # Create empty Bayesian sampler and fill in with prior samples
+        ba_rec = BayesianSampler(measured_coords = np.array([0]),
+                                 measured_data = np.array([0]),
+                                 num_model_par = num_model_par,
+                                 parameters_names = parameters_names)
+        ba_rec.prior_samples = samples 
+        ba_rec.weights = weights
+        # Compute the statistics
+        ba_rec.compute_statistics(ci_percent = self.ci_percent)
+        return ba_rec.mean_values, ba_rec.ci
+    
+    def get_zp_spk(self,):
+        # Initialization
+        self.zp_mean = np.zeros(len(self.controls.k0), dtype = complex)
+        self.zp_ci = np.zeros((2, len(self.controls.k0)), dtype = complex)
+        # Freq loop
+        for jf, k0 in enumerate(self.controls.w):
+            # Get the samples of kp and rhop
+            kp_samples = self.get_kp(self.ba_list[jf].prior_samples, k0)
+            rhop_samples = self.get_rhop(self.ba_list[jf].prior_samples)
+            # Sample Zp
+            zp_samples = self.get_Zp(kp_samples, rhop_samples, k0*self.air.c0)
+            # Use Bayesian object to compute statistics
+            mu, ci = self.ba_recon(np.array([np.real(zp_samples), np.imag(zp_samples)]).T, 
+                                   self.ba_list[jf].weights)
+            # # Create empty Bayesian sampler and fill in with prior samples
+            # ba_rec = BayesianSampler(measured_coords = np.array([0]),
+            #                          measured_data = np.array([0]),
+            #                          num_model_par = 2,
+            #                          parameters_names = ['Re{Zp}', 'Im{Zp}'])
+            # ba_rec.prior_samples = np.array([np.real(zp_samples), np.imag(zp_samples)]).T 
+            # ba_rec.weights = self.ba_list[jf].weights
+            # # Compute the statistics
+            # ba_rec.compute_statistics(ci_percent = self.ci_percent)
+            # fill in the data
+            # self.zp_mean[jf] = ba_rec.mean_values[0] + 1j*ba_rec.mean_values[1]
+            # self.zp_ci[0, jf] = ba_rec.ci[0, 0] + 1j*ba_rec.ci[0, 1]
+            # self.zp_ci[1, jf] = ba_rec.ci[1, 0] + 1j*ba_rec.ci[1, 1]
+            
+            self.zp_mean[jf] = mu[0] + 1j*mu[1]
+            self.zp_ci[0, jf] = ci[0, 0] + 1j*ci[0, 1]
+            self.zp_ci[1, jf] = ci[1, 0] + 1j*ci[1, 1]
+    
     def get_theta_t(self, kp, k0, theta):
         """ Get the complex refraction angle inferred value for single frequency
         
@@ -694,23 +730,23 @@ class DCISM_Bayesian(object):
         """
         return np.arcsin((k0/kp)*np.sin(theta))
         
-    def recon_vp_nlr_1layer(self, k0, rho0, inf_value, theta):
-        """ NLR 1 layer planar reflection coefficient reconstruction (single freq)
+    def recon_vp_nlr_1layer(self, k0, theta, ba):
+        """ NLR 1 layer planar reflection coefficient reconstruction (single freq/single angle)
         
         Reconstruct the planar reflection coefficient and its absorption coefficient.
         Valid for a single layer of non-locally reacting porous material above rigid-backing.
-        It can reconstruct for multiple angles at a single frequency.  
+        It can reconstruct for single angle at a single frequency.  
         
         Parameters
         ----------
         k0 : float
             wave-number in air at a given frequency (omega/c0)
-        rho0 : float
-            air density
-        inf_value : np1dArray or list
-            values inferred of all parameters (Re and Im)
-        theta : float or array
+        theta : float
             angle of incidence in radians
+        
+        ba : object
+            values inferred of all parameters (Re and Im)
+        
         Returns
         ----------
         vp : complex
@@ -718,26 +754,74 @@ class DCISM_Bayesian(object):
         alpha : floar
             absorption coefficient
         """
-        # Get the wave-number / density 
-        kp = self.get_kp(inf_value, k0)
-        rhop = self.get_rhop(inf_value, self.air.rho0)
-        # Get thickness
+        # Get the samples of kp and rhop
+        kp_samples = self.get_kp(ba.prior_samples[:,0:4], k0)
+        rhop_samples = self.get_rhop(ba.prior_samples[:,0:4])
+        # Get the samples of thickness
         if self.num_model_par == 4:
-            tp = self.t_p
+            tp_samples = self.t_p*np.ones(ba.prior_samples.shape[0])
         elif self.num_model_par == 5:
-            tp = inf_value[4]
+            tp_samples = ba.prior_samples[:,-1]
+        
         # Angular wave-number in air
         k0z = k0*np.cos(theta)
         # Angular wave-number in the layer
-        theta_t = self.get_theta_t(kp, k0, theta)
-        k1z = kp*np.cos(theta_t)
-        # reflection coefficient
-        num = -1j*k0z/rho0 - (k1z/rhop)*np.tan(k1z*tp)
-        den = -1j*k0z/rho0 + (k1z/rhop)*np.tan(k1z*tp)
-        vp = num/den
-        # absorption coefficient
-        alpha = 1-np.abs(vp)**2
-        return vp, alpha
+        theta_t = self.get_theta_t(kp_samples, k0, theta)
+        k1z = kp_samples*np.cos(theta_t)
+        # reflection coefficient (samples)
+        num = -1j*k0z/self.air.rho0 - (k1z/rhop_samples)*np.tan(k1z*tp_samples)
+        den = -1j*k0z/self.air.rho0 + (k1z/rhop_samples)*np.tan(k1z*tp_samples)
+        vp_samples = num/den
+        # absorption coefficient (samples)
+        alpha_samples = 1-np.abs(vp_samples)**2
+        # Surface impedance (samples)
+        zs_samples = self.recon_zs_nlr_1layer(self.air.rho0 * self.air.c0, 
+                                              vp_samples, theta)
+        
+        # Use Bayesian object to compute statistics - Vp
+        mu, ci = self.ba_recon(np.array([np.real(vp_samples), np.imag(vp_samples)]).T, 
+                                       ba.weights)    
+        vp_mean = mu[0] + 1j*mu[1]
+        vp_ci = np.zeros(2, dtype = complex)
+        vp_ci[0] = ci[0, 0] + 1j*ci[0, 1]
+        vp_ci[1] = ci[1, 0] + 1j*ci[1, 1]
+        
+        # Use Bayesian object to compute statistics - alpha
+        mu, ci = self.ba_recon(np.array([alpha_samples]).T, ba.weights)
+        alpha_mean = mu[0]
+        alpha_ci = np.zeros(2)
+        alpha_ci[0] = ci[0, 0]
+        alpha_ci[1] = ci[1, 0]
+        
+        # Use Bayesian object to compute statistics - Zs
+        mu, ci = self.ba_recon(np.array([np.real(zs_samples), np.imag(zs_samples)]).T, 
+                               ba.weights)
+        zs_mean = mu[0] + 1j*mu[1]
+        zs_ci = np.zeros(2, dtype = complex)
+        zs_ci[0] = ci[0, 0] + 1j*ci[0, 1]
+        zs_ci[1] = ci[1, 0] + 1j*ci[1, 1]
+        
+        return vp_mean, vp_ci.T, alpha_mean, alpha_ci.T, zs_mean, zs_ci.T
+    
+    def get_vp_nlr_spk(self, theta):
+        # Initialization
+        self.vp_mean = np.zeros((len(theta), len(self.controls.k0)), dtype = complex)
+        self.vp_ci = np.zeros((2, len(theta), len(self.controls.k0)), dtype = complex)
+        self.alpha_mean = np.zeros((len(theta), len(self.controls.k0)))        
+        self.alpha_ci = np.zeros((2, len(theta), len(self.controls.k0)))
+        self.zs_mean = np.zeros((len(theta), len(self.controls.k0)), dtype = complex)
+        self.zs_ci = np.zeros((2, len(theta), len(self.controls.k0)), dtype = complex)
+        
+        # Freq loop
+        for jt, the in enumerate(theta):
+            for jf, k0 in enumerate(self.controls.k0):
+                var = self.recon_vp_nlr_1layer(k0, the, self.ba_list[jf])
+                self.vp_mean[jt, jf] = var[0]
+                self.vp_ci[:, jt, jf] = var[1]
+                self.alpha_mean[jt, jf] = var[2]
+                self.alpha_ci[:, jt, jf] = var[3]
+                self.zs_mean[jt, jf] = var[4]
+                self.zs_ci[:, jt, jf] = var[5]
     
     def recon_zs_nlr_1layer(self, z0, vp, theta):
         """ NLR 1 layer surface impedance reconstruction (single freq)
@@ -774,9 +858,9 @@ class DCISM_Bayesian(object):
         beta : complex
             complex-valued surface admittance
         """
-        return inf_value[0] + 1j*inf_value[1]
+        return inf_value[:,0] + 1j*inf_value[:,1]
 
-    def recon_vp_lr(self, k0, inf_value, theta):
+    def recon_vp_lr(self, k0, theta, ba):
         """ LR planar reflection coefficient reconstruction (single freq)
         
         Reconstruct the planar reflection coefficient and its absorption coefficient.
@@ -798,15 +882,58 @@ class DCISM_Bayesian(object):
         alpha : floar
             absorption coefficient
         """
-        # get surface admittance
-        beta = self.get_beta(inf_value)
+        # Get the samples of kp and rhop
+        beta_samples = self.get_beta(ba.prior_samples[:,0:2])       
         # Angular wave-number in air
         k0z = k0*np.cos(theta)
-        # reflection coefficient
-        vp = (k0z - k0*beta)/(k0z + k0*beta)
-        # absorption coefficient
-        alpha = 1-np.abs(vp)**2
-        return vp, alpha
+        
+        # Reflection coefficient samples
+        vp_samples = (k0z - k0*beta_samples)/(k0z + k0*beta_samples)
+        # absorption coefficient (samples)
+        alpha_samples = 1-np.abs(vp_samples)**2
+        # Use Bayesian object to compute statistics - Vp
+        mu, ci = self.ba_recon(np.array([np.real(vp_samples), np.imag(vp_samples)]).T, 
+                               ba.weights)    
+        vp_mean = mu[0] + 1j*mu[1]
+        vp_ci = np.zeros(2, dtype = complex)
+        vp_ci[0] = ci[0, 0] + 1j*ci[0, 1]
+        vp_ci[1] = ci[1, 0] + 1j*ci[1, 1]
+        
+        # Use Bayesian object to compute statistics - alpha
+        mu, ci = self.ba_recon(np.array([alpha_samples]).T, ba.weights)
+        alpha_mean = mu[0]
+        alpha_ci = np.zeros(2)
+        alpha_ci[0] = ci[0, 0]
+        alpha_ci[1] = ci[1, 0]
+        
+        return vp_mean, vp_ci.T, alpha_mean, alpha_ci.T
+    
+    def get_vp_lr_spk(self, theta):
+        # Initialization
+        self.vp_mean = np.zeros((len(theta), len(self.controls.k0)), dtype = complex)
+        self.vp_ci = np.zeros((2, len(theta), len(self.controls.k0)), dtype = complex)
+        self.alpha_mean = np.zeros((len(theta), len(self.controls.k0)))        
+        self.alpha_ci = np.zeros((2, len(theta), len(self.controls.k0)))
+        self.zs_mean = np.zeros((len(theta), len(self.controls.k0)), dtype = complex)
+        self.zs_ci = np.zeros((2, len(theta), len(self.controls.k0)), dtype = complex)
+        
+        # Freq loop
+        for jt, the in enumerate(theta):
+            for jf, k0 in enumerate(self.controls.k0):
+                var = self.recon_vp_lr(k0, the, self.ba_list[jf])
+                self.vp_mean[jt, jf] = var[0]
+                self.vp_ci[:, jt, jf] = var[1]
+                self.alpha_mean[jt, jf] = var[2]
+                self.alpha_ci[:, jt, jf] = var[3]
+                beta_mean = self.ba_list[jf].mean_values[0] +\
+                    + 1j*self.ba_list[jf].mean_values[1]
+                self.zs_mean[jt, jf] = (self.air.rho0*self.air.c0)/beta_mean
+                beta_ci = self.ba_list[jf].ci[0,0] +\
+                    + 1j*self.ba_list[jf].ci[0,1]
+                self.zs_ci[0, jt, jf] = (self.air.rho0*self.air.c0)/beta_ci
+                beta_ci = self.ba_list[jf].ci[1,0] +\
+                    + 1j*self.ba_list[jf].ci[1,1]
+                self.zs_ci[1, jt, jf] = (self.air.rho0*self.air.c0)/beta_ci
     
     def kp_rhop_range(self, resist = [3000, 60000], phi = [0.15, 1.0],
                       alpha_inf = [1.0, 3.00], Lam = [50e-6, 300e-6],
@@ -826,31 +953,115 @@ class DCISM_Bayesian(object):
             self.lb_mtx = mat.get_min_kp_rhop(k_p_samples, rho_p_samples)
             self.ub_mtx = mat.get_max_kp_rhop(k_p_samples, rho_p_samples)
     
-    def plot_kp(self, figshape = (1, 2), figsize = (8, 3)):
+    def plot_reim(self, meanval, cival, label = None, 
+                  ax = None, figshape = (1, 2), figsize = (8, 3),
+                  color = 'r'):
+        """ Plots real and imaginary values of a quantity with its confidence interval
+        """
+        if ax is None:
+            fig, ax = ut_is.give_me_an_ax(figshape, figsize)
+            
+        ax = ut_is.plot_spk_re_imag(self.controls.freq, meanval, ax = ax, 
+                                    xlims = (self.controls.freq[0], self.controls.freq[-1]), 
+                                    ylims = None, color = color, 
+                                    linewidth = 1.5, linestyle = '-',
+                                    alpha = 1.0, label = label)
+        ax[0,0].fill_between(self.controls.freq, np.real(cival[0,:]), 
+                             np.real(cival[1,:]), color=color, alpha = 0.2,
+                             edgecolor = 'none')
+        ax[ax.shape[0]-1,ax.shape[1]-1].fill_between(self.controls.freq, 
+                                                     np.imag(cival[0,:]), 
+                                                     np.imag(cival[1,:]), 
+                                                     color=color, alpha = 0.2,
+                                                     edgecolor = 'none')
+        ax[0,0].set_ylim((np.amin(np.real(cival[0,:])), 
+                          np.amax(np.real(cival[1,:])))) 
+        ax[ax.shape[0]-1,ax.shape[1]-1].set_ylim((np.amin(np.imag(cival[0,:])), 
+                                                  np.amax(np.imag(cival[1,:]))))
+        return ax
+    
+    def plot_kp(self, ax = None, figshape = (1, 2), figsize = (8, 3),
+                color = 'r'):
         """ Plots the wave-number as a function of frequency
         """
-        fig, ax = ut_is.give_me_an_ax(figshape, figsize)
-        ax = ut_is.plot_spk_re_imag(self.controls.freq, self.kp_mean, ax = ax, 
-                                    xlims = (self.controls.freq[0], self.controls.freq[-1]), 
-                                    ylims = None, color = 'r', 
-                                    linewidth = 1.5, linestyle = '-',
-                                    alpha = 1.0, label = None)
-        ax[0,0].fill_between(self.controls.freq, np.real(self.kp_ci[0,:]), 
-                             np.real(self.kp_ci[1,:]), color='r', alpha = 0.5,
-                             edgecolor = 'none')
-        ax[0,1].fill_between(self.controls.freq, np.imag(self.kp_ci[0,:]), 
-                             np.imag(self.kp_ci[1,:]), color='r', alpha = 0.5,
-                             edgecolor = 'none')
-        ax[0,0].set_ylim((np.amin(np.real(self.kp_ci[0,:])), 
-                          np.amax(np.real(self.kp_ci[1,:])))) 
-        ax[0,1].set_ylim((np.amin(np.imag(self.kp_ci[0,:])), 
-                          np.amax(np.imag(self.kp_ci[1,:]))))
+        ax = self.plot_reim(self.kp_mean, self.kp_ci, label = None, ax = ax,
+                            figshape = figshape, figsize = figsize, color = color)
         ax[0,0].set_ylabel(r"$Re\{k_p\}$")
-        ax[0,1].set_ylabel(r"$Im\{k_p\}$")
+        ax[ax.shape[0]-1,ax.shape[1]-1].set_ylabel(r"$Im\{k_p\}$")
         plt.tight_layout()
-        
+        return ax
+    
+    def plot_rhop(self, ax = None, figshape = (1, 2), figsize = (8, 3),
+                  color = 'r'):
+        """ Plots the density as a function of frequency
+        """
+        ax = self.plot_reim(self.rhop_mean, self.rhop_ci, label = None, ax = ax,
+                            figshape = figshape, figsize = figsize, color = color)
+        ax[0,0].set_ylabel(r"$Re\{\rho_p\}$")
+        ax[ax.shape[0]-1,ax.shape[1]-1].set_ylabel(r"$Im\{\rho_p\}$")
+        plt.tight_layout()
         return ax
         
+    def plot_Zp(self, ax = None, figshape = (1, 2), figsize = (8, 3),
+                color = 'r'):
+        """ Plots the characteristic impedance as a function of frequency
+        """
+        ax = self.plot_reim(self.zp_mean, self.zp_ci, label = None, ax = ax,
+                            figshape = figshape, figsize = figsize, color = color)
+        ax[0,0].set_ylabel(r"$Re\{Z_p\}$")
+        ax[ax.shape[0]-1,ax.shape[1]-1].set_ylabel(r"$Im\{Z_p\}$")
+        plt.tight_layout()
+        return ax
+    
+    def plot_Vp_spk(self, ax = None, figshape = (1, 2), figsize = (8, 3),
+                color = 'r', jtheta = 0):
+        """ Plots the Reflection coefficient as a function of frequency
+        """
+        ax = self.plot_reim(self.vp_mean[jtheta, :], self.vp_ci[:, jtheta,:], 
+                            label = None, ax = ax,
+                            figshape = figshape, figsize = figsize, color = color)
+        ax[0,0].set_ylim((-1,1))
+        ax[ax.shape[0]-1,ax.shape[1]-1].set_ylim((-1,1))
+        ax[0,0].set_ylabel(r"$Re\{V_p\}$")
+        ax[ax.shape[0]-1,ax.shape[1]-1].set_ylabel(r"$Im\{V_p\}$")
+        plt.tight_layout()
+        return ax
+    
+    def plot_alpha_spk(self, ax = None, figshape = (1, 2), figsize = (8, 3),
+                color = 'r', jtheta = 0):
+        """ Plots the Absorption coefficient as a function of frequency
+        """        
+        ax = ut_is.plot_absorption(self.controls.freq, self.alpha_mean[jtheta, :], ax = ax, 
+                                   xlim = (self.controls.freq[0], self.controls.freq[-1]), 
+                                   ylim = (-0.2, 1.2), 
+                                   color = color, linewidth = 1.5, linestyle = '-',
+                                   alpha = 1.0, label = None)
+        ax.fill_between(self.controls.freq, self.alpha_ci[0, jtheta, :], 
+                        self.alpha_ci[1, jtheta, :], color=color, alpha = 0.2,
+                        edgecolor = 'none')
+        ax.set_ylabel(r"$\alpha$ [-]")
+        plt.tight_layout()
+        return ax
+    
+    def plot_logZ_spk(self, ax = None, figshape = (1, 2), figsize = (8, 3),
+                color = 'r', tolerance = 5):
+        """ Plots the LogZ as a function of frequency
+        """        
+        ax = ut_is.plot_1d_curve(self.controls.freq, self.logZ_spk, ax = ax, 
+                                 xlims = (self.controls.freq[0], self.controls.freq[-1]), 
+                                 ylims = None,
+                                 color = color, linewidth = 1.5, linestyle = '-',
+                                 alpha = 1.0, label = None,
+                                 xlabel = "Frequency", ylabel = r"$\log(Z)$ [Np]",
+                                 linx = False, liny = True, 
+                                 xticks = [31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000])
+        
+        ax.fill_between(self.controls.freq, self.logZ_spk - tolerance, 
+                        self.logZ_spk + tolerance, color=color, alpha = 0.2,
+                        edgecolor = 'none')
+        # ax.set_ylabel(r"$\alpha$ [-]")
+        plt.tight_layout()
+        return ax
     
     def plot_search_space(self):
         """ plots the search space as a function of frequency (sanity check)
