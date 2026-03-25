@@ -123,7 +123,7 @@ class PorousAbsorber():
         return self.Zs, self.Vp, self.alpha
     
     def layer_over_rigid_theta(self, thickness = 25.0/1000, theta_init = 0,
-                               theta_end = 90, theta_res = 1):
+                               theta_end = 89, theta_res = 1):
         """ Computes the absorption data (Zs, Vp, alpha) for frequency/agular sweep.
         
 

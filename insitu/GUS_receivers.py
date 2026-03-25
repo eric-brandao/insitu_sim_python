@@ -680,53 +680,7 @@ class Receiver():
         self.coord = np.zeros((n_recs, 3), dtype = np.float32)
         self.coord[:, 0], self.coord[:, 1], self.coord[:, 2] =\
             sph2cart(radius, thetas, 0)
-            
-    def semigaussian_sphere(self, radius = 1, delta_theta_deg = 4):
-        """ Initializes a semi gaussian spherical array of receivers.
-        
-        Parameters
-        ----------
-            radius : float
-                the radius of the sphere
-            delta_theta_deg: float
-                angle separation of points on elevation                
-        """
-        theta_deg = np.arange(start = 0, stop = 180+delta_theta_deg, step = delta_theta_deg)
-        theta_deg = theta_deg[theta_deg <= 180]
-        n_theta = len(theta_deg)
-        # print(theta_deg)
-        x_list = []
-        y_list = []
-        z_list = []
-        for the_d in theta_deg:
-            n_phi = int(np.ceil(2*n_theta*np.sin(np.deg2rad(the_d))))
-            # n_phi = int(2*n_theta*np.sin(np.deg2rad(the_d)))
-            # print("theta: {} / phi {}".format(the_d, phi_deg))
-            if n_phi == 0:
-                x,y,z = sph2cart(radius, np.deg2rad(90-the_d), 0)
-            else:
-                # print(n_phi)
-                phi_deg = np.linspace(start = 0, stop = 360, num = n_phi)
-                # delta_phi_deg = 360/n_phi
-                # phi_deg = np.arange(start = 0, stop = 360, step = delta_phi_deg)
-                theta_d = the_d * np.ones(len(phi_deg))
-                radii = radius * np.ones(len(phi_deg))
-                x,y,z = sph2cart(radii, np.deg2rad(90-theta_d), np.deg2rad(phi_deg))
-            x_list.append(x)
-            y_list.append(y)
-            z_list.append(z)
-        
-        x_coord = np.hstack(x_list)
-        y_coord = np.hstack(y_list)
-        z_coord = np.hstack(z_list)
-        
-        self.coord = np.zeros((len(x_coord), 3))
-        self.coord[:len(x_coord),0], self.coord[:len(x_coord),1], self.coord[:len(x_coord),2] =\
-            x_coord, y_coord, z_coord
-        # self.coord[len(x_coord):,0], self.coord[len(x_coord):,1], self.coord[len(x_coord):,2] =\
-        #     x_coord, y_coord, -z_coord
-        self.coord = np.unique(self.coord, axis = 0)
-        
+
     def hemispherical_array(self, radius = 1, n_rec_target = 32):
         """ Initializes a hemispherical array of receivers (icosahedron).
 

@@ -7,6 +7,7 @@ Created on Wed Oct 30 2025
 
 import numpy as np
 from receivers import Receiver
+from tqdm import tqdm
 from sources import Source
 import material as mat
 from material import PorousAbsorber, kp_rhop_range_study
@@ -549,7 +550,7 @@ class DCISM_Bayesian(object):
         # Freq loop
         for jf, self.current_k0 in enumerate(self.controls.k0):
             # Message
-            print("NS run for {} [Hz] ({} of {} bins)".format(self.controls.freq[jf],
+            print("NS run for {:.2f} [Hz] ({} of {} bins)".format(self.controls.freq[jf],
                                                               jf+1, len(self.controls.k0)))
             
             # get bounds from study
@@ -564,6 +565,131 @@ class DCISM_Bayesian(object):
         #     self.get_kp_spk()
         #     self.get_rhop_spk()
         #     self.get_zp_spk()
+        
+    def nested_sampling_spk_seq(self, start_freq = 1000, fac = 5):
+        """ Run inference for all frequency bins
+        
+        Parameters
+        ----------
+        """
+        # empty list with all Bayesian inference objects.
+        self.ba_list = [None]*len(self.controls.k0)
+        self.logZ_spk = np.zeros(len(self.controls.k0))
+        self.logZ_err_spk = np.zeros(len(self.controls.k0))
+        # starting index
+        start_id = ut_is.find_freq_index(self.controls.freq, 
+                                         freq_target = start_freq)
+        id_vec = np.arange(0, len(self.controls.freq))
+        id_vec_shifted = np.concatenate((id_vec[start_id:], id_vec[:start_id][::-1]))
+        freq_vec_shifted = self.controls.freq[id_vec_shifted]
+        k0_vec_shifted = self.controls.k0[id_vec_shifted]
+        
+        
+        # Initial phase
+        lb, ub = self.set_prior_limits_from_study(jf = start_id)
+        print("NS run (INIT) for {} [Hz] ({} of {} bins)".format(freq_vec_shifted[0],
+                                                          1, len(freq_vec_shifted)))
+        ba = self.nested_sampling_single_freq(lb, ub, jf = id_vec_shifted[0])
+        # Put it in the correct place at list
+        self.ba_list[id_vec_shifted[0]] = ba
+        self.logZ_spk[id_vec_shifted[0]] = ba.logZ
+        self.logZ_err_spk[id_vec_shifted[0]] = ba.logZ_err
+        # New bounds
+        # fac = 10
+        # lb0 = ba.mean_values - fac*ba.std
+        # ub0 = ba.mean_values + fac*ba.std
+        delta_lb_mu = ba.mean_values - lb
+        delta_ub_mu = ub - ba.mean_values
+        lb0 = ba.mean_values - delta_lb_mu
+        ub0 = ba.mean_values + delta_ub_mu
+        lb0, ub0 = self.set_physical_limits(lb0, ub0)
+        
+        # Freq loop
+        for jf in np.arange(1, len(freq_vec_shifted)):
+            # Message
+            print("NS run for {} [Hz] ({} of {} bins)".format(freq_vec_shifted[jf],
+                                                              jf+1, len(freq_vec_shifted)))
+            self.current_k0 = k0_vec_shifted[jf]
+                      
+            if id_vec_shifted[jf] == start_id + 1 or id_vec_shifted[jf] == start_id - 1:
+                    lb = np.copy(lb0)
+                    ub = np.copy(ub0)
+            else:
+                # lb = ba.mean_values - fac*ba.std
+                # ub = ba.mean_values + fac*ba.std
+                delta_lb_mu = ba.mean_values - lb
+                delta_ub_mu = ub - ba.mean_values
+                lb, ub = self.set_physical_limits(lb, ub)
+                
+            ba = self.nested_sampling_single_freq(lb, ub, jf = id_vec_shifted[jf])
+            self.ba_list[id_vec_shifted[jf]] = ba
+            self.logZ_spk[id_vec_shifted[jf]] = ba.logZ
+            self.logZ_err_spk[id_vec_shifted[jf]] = ba.logZ_err
+               
+                
+            # # get bounds from study
+            # # lb, ub = self.set_prior_limits_from_study(jf = id_vec_shifted[jf])
+            # # run Bayesian inference
+            # ba = self.nested_sampling_single_freq(lb, ub, jf = id_vec_shifted[jf])
+            # # Put it in the correct place at list
+            # self.ba_list[id_vec_shifted[jf]] = ba
+            # self.logZ_spk[id_vec_shifted[jf]] = ba.logZ
+            # self.logZ_err_spk[id_vec_shifted[jf]] = ba.logZ_err
+            # # Compute lower/upper bounds of new freq
+            # # ba.confidence_interval(ci_percent=99.99)
+            # # lb, ub = self.set_prior_limits_from_study(jf = id_vec_shifted[jf])
+            # lb = ba.mean_values - 20*ba.std
+            # ub = ba.mean_values + 20*ba.std
+            # lb, ub = self.set_physical_limits(lb, ub)
+            # # lb = np.copy(ba.ci[0,:])
+            # # ub = np.copy(ba.ci[1,:])
+            # print(np.vstack((lb,ub)))
+            # print(np.vstack((self.lb_mtx[:,id_vec_shifted[jf]],self.ub_mtx[:,id_vec_shifted[jf]])))
+        
+    def nested_sampling_spk_seq0(self, start_freq = 1000):
+        """ Run inference for all frequency bins
+        
+        Parameters
+        ----------
+        """
+        # empty list with all Bayesian inference objects.
+        self.ba_list = [None]*len(self.controls.k0)
+        # current_freq = start_freq
+        start_id = ut_is.find_freq_index(self.controls.freq, 
+                                         freq_target = start_freq)
+        # get bounds from study
+        lb, ub = self.set_prior_limits_from_study(jf = start_id)
+        id_vec = np.arange(0, len(self.controls.freq))
+        id_vec_shifted = np.concatenate((id_vec[start_id:], id_vec[:start_id][::-1]))
+        freq_vec_shifted = self.controls.freq[id_vec_shifted]
+        #np.roll(self.controls.freq, -start_id)
+        k0_vec_shifted = self.controls.k0[id_vec_shifted]
+        self.logZ_spk = np.zeros(len(self.controls.k0))
+        self.logZ_err_spk = np.zeros(len(self.controls.k0))
+        # Freq loop
+        for jf, self.current_k0 in enumerate(k0_vec_shifted):
+            # Message
+            print("NS run for {} [Hz] ({} of {} bins)".format(freq_vec_shifted[jf],
+                                                              jf+1, len(freq_vec_shifted)))
+            
+            # get bounds from study
+            # lb, ub = self.set_prior_limits_from_study(jf = id_vec_shifted[jf])
+            # run Bayesian inference
+            ba = self.nested_sampling_single_freq(lb, ub, jf = id_vec_shifted[jf])
+            # Put it in the correct place at list
+            self.ba_list[id_vec_shifted[jf]] = ba
+            self.logZ_spk[id_vec_shifted[jf]] = ba.logZ
+            self.logZ_err_spk[id_vec_shifted[jf]] = ba.logZ_err
+            # Compute lower/upper bounds of new freq
+            # ba.confidence_interval(ci_percent=99.99)
+            # lb, ub = self.set_prior_limits_from_study(jf = id_vec_shifted[jf])
+            lb = ba.mean_values - 20*ba.std
+            ub = ba.mean_values + 20*ba.std
+            lb, ub = self.set_physical_limits(lb, ub)
+            # lb = np.copy(ba.ci[0,:])
+            # ub = np.copy(ba.ci[1,:])
+            print(np.vstack((lb,ub)))
+            print(np.vstack((self.lb_mtx[:,id_vec_shifted[jf]],self.ub_mtx[:,id_vec_shifted[jf]])))
         
     def recon_nlr_1layer(self,):
         """ Reconstruct all quantities for single NLR layer vs. freq
@@ -597,11 +723,16 @@ class DCISM_Bayesian(object):
         self.kp_mean = np.zeros(len(self.controls.k0), dtype = complex)
         self.kp_ci = np.zeros((2, len(self.controls.k0)), dtype = complex)
         # Freq loop
+        # Initialize bar
+        bar = tqdm(total=len(self.controls.k0),
+                   desc=r'Reconstruct $k_p$ spk.', ascii=False)
         for jf, k0 in enumerate(self.controls.k0):
             self.kp_mean[jf] = self.get_kp(np.array([self.ba_list[jf].mean_values]), k0)
             self.kp_ci[0, jf] = self.get_kp(np.array([self.ba_list[jf].ci[0,:]]), k0)
             self.kp_ci[1, jf] = self.get_kp(np.array([self.ba_list[jf].ci[1,:]]), k0)            
-
+            bar.update(1)
+        bar.close()
+    
     def get_rhop(self, inf_value):
         """ Get the complex density inferred value for single frequency
         
@@ -621,10 +752,14 @@ class DCISM_Bayesian(object):
         self.rhop_mean = np.zeros(len(self.controls.k0), dtype = complex)
         self.rhop_ci = np.zeros((2, len(self.controls.k0)), dtype = complex)
         # Freq loop
+        bar = tqdm(total=len(self.controls.k0),
+                   desc=r'Reconstruct $\rho_p$ spk.', ascii=False)
         for jf, k0 in enumerate(self.controls.k0):
             self.rhop_mean[jf] = self.get_rhop(np.array([self.ba_list[jf].mean_values]))
             self.rhop_ci[0, jf] = self.get_rhop(np.array([self.ba_list[jf].ci[0,:]]))
             self.rhop_ci[1, jf] = self.get_rhop(np.array([self.ba_list[jf].ci[1,:]])) 
+            bar.update(1)
+        bar.close()
 
     def get_cp(self, kp, omega):
         """ Get the complex sound speed inferred value for single frequency
@@ -684,6 +819,8 @@ class DCISM_Bayesian(object):
         self.zp_mean = np.zeros(len(self.controls.k0), dtype = complex)
         self.zp_ci = np.zeros((2, len(self.controls.k0)), dtype = complex)
         # Freq loop
+        bar = tqdm(total=len(self.controls.k0),
+                   desc=r'Reconstruct $Z_p$ spk.', ascii=False)
         for jf, k0 in enumerate(self.controls.w):
             # Get the samples of kp and rhop
             kp_samples = self.get_kp(self.ba_list[jf].prior_samples, k0)
@@ -693,23 +830,12 @@ class DCISM_Bayesian(object):
             # Use Bayesian object to compute statistics
             mu, ci = self.ba_recon(np.array([np.real(zp_samples), np.imag(zp_samples)]).T, 
                                    self.ba_list[jf].weights)
-            # # Create empty Bayesian sampler and fill in with prior samples
-            # ba_rec = BayesianSampler(measured_coords = np.array([0]),
-            #                          measured_data = np.array([0]),
-            #                          num_model_par = 2,
-            #                          parameters_names = ['Re{Zp}', 'Im{Zp}'])
-            # ba_rec.prior_samples = np.array([np.real(zp_samples), np.imag(zp_samples)]).T 
-            # ba_rec.weights = self.ba_list[jf].weights
-            # # Compute the statistics
-            # ba_rec.compute_statistics(ci_percent = self.ci_percent)
-            # fill in the data
-            # self.zp_mean[jf] = ba_rec.mean_values[0] + 1j*ba_rec.mean_values[1]
-            # self.zp_ci[0, jf] = ba_rec.ci[0, 0] + 1j*ba_rec.ci[0, 1]
-            # self.zp_ci[1, jf] = ba_rec.ci[1, 0] + 1j*ba_rec.ci[1, 1]
             
             self.zp_mean[jf] = mu[0] + 1j*mu[1]
             self.zp_ci[0, jf] = ci[0, 0] + 1j*ci[0, 1]
             self.zp_ci[1, jf] = ci[1, 0] + 1j*ci[1, 1]
+            bar.update(1)
+        bar.close()
     
     def get_theta_t(self, kp, k0, theta):
         """ Get the complex refraction angle inferred value for single frequency
@@ -813,6 +939,8 @@ class DCISM_Bayesian(object):
         self.zs_ci = np.zeros((2, len(theta), len(self.controls.k0)), dtype = complex)
         
         # Freq loop
+        bar = tqdm(total=len(self.controls.k0)*len(theta),
+                   desc=r'Reconstruct $V_p$ (NLR) spk.', ascii=False)
         for jt, the in enumerate(theta):
             for jf, k0 in enumerate(self.controls.k0):
                 var = self.recon_vp_nlr_1layer(k0, the, self.ba_list[jf])
@@ -822,6 +950,28 @@ class DCISM_Bayesian(object):
                 self.alpha_ci[:, jt, jf] = var[3]
                 self.zs_mean[jt, jf] = var[4]
                 self.zs_ci[:, jt, jf] = var[5]
+                bar.update(1)
+        bar.close()
+                
+    def get_vp_nlr_angle(self, jf, ba, theta):
+        # Initialization
+        vp_mean = np.zeros(len(theta), dtype = complex)
+        vp_ci = np.zeros((2, len(theta)), dtype = complex)
+        alpha_mean = np.zeros(len(theta))        
+        alpha_ci = np.zeros((2, len(theta)))
+        zs_mean = np.zeros(len(theta), dtype = complex)
+        zs_ci = np.zeros((2, len(theta)), dtype = complex)
+        
+        # Freq loop
+        for jt, the in enumerate(theta):
+            var = self.recon_vp_nlr_1layer(self.controls.k0[jf], the, ba)
+            vp_mean[jt] = var[0]
+            vp_ci[:, jt] = var[1]
+            alpha_mean[jt] = var[2]
+            alpha_ci[:, jt] = var[3]
+            zs_mean[jt] = var[4]
+            zs_ci[:, jt] = var[5]
+        return vp_mean, vp_ci.T, alpha_mean, alpha_ci, zs_mean, zs_ci
     
     def recon_zs_nlr_1layer(self, z0, vp, theta):
         """ NLR 1 layer surface impedance reconstruction (single freq)
@@ -908,6 +1058,26 @@ class DCISM_Bayesian(object):
         
         return vp_mean, vp_ci.T, alpha_mean, alpha_ci.T
     
+    def get_vp_lr_angle(self, jf, ba, theta):
+        # Initialization
+        vp_mean = np.zeros(len(theta), dtype = complex)
+        vp_ci = np.zeros((2, len(theta)), dtype = complex)
+        alpha_mean = np.zeros(len(theta))        
+        alpha_ci = np.zeros((2, len(theta)))
+        # zs_mean = np.zeros(len(theta), dtype = complex)
+        # zs_ci = np.zeros((2, len(theta)), dtype = complex)
+        
+        # Freq loop
+        for jt, the in enumerate(theta):
+            var = self.recon_vp_lr(self.controls.k0[jf], the, ba)
+            vp_mean[jt] = var[0]
+            vp_ci[:, jt] = var[1]
+            alpha_mean[jt] = var[2]
+            alpha_ci[:, jt] = var[3]
+            # zs_mean[jt] = var[4]
+            # zs_ci[:, jt] = var[5]
+        return vp_mean, vp_ci.T, alpha_mean, alpha_ci#, zs_mean, zs_ci
+    
     def get_vp_lr_spk(self, theta):
         # Initialization
         self.vp_mean = np.zeros((len(theta), len(self.controls.k0)), dtype = complex)
@@ -918,6 +1088,8 @@ class DCISM_Bayesian(object):
         self.zs_ci = np.zeros((2, len(theta), len(self.controls.k0)), dtype = complex)
         
         # Freq loop
+        bar = tqdm(total=len(self.controls.k0)*len(theta),
+                   desc=r'Reconstruct $V_p$ (LR) spk.', ascii=False)
         for jt, the in enumerate(theta):
             for jf, k0 in enumerate(self.controls.k0):
                 var = self.recon_vp_lr(k0, the, self.ba_list[jf])
@@ -934,6 +1106,8 @@ class DCISM_Bayesian(object):
                 beta_ci = self.ba_list[jf].ci[1,0] +\
                     + 1j*self.ba_list[jf].ci[1,1]
                 self.zs_ci[1, jt, jf] = (self.air.rho0*self.air.c0)/beta_ci
+                bar.update(1)
+        bar.close()
     
     def kp_rhop_range(self, resist = [3000, 60000], phi = [0.15, 1.0],
                       alpha_inf = [1.0, 3.00], Lam = [50e-6, 300e-6],
@@ -1044,14 +1218,14 @@ class DCISM_Bayesian(object):
         return ax
     
     def plot_logZ_spk(self, ax = None, figshape = (1, 2), figsize = (8, 3),
-                color = 'r', tolerance = 5):
+                color = 'r', tolerance = 5, label = ''):
         """ Plots the LogZ as a function of frequency
         """        
         ax = ut_is.plot_1d_curve(self.controls.freq, self.logZ_spk, ax = ax, 
                                  xlims = (self.controls.freq[0], self.controls.freq[-1]), 
                                  ylims = None,
                                  color = color, linewidth = 1.5, linestyle = '-',
-                                 alpha = 1.0, label = None,
+                                 alpha = 1.0, label = label,
                                  xlabel = "Frequency", ylabel = r"$\log(Z)$ [Np]",
                                  linx = False, liny = True, 
                                  xticks = [31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000])
@@ -1156,6 +1330,19 @@ class DCISM_Bayesian(object):
             ax[1,0].set_ylabel(self.parameters_names[2] + r'$/\rho_0$')
             ax[1,1].set_ylabel(self.parameters_names[3] + r'$/\rho_0$')
             plt.tight_layout()
+            
+    def save(self, filename = 'dcism_ba', path = ''):
+        """ To save the decomposition object as pickle
+        """
+        ut_is.save(self, filename = filename, path = path)
+
+    def load(self, filename = 'dcism_ba', path = ''):
+        """ To load the decomposition object as pickle
+
+        You can instantiate an empty object of the class and load a saved one.
+        It will overwrite the empty object.
+        """
+        ut_is.load(self, filename = filename, path = path)
             
     
     # def get_kp_rhop(self, ba, mode = "mean"):

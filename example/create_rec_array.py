@@ -74,3 +74,7 @@ rec.plot_array()
 radii = 1
 rec.hemispherical_array(radius = radii, n_rec_target = 642)
 rec.plot_array(x_lim=[-radii, radii], y_lim=[-radii, radii], z_lim=[0, radii])
+#%% Semi Gaussian
+radii = 1
+rec.semigaussian_sphere(radius = radii, delta_theta_deg=4)
+rec.plot_array(x_lim=[-radii, radii], y_lim=[-radii, radii], z_lim=[-radii, radii])

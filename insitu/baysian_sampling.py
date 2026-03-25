@@ -9,7 +9,10 @@ import scipy
 import matplotlib.pyplot as plt
 from numba import njit
 from matplotlib.ticker import StrMethodFormatter
-import arviz as az
+try:
+    import arviz as az
+except:
+    print("Not possible to use Arviz in this environment")
 from tqdm import tqdm
 import utils_insitu as ut_is
 from elipsesampling import ElipsoidalSampling
@@ -1427,72 +1430,7 @@ class BayesianSampler(object):
         # cropping white-spaces
         fig.subplots_adjust(left = fine_tune_subplt[0], bottom = fine_tune_subplt[1],
                             right = fine_tune_subplt[2], top = fine_tune_subplt[3],
-                            wspace = 0.025, hspace = 0.025)
-        
-    
-    # def plot_multi_2d_kde2(self, ax = None, cmap = 'inferno', 
-    #                       mode = 'mesh', figsize = None,
-    #                       fine_tune_subplt = [0.15, 0.1, 0.98, 0.98]):
-    #     """ Plots 2D multiple KDE relations with 1d posteriors
-        
-    #     Parameters
-    #     ----------
-    #     ax : matplotlib axes or None
-    #         Axes to plot
-    #     cmap : str
-    #         color map to use
-    #     mode : str
-    #         Can be "mesh" for pcolormesh or "contour" for contourf plots
-    #     figsize : tuple of 1,2
-    #         fig size
-    #     fine_tune_subplt : list
-    #         letf, bottom, right, up figure cropping
-    #     """
-    #     # Decide fig size
-    #     if figsize is None:
-    #         figsize = ((self.num_model_par)*2, (self.num_model_par)*2)
-    #     # Decide fig axis
-    #     if ax is None:
-    #         figshape = (self.num_model_par, self.num_model_par)
-    #         fig, ax = plt.subplots(figsize = figsize,
-    #                                nrows = figshape[0], ncols = figshape[1],
-    #                                sharex = 'col', sharey = 'row', squeeze = False)
-    #     # Diagonal 1 D KDE plot
-    #     for d in range(self.num_model_par):
-    #         kde = scipy.stats.gaussian_kde(self.prior_samples[:, d], 
-    #                                        weights = self.weights)
-    #         x_grid = np.linspace(self.prior_samples[:, d].min(), 
-    #                              self.prior_samples[:, d].max(), 1000)
-    #         pdf = kde(x_grid)
-    #         ax[d, d].plot(x_grid, pdf, linewidth = 1.5, 
-    #                       alpha = 0.7, color = 'grey')
-    #         # ax[row, col].legend()
-    #         ax[d, d].grid(linestyle = '--')
-    #         ax[d, d].set_xlim((self.lower_bounds[jdim], self.upper_bounds[jdim]))
-    #         ax[d, d].set_xlabel(self.parameters_names[jdim])
-    #         ax[d, d].set_ylabel(r"$p(\theta)$")
-        
-        # # Loop through rows (bottom matrix)
-        # for row in range(self.num_model_par-1):
-        #     # Loop through cols (bottom matrix)
-        #     for col in range(self.num_model_par-1):
-        #         if col > row:  # Turn off above the diagonal
-        #             ax[row+1, col].set_visible(False)
-        #         else:
-        #             ax[row+1, col] = self.plot_single_2d_kde(ax[row,col],
-        #                                dim2calc = [col, row+1], cmap = cmap,
-        #                                mode = mode)
-        #             ax[row+1, col].xaxis.set_major_formatter(StrMethodFormatter('{x:.1f}'))
-        #             ax[row+1, col].yaxis.set_major_formatter(StrMethodFormatter('{x:.2f}'))
-        # # labelling axis
-        # for col in range(self.num_model_par-1):
-        #     ax[ax.shape[0]-1, col].set_xlabel(self.parameters_names[col])
-        # for row in range(self.num_model_par-1):
-        #     ax[row, 0].set_ylabel(self.parameters_names[row+1])
-        # # cropping white-spaces
-        # fig.subplots_adjust(left = fine_tune_subplt[0], bottom = fine_tune_subplt[1],
-        #                     right = fine_tune_subplt[2], top = fine_tune_subplt[3],
-        #                     wspace = 0.025, hspace = 0.025)
+                            wspace = 0.05, hspace = 0.025)
     
     
     def plot_like_surf(self, figsize = (5,5), textsize = None, 
@@ -1532,6 +1470,19 @@ class BayesianSampler(object):
             marginals = marginals, kde_kwargs=kde_kwargs_dict)
         plt.tight_layout()
         return ax
+    
+    def save(self, filename = 'ba', path = ''):
+        """ To save the decomposition object as pickle
+        """
+        ut_is.save(self, filename = filename, path = path)
+
+    def load(self, filename = 'ba', path = ''):
+        """ To load the decomposition object as pickle
+
+        You can instantiate an empty object of the class and load a saved one.
+        It will overwrite the empty object.
+        """
+        ut_is.load(self, filename = filename, path = path)
         
 @njit  
 def loglike_t_numba(measured_data, y_pred):
