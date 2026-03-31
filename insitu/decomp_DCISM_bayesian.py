@@ -6,6 +6,7 @@ Created on Wed Oct 30 2025
 """
 
 import numpy as np
+from controlsair import cart2sph
 from receivers import Receiver
 from tqdm import tqdm
 from sources import Source
@@ -130,7 +131,15 @@ class DCISM_Bayesian(object):
                                                    r"$|S|$", r"$\angle S$",  
                                                    r"$t_p$"],
                              'known_thickness': False,
-                             'TF' : False}
+                             'TF' : False},
+                            8:
+                            {"name": "PW-NLR single layer with known thickness - H(f)",
+                             "num_model_par": 4,
+                             "parameters_names" : [r"$Re\{k_p/k_0\}$", r"$Im\{k_p/k_0\}$",
+                                                   r"$Re\{\rho_p/\rho_0\}$", 
+                                                   r"$Im\{\rho_p/\rho_0\}$"],
+                             'known_thickness': True,
+                             'TF' : True}
                             }
         return available_models
     
@@ -168,6 +177,8 @@ class DCISM_Bayesian(object):
             self.model_fun = self.forward_model_6
         elif self.chosen_model == 7:
             self.model_fun = self.forward_model_7
+        elif self.chosen_model == 8:
+            self.model_fun = self.forward_model_8
         
     def show_chosen_model_parameters(self,):
         """ Display (terminal) the chosen model.
@@ -266,6 +277,27 @@ class DCISM_Bayesian(object):
             if lower_bounds[0] < 0.001: # Do not allow for real part lower than zero
                 lower_bounds[0] = 0.001
         return lower_bounds, upper_bounds
+    
+    def check_sample_physical_limits(self, sample_vec):
+        """ Set sensible physical limits to wave-number and density
+        """
+        if self.chosen_model != 0 and self.chosen_model != 1:
+            # Re{k_p} constraint
+            if sample_vec[0] < 1.00:
+                sample_vec[0] = 1.00
+            # Im{k_p} constraint
+            if sample_vec[1] > -0.01:
+                sample_vec[1] = -0.01
+            # Re{rho_p} constraint    
+            if sample_vec[2] < 0.9: # 1.18/1.3
+                sample_vec[2] = 0.9
+            # Im{rho_p} constraint    
+            if sample_vec[3] > -0.01: # 1.18/1.3
+                sample_vec[3] = -0.01
+        else:
+            if sample_vec[0] < 0.001: # Do not allow for real part lower than zero
+                sample_vec[0] = 0.001
+        return sample_vec
     
     def wide_prior_range(self, widening_factor = 2):
         """ Wide your prior by a given factor
@@ -507,6 +539,51 @@ class DCISM_Bayesian(object):
         pred = source_strength * green_fun
         return pred
     
+    def forward_model_8(self, x_meas, 
+                        model_par = [1.50, -1.00, 1.20, -2.50]):
+        """ Forward model for forward prediction
+        
+        Valid for Model 4 - NLR single layer with known thickness - H(f)
+
+        Parameters
+        ----------
+        x_meas : numpyndArray
+            Measurement coordinates
+        model_par : list
+            Guessing values for [Re{k_p}, Im{k_p}, Re{\rho_p}, Im{\rho_p}].
+        Returns
+        -------
+        pred : numpy1dArray
+            Complex transfer function between microphone pairs
+        """
+        # Angular freq
+        omega = self.air.c0 * self.current_k0
+        # complex wave-number
+        k_p = self.current_k0*(model_par[0] + 1j*model_par[1])
+        # complex density
+        rho_p = self.air.rho0*(model_par[2] + 1j*model_par[3])
+        # Get source wave-number as a plane wave
+        src_unit_vec = self.source.coord[0,:]/np.linalg.norm(self.source.coord[0,:])
+        k_ref = self.current_k0 * src_unit_vec
+        k_inc = np.copy(k_ref)
+        k_inc[2] = -k_inc[2]
+        _, theta, _ = cart2sph(k_ref[0], k_ref[1], k_ref[2])
+        theta = np.pi/2-theta 
+        
+        # Material properties
+        Zp = rho_p*omega/k_p
+        theta_t = np.arcsin(self.current_k0*np.sin(theta)/k_p)
+        Zs = -1j*(Zp/np.cos(theta_t))*(1/np.tan(k_p*np.cos(theta_t)*self.t_p))
+        Vp = (Zs*np.cos(theta)-self.air.rho0*self.air.c0)/\
+            (Zs*np.cos(theta)+self.air.rho0*self.air.c0)        
+        # green fun - plane wave
+        green_fun = np.exp(-1j*self.receivers.coord @ k_inc)+\
+            Vp*np.exp(-1j*self.receivers.coord @ k_ref)    
+        p_exp_line_1 = green_fun[self.id_z_list[0]]
+        p_exp_line_2 = green_fun[self.id_z_list[1]]
+        pred = p_exp_line_1/p_exp_line_2
+        return pred
+    
     def nested_sampling_single_freq(self, lower_bounds, upper_bounds, 
                                     jf = 0):
         """ Run single freq inference
@@ -572,6 +649,10 @@ class DCISM_Bayesian(object):
         Parameters
         ----------
         """
+        # lb, ub matrices
+        lb_mtx = np.zeros(self.lb_mtx.shape)
+        ub_mtx = np.zeros(self.ub_mtx.shape)
+        
         # empty list with all Bayesian inference objects.
         self.ba_list = [None]*len(self.controls.k0)
         self.logZ_spk = np.zeros(len(self.controls.k0))
@@ -594,6 +675,8 @@ class DCISM_Bayesian(object):
         self.ba_list[id_vec_shifted[0]] = ba
         self.logZ_spk[id_vec_shifted[0]] = ba.logZ
         self.logZ_err_spk[id_vec_shifted[0]] = ba.logZ_err
+        lb_mtx[id_vec_shifted[0]] = lb
+        ub_mtx[id_vec_shifted[0]] = ub
         # New bounds
         # fac = 10
         # lb0 = ba.mean_values - fac*ba.std
@@ -612,8 +695,8 @@ class DCISM_Bayesian(object):
             self.current_k0 = k0_vec_shifted[jf]
                       
             if id_vec_shifted[jf] == start_id + 1 or id_vec_shifted[jf] == start_id - 1:
-                    lb = np.copy(lb0)
-                    ub = np.copy(ub0)
+                lb = np.copy(lb0)
+                ub = np.copy(ub0)
             else:
                 # lb = ba.mean_values - fac*ba.std
                 # ub = ba.mean_values + fac*ba.std
@@ -621,30 +704,15 @@ class DCISM_Bayesian(object):
                 delta_ub_mu = ub - ba.mean_values
                 lb, ub = self.set_physical_limits(lb, ub)
                 
-            ba = self.nested_sampling_single_freq(lb, ub, jf = id_vec_shifted[jf])
-            self.ba_list[id_vec_shifted[jf]] = ba
-            self.logZ_spk[id_vec_shifted[jf]] = ba.logZ
-            self.logZ_err_spk[id_vec_shifted[jf]] = ba.logZ_err
-               
-                
-            # # get bounds from study
-            # # lb, ub = self.set_prior_limits_from_study(jf = id_vec_shifted[jf])
-            # # run Bayesian inference
             # ba = self.nested_sampling_single_freq(lb, ub, jf = id_vec_shifted[jf])
-            # # Put it in the correct place at list
             # self.ba_list[id_vec_shifted[jf]] = ba
             # self.logZ_spk[id_vec_shifted[jf]] = ba.logZ
             # self.logZ_err_spk[id_vec_shifted[jf]] = ba.logZ_err
-            # # Compute lower/upper bounds of new freq
-            # # ba.confidence_interval(ci_percent=99.99)
-            # # lb, ub = self.set_prior_limits_from_study(jf = id_vec_shifted[jf])
-            # lb = ba.mean_values - 20*ba.std
-            # ub = ba.mean_values + 20*ba.std
-            # lb, ub = self.set_physical_limits(lb, ub)
-            # # lb = np.copy(ba.ci[0,:])
-            # # ub = np.copy(ba.ci[1,:])
-            # print(np.vstack((lb,ub)))
-            # print(np.vstack((self.lb_mtx[:,id_vec_shifted[jf]],self.ub_mtx[:,id_vec_shifted[jf]])))
+            lb_mtx[id_vec_shifted[jf]] = lb
+            ub_mtx[id_vec_shifted[jf]] = ub
+        return lb_mtx, ub_mtx
+                
+            
         
     def nested_sampling_spk_seq0(self, start_freq = 1000):
         """ Run inference for all frequency bins
@@ -1126,7 +1194,9 @@ class DCISM_Bayesian(object):
         else:
             self.lb_mtx = mat.get_min_kp_rhop(k_p_samples, rho_p_samples)
             self.ub_mtx = mat.get_max_kp_rhop(k_p_samples, rho_p_samples)
-    
+            # self.lb_mtx[2,:] = 1.0#self.air.rho0*np.ones(self.lb_mtx.shape[1])
+            # self.ub_mtx[2,:] = 1.1#*self.air.rho0*np.ones(self.lb_mtx.shape[1])
+            
     def plot_reim(self, meanval, cival, label = None, 
                   ax = None, figshape = (1, 2), figsize = (8, 3),
                   color = 'r'):

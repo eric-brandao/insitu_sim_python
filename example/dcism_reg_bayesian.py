@@ -21,7 +21,7 @@ import utils_insitu as ut_is
 
 #%% Air, Controls, Material
 air = AirProperties(c0 = 343.0, rho0 = 1.21)
-controls = AlgControls(c0 = air.c0, freq_vec = np.arange(100, 4000, 50))
+controls = AlgControls(c0 = air.c0, freq_vec = np.arange(100, 4000, 100))
 thickness =  50/1000
 material = PorousAbsorber(air, controls)
 material.jcal(resistivity = 12200, porosity = 0.98, tortuosity = 1.01, 
@@ -39,7 +39,7 @@ field = dDCISM(air = air, controls = controls, source = source, receivers = rece
 field.predict_p_spk_nlr_layer();
 field.add_noise(snr = 30)
 #%% True kp and rhop (single freq)
-id_f = 5
+id_f = 9
 k0 = field.controls.k0[id_f]
 print("Frequency is {} [Hz]".format(field.controls.freq[id_f]))
 print(r"True $k_p$: {}".format(field.material.kp[id_f]))
@@ -74,7 +74,7 @@ lb, ub = dcism_b.set_prior_limits(lower_bounds = lb, upper_bounds = ub)
 print("Running inference for {:.1f} [Hz]".format(controls.freq[id_f]))
 ba = dcism_b.nested_sampling_single_freq(lb, ub, jf = id_f)
 print(r"log(Z) = {:.2f} +/- {:.2f}".format(ba.logZ, ba.logZ_err))
-# Log like and pde 1D
+    # Log like and pde 1D
 ba.plot_loglike()
 axs = ba.plot_smooth_marginal_posterior(figshape = (2, 2))
 axs[0,0].axvline(np.real(field.material.kp[id_f]/k0), linestyle = '--', color = 'k', linewidth = 1)
@@ -208,3 +208,60 @@ ax[0,0] = dcism_b_lr.plot_alpha_spk(ax = ax[0,0], color = 'g', jtheta = 30)
 
 ax[0,0].semilogx(controls.freq, material.alpha_ft[:, 60], '--b')
 ax[0,0] = dcism_b_lr.plot_alpha_spk(ax = ax[0,0], color = 'b', jtheta = 60)
+
+#%% DCISM estimation (Bayesian) - NLR - plane-wave
+dcism_b_pw = DCISM_Bayesian(p_mtx = field.pres_mtx, controls = controls, air = air, 
+                         receivers = receivers, source = source, 
+                         sampling_scheme = 'single ellipsoid', enlargement_factor = 1)
+dcism_b_pw.choose_forward_model(chosen_model = 8)
+dcism_b_pw.show_chosen_model_parameters()
+dcism_b_pw.set_mic_pairs()
+dcism_b_pw.set_sample_thickness(t_p = field.material.thickness)
+dcism_b_pw.set_nested_sampling_parameters(n_live = 50, max_iter = 2000, 
+                                       max_up_attempts = 50, seed = 0, dlogz = 0.1,
+                                       ci_percent = 80)
+dcism_b_pw.kp_rhop_range(resist = [3000, 60000], phi = [0.8, 0.99], alpha_inf = [1.0, 1.5], 
+                      Lam = [100e-6, 300e-6], Lamlfac = [1.01, 2.0], n_samples = 20000)
+#%% Run SPK estimation
+dcism_b_pw.nested_sampling_spk()
+#%% Reconstructions
+dcism_b_pw.get_kp_spk()
+dcism_b_pw.get_rhop_spk()
+dcism_b_pw.get_zp_spk()
+dcism_b_pw.get_vp_nlr_spk(theta = np.deg2rad(field.material.theta_deg))
+
+#%% Plots kp, rhop, Zp,
+_, ax = ut_is.give_me_an_ax(figshape = (1,2), figsize = (7,3))
+ax[0,0].semilogx(controls.freq, np.real(material.kp), '--k')
+ax[0,1].semilogx(controls.freq, np.imag(material.kp), '--k')
+ax = dcism_b_pw.plot_kp(ax = ax, color = 'olivedrab')
+
+_, ax = ut_is.give_me_an_ax(figshape = (1,2), figsize = (7,3))
+ax[0,0].semilogx(controls.freq, np.real(material.rhop), '--k')
+ax[0,1].semilogx(controls.freq, np.imag(material.rhop), '--k')
+ax = dcism_b_pw.plot_rhop(ax = ax, color = 'olivedrab')
+
+_, ax = ut_is.give_me_an_ax(figshape = (1,2), figsize = (7,3))
+ax[0,0].semilogx(controls.freq, np.real(material.Zp), '--k')
+ax[0,1].semilogx(controls.freq, np.imag(material.Zp), '--k')
+ax = dcism_b_pw.plot_Zp(ax = ax, color = 'olivedrab')
+
+#%% Plots Vp
+_, ax = ut_is.give_me_an_ax(figshape = (1,2), figsize = (9,3))
+ax[0,0].semilogx(controls.freq, np.real(material.Vp_ft[:, 0]), '--r')
+ax[0,1].semilogx(controls.freq, np.imag(material.Vp_ft[:, 0]), '--r')
+ax = dcism_b_pw.plot_Vp_spk(ax = ax, color = 'r', jtheta = 0)
+
+ax[0,0].semilogx(controls.freq, np.real(material.Vp_ft[:, 45]), '--g')
+ax[0,1].semilogx(controls.freq, np.imag(material.Vp_ft[:, 45]), '--g')
+ax = dcism_b_pw.plot_Vp_spk(ax = ax, color = 'g', jtheta = 45)
+
+ax[0,0].semilogx(controls.freq, np.real(material.Vp_ft[:, 75]), '--b')
+ax[0,1].semilogx(controls.freq, np.imag(material.Vp_ft[:, 75]), '--b')
+ax = dcism_b_pw.plot_Vp_spk(ax = ax, color = 'b', jtheta = 75)
+
+#%% Plot logZ
+_, ax = ut_is.give_me_an_ax(figshape = (1,1), figsize = (7,3))
+dcism_b.plot_logZ_spk(ax = ax[0, 0], color = 'b')
+dcism_b_pw.plot_logZ_spk(ax = ax[0, 0], color = 'g')
+ax[0, 0].set_ylim((-200,150))
