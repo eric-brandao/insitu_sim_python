@@ -1374,7 +1374,7 @@ class BayesianSampler(object):
                         levels = np.linspace(0, np.amax(p.ravel()), 10))
         return ax
             
-    def plot_multi_2d_kde(self, ax = None, cmap = 'inferno', 
+    def plot_multi_2d_kde(self, ax = None, cmap = 'Blues', 
                           mode = 'mesh', figsize = None,
                           fine_tune_subplt = [0.15, 0.1, 0.98, 0.98],
                           limit_to_ci = True):

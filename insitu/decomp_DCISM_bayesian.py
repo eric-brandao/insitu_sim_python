@@ -68,28 +68,39 @@ class DCISM_Bayesian(object):
     def dict_forward_models(self,):
         """ Builds a dict of possible forward models and print it on screen.
         """
-        available_models = {0:
+        available_models = {10:
                             {"name": "Locally reacting sample - H(f)",
                              "num_model_par": 2,
                              "parameters_names" : [r"$Re\{\beta\}$", r"$Im\{\beta\}$"],
                              'known_thickness': True,
+                             'known_source': True,
                              'TF' : True},
-                            1:
-                            {"name": "Locally reacting sample - P(f)",
+                            11:
+                             {"name": "LR sample (unknown source) - H(f)",
+                              "num_model_par": 3,
+                              "parameters_names" : [r"$Re\{\beta\}$", r"$Im\{\beta\}$", "r$z_s$"],
+                              'known_thickness': True,
+                              'known_source': False,
+                              'TF' : True},
+                            12:
+                            {"name": "LR sample - P(f)",
                              "num_model_par": 4,
                              "parameters_names" : [r"$Re\{\beta\}$", r"$Im\{\beta\}$", 
                                                    r"$|S|$", r"$\angle S$"],
                              'known_thickness': True,
-                             'TF' : False},                   
-                            2:
+                             'known_source': True,
+                             'TF' : False},
+                            
+                            20:
                             {"name": "NLR semi-infinite layer - H(f)",
                              "num_model_par": 4,
                              "parameters_names" : [r"$Re\{k_p/k_0\}$", r"$Im\{k_p/k_0\}$",
                                                    r"$Re\{\rho_p/\rho_0\}$", 
                                                    r"$Im\{\rho_p/\rho_0\}$"],
                              'known_thickness': True,
+                             'known_source': True,
                              'TF' : True},
-                            3:
+                            21:
                             {"name": "NLR semi-infinite layer - P(f)",
                              "num_model_par": 6,
                              "parameters_names" : [r"$Re\{k_p/k_0\}$", r"$Im\{k_p/k_0\}$",
@@ -97,48 +108,86 @@ class DCISM_Bayesian(object):
                                                    r"$Im\{\rho_p/\rho_0\}$",
                                                    r"$|S|$", r"$\angle S$"],
                              'known_thickness': True,
+                             'known_source': True,
                              'TF' : False},
-                            4:
-                            {"name": "NLR single layer with known thickness - H(f)",
+                            
+                            40:
+                            {"name": "NLR single layer with known thickness/source - H(f)",
                              "num_model_par": 4,
-                             "parameters_names" : [r"$Re\{k_p/k_0\}$", r"$Im\{k_p/k_0\}$",
+                             "parameters_names" : [r"$Re\{k_p/k_0\}$", 
+                                                   r"$Im\{k_p/k_0\}$",
                                                    r"$Re\{\rho_p/\rho_0\}$", 
                                                    r"$Im\{\rho_p/\rho_0\}$"],
                              'known_thickness': True,
+                             'known_source': True,
                              'TF' : True},
-                            5:
+                            41:
                             {"name": "NLR single layer with unknown thickness - H(f)",
                              "num_model_par": 5,
-                             "parameters_names" : [r"$Re\{k_p/k_0\}$", r"$Im\{k_p/k_0\}$",
+                             "parameters_names" : [r"$Re\{k_p/k_0\}$", 
+                                                   r"$Im\{k_p/k_0\}$",
                                                    r"$Re\{\rho_p/\rho_0\}$", 
                                                    r"$Im\{\rho_p/\rho_0\}$", 
                                                    r"$t_p$"],
                              'known_thickness': False,
+                             'known_source': True,
                              'TF' : True},
-                            6:
+                            42:
+                            {"name": "NLR single layer with unknown source - H(f)",
+                             "num_model_par": 5,
+                             "parameters_names" : [r"$Re\{k_p/k_0\}$", 
+                                                   r"$Im\{k_p/k_0\}$",
+                                                   r"$Re\{\rho_p/\rho_0\}$", 
+                                                   r"$Im\{\rho_p/\rho_0\}$", 
+                                                   r"$z_s$"],
+                             'known_thickness': True,
+                             'known_source': False,
+                             'TF' : True},
+                            43:
+                            {"name": "NLR single layer with unknown thickness and source - H(f)",
+                             "num_model_par": 6,
+                             "parameters_names" : [r"$Re\{k_p/k_0\}$", 
+                                                   r"$Im\{k_p/k_0\}$",
+                                                   r"$Re\{\rho_p/\rho_0\}$", 
+                                                   r"$Im\{\rho_p/\rho_0\}$", 
+                                                   r"$t_p$", 
+                                                   r"$z_s$"],
+                             'known_thickness': False,
+                             'known_source': False,
+                             'TF' : True},
+                            44:
                             {"name": "NLR single layer with known thickness - P(f)",
                              "num_model_par": 6,
-                             "parameters_names" : [r"$Re\{k_p/k_0\}$", r"$Im\{k_p/k_0\}$",
-                                                   r"$Re\{\rho_p/\rho_0\}$", r"$Im\{\rho_p/\rho_0\}$",
+                             "parameters_names" : [r"$Re\{k_p/k_0\}$", 
+                                                   r"$Im\{k_p/k_0\}$",
+                                                   r"$Re\{\rho_p/\rho_0\}$", 
+                                                   r"$Im\{\rho_p/\rho_0\}$",
                                                    r"$|S|$", r"$\angle S$"],
                              'known_thickness': True,
+                             'known_source': True,
                              'TF' : False},
-                            7:
+                            45:
                             {"name": "NLR single layer with unknown thickness - P(f)",
                              "num_model_par": 7,
-                             "parameters_names" : [r"$Re\{k_p/k_0\}$", r"$Im\{k_p/k_0\}$",
-                                                   r"$Re\{\rho_p/\rho_0\}$", r"$Im\{\rho_p/\rho_0\}$",
-                                                   r"$|S|$", r"$\angle S$",  
+                             "parameters_names" : [r"$Re\{k_p/k_0\}$", 
+                                                   r"$Im\{k_p/k_0\}$",
+                                                   r"$Re\{\rho_p/\rho_0\}$", 
+                                                   r"$Im\{\rho_p/\rho_0\}$",
+                                                   r"$|S|$", 
+                                                   r"$\angle S$",  
                                                    r"$t_p$"],
                              'known_thickness': False,
+                             'known_source': True,
                              'TF' : False},
-                            8:
-                            {"name": "PW-NLR single layer with known thickness - H(f)",
+                            50:
+                            {"name": "PW-NLR single layer with known thickness/source - H(f)",
                              "num_model_par": 4,
-                             "parameters_names" : [r"$Re\{k_p/k_0\}$", r"$Im\{k_p/k_0\}$",
+                             "parameters_names" : [r"$Re\{k_p/k_0\}$", 
+                                                   r"$Im\{k_p/k_0\}$",
                                                    r"$Re\{\rho_p/\rho_0\}$", 
                                                    r"$Im\{\rho_p/\rho_0\}$"],
                              'known_thickness': True,
+                             'known_source': True,
                              'TF' : True}
                             }
         return available_models
@@ -153,7 +202,7 @@ class DCISM_Bayesian(object):
             print("\tNumber of model parameters: {}".format(available_models[jm]['num_model_par']))
             print("\tParameters names: {}".format(available_models[jm]['parameters_names']))
             
-    def choose_forward_model(self, chosen_model = 1):
+    def choose_forward_model(self, chosen_model = 10):
         """ Chooses a model from the available models.
         """
         self.chosen_model = chosen_model
@@ -167,18 +216,22 @@ class DCISM_Bayesian(object):
     def get_model_fun(self,):
         """ Gets callable model function
         """
-        if self.chosen_model == 0:
-            self.model_fun = self.forward_model_0
-        elif self.chosen_model == 4:
-            self.model_fun = self.forward_model_4
-        elif self.chosen_model == 5:
-            self.model_fun = self.forward_model_5
-        elif self.chosen_model == 6:
-            self.model_fun = self.forward_model_6
-        elif self.chosen_model == 7:
-            self.model_fun = self.forward_model_7
-        elif self.chosen_model == 8:
-            self.model_fun = self.forward_model_8
+        if self.chosen_model == 10:
+            self.model_fun = self.forward_model_10
+        elif self.chosen_model == 40:
+            self.model_fun = self.forward_model_40
+        elif self.chosen_model == 41:
+            self.model_fun = self.forward_model_41
+        elif self.chosen_model == 42:
+            self.model_fun = self.forward_model_42
+        elif self.chosen_model == 43:
+            self.model_fun = self.forward_model_43
+        elif self.chosen_model == 44:
+            self.model_fun = self.forward_model_44
+        elif self.chosen_model == 45:
+            self.model_fun = self.forward_model_45
+        elif self.chosen_model == 50:
+            self.model_fun = self.forward_model_50
         
     def show_chosen_model_parameters(self,):
         """ Display (terminal) the chosen model.
@@ -205,6 +258,11 @@ class DCISM_Bayesian(object):
             self.tp_bounds[0] = 0.001
         if self.tp_bounds[1] > 1.0: #1.0 m thickness limit
             self.tp_bounds[1] = 1.0
+            
+    def set_source_height_prior_limits(self, zs_bounds = [0.25, 0.35]):
+        self.zs_bounds = zs_bounds
+        if self.zs_bounds[0] < 0.05: #5cm limit
+            self.zs_bounds[0] = 0.05
             
     def set_source_stength_prior_limits(self, mag_s_bounds = [0.001, 2]):
         self.mag_s_bounds = mag_s_bounds
@@ -255,12 +313,20 @@ class DCISM_Bayesian(object):
         if not self.chosen_model_dict['known_thickness']:
             lower_bounds = np.append(lower_bounds, self.tp_bounds[0])
             upper_bounds = np.append(upper_bounds, self.tp_bounds[1])
+            if not self.chosen_model_dict['known_source']:
+                lower_bounds = np.append(lower_bounds, self.zs_bounds[0])
+                upper_bounds = np.append(upper_bounds, self.zs_bounds[1])
+        else:
+            if not self.chosen_model_dict['known_source']:
+                lower_bounds = np.append(lower_bounds, self.zs_bounds[0])
+                upper_bounds = np.append(upper_bounds, self.zs_bounds[1])
+                
         return lower_bounds, upper_bounds
         
     def set_physical_limits(self, lower_bounds, upper_bounds):
         """ Set sensible physical limits to wave-number and density
         """
-        if self.chosen_model != 0 and self.chosen_model != 1:
+        if self.chosen_model != 10 and self.chosen_model != 11:
             # Re{k_p} constraint
             if lower_bounds[0] < 1.00:
                 lower_bounds[0] = 1.00
@@ -281,7 +347,7 @@ class DCISM_Bayesian(object):
     def check_sample_physical_limits(self, sample_vec):
         """ Set sensible physical limits to wave-number and density
         """
-        if self.chosen_model != 0 and self.chosen_model != 1:
+        if self.chosen_model != 10 and self.chosen_model != 11:
             # Re{k_p} constraint
             if sample_vec[0] < 1.00:
                 sample_vec[0] = 1.00
@@ -307,7 +373,7 @@ class DCISM_Bayesian(object):
         delta2sum = (delta/2)*((widening_factor-1))#-(delta/4)
         self.lower_bounds -= delta2sum
         self.upper_bounds += delta2sum
-        if self.chosen_model != 0 or self.chosen_model != 1:
+        if self.chosen_model != 10 or self.chosen_model != 11:
             self.set_physical_limits()
     
     def set_nested_sampling_parameters(self, n_live = 50, max_iter = 2000, 
@@ -389,11 +455,11 @@ class DCISM_Bayesian(object):
                                source = self.source, receivers = self.receivers,
                                T0 = T0, dt = dt, tol = tol, gamma = gamma)
     
-    def forward_model_0(self, x_meas, 
+    def forward_model_10(self, x_meas, 
                         model_par = [0.5, 1.00]):
         """ Forward model for forward prediction
         
-        Valid for Model 0 - LR single layer - H(f)
+        Valid for Model 11 - LR single layer - H(f)
 
         Parameters
         ----------
@@ -415,11 +481,11 @@ class DCISM_Bayesian(object):
         pred = p_exp_line_1/p_exp_line_2
         return pred
     
-    def forward_model_4(self, x_meas, 
+    def forward_model_40(self, x_meas, 
                         model_par = [1.50, -1.00, 1.20, -2.50]):
         """ Forward model for forward prediction
         
-        Valid for Model 4 - NLR single layer with known thickness - H(f)
+        Valid for Model 40 - NLR single layer with known thickness - H(f)
 
         Parameters
         ----------
@@ -445,11 +511,11 @@ class DCISM_Bayesian(object):
         pred = p_exp_line_1/p_exp_line_2
         return pred
     
-    def forward_model_5(self, x_meas, 
+    def forward_model_41(self, x_meas, 
                         model_par = [1.50, -1.00, 1.20, -2.50, 0.05]):
         """ Forward model for forward prediction
         
-        Valid for Model 5 - NLR single layer with unknown thickness - H(f)
+        Valid for Model 41 - NLR single layer with unknown thickness - H(f)
 
         Parameters
         ----------
@@ -477,11 +543,76 @@ class DCISM_Bayesian(object):
         pred = p_exp_line_1/p_exp_line_2
         return pred
     
-    def forward_model_6(self, x_meas, 
+    def forward_model_42(self, x_meas, 
+                        model_par = [1.50, -1.00, 1.20, -2.50, 0.30]):
+        """ Forward model for forward prediction
+        
+        Valid for Model 42 - NLR single layer with unknown source - H(f)
+
+        Parameters
+        ----------
+        x_meas : numpyndArray
+            Measurement coordinates
+        model_par : list
+            Guessing values for [Re{k_p}, Im{k_p}, Re{\rho_p}, Im{\rho_p}, t_p, z_s].
+        Returns
+        -------
+        pred : numpy1dArray
+            Complex transfer function between microphone pairs
+        """
+        # complex wave-number
+        k_p = self.current_k0*(model_par[0] + 1j*model_par[1])
+        # complex density
+        rho_p = self.air.rho0*(model_par[2] + 1j*model_par[3])
+        # unknown thickness
+        self.dDCISMsf.hs = model_par[4]
+        green_fun = self.dDCISMsf.predict_p_nlr_layer(k = self.current_k0, 
+                                                      k_p = k_p, 
+                                                      rho_p = rho_p, 
+                                                      t_p = self.t_p)
+        p_exp_line_1 = green_fun[self.id_z_list[0]]
+        p_exp_line_2 = green_fun[self.id_z_list[1]]
+        pred = p_exp_line_1/p_exp_line_2
+        return pred
+    
+    def forward_model_43(self, x_meas, 
+                        model_par = [1.50, -1.00, 1.20, -2.50, 0.05, 0.30]):
+        """ Forward model for forward prediction
+        
+        Valid for Model 42 - NLR single layer with unknown thickness and source - H(f)
+
+        Parameters
+        ----------
+        x_meas : numpyndArray
+            Measurement coordinates
+        model_par : list
+            Guessing values for [Re{k_p}, Im{k_p}, Re{\rho_p}, Im{\rho_p}, t_p, z_s].
+        Returns
+        -------
+        pred : numpy1dArray
+            Complex transfer function between microphone pairs
+        """
+        # complex wave-number
+        k_p = self.current_k0*(model_par[0] + 1j*model_par[1])
+        # complex density
+        rho_p = self.air.rho0*(model_par[2] + 1j*model_par[3])
+        # unknown thickness / source
+        t_p = model_par[4]
+        self.dDCISMsf.hs = model_par[5]
+        green_fun = self.dDCISMsf.predict_p_nlr_layer(k = self.current_k0, 
+                                                      k_p = k_p, 
+                                                      rho_p = rho_p, 
+                                                      t_p = t_p)
+        p_exp_line_1 = green_fun[self.id_z_list[0]]
+        p_exp_line_2 = green_fun[self.id_z_list[1]]
+        pred = p_exp_line_1/p_exp_line_2
+        return pred
+    
+    def forward_model_44(self, x_meas, 
                         model_par = [1.50, -1.00, 1.20, -2.50, 1.00, -np.pi]):
         """ Forward model for forward prediction
         
-        Valid for Model 6 - NLR single layer with known thickness - P(f)
+        Valid for Model 43 - NLR single layer with known thickness - P(f)
 
         Parameters
         ----------
@@ -507,11 +638,11 @@ class DCISM_Bayesian(object):
         pred = source_strength * green_fun
         return pred
     
-    def forward_model_7(self, x_meas, 
+    def forward_model_45(self, x_meas, 
                         model_par = [1.50, -1.00, 1.20, -2.50, 0.05, 1.00, -np.pi]):
         """ Forward model for forward prediction
         
-        Valid for Model 7 - NLR single layer with unknown thickness - P(f)
+        Valid for Model 44 - NLR single layer with unknown thickness - P(f)
 
         Parameters
         ----------
@@ -539,7 +670,7 @@ class DCISM_Bayesian(object):
         pred = source_strength * green_fun
         return pred
     
-    def forward_model_8(self, x_meas, 
+    def forward_model_50(self, x_meas, 
                         model_par = [1.50, -1.00, 1.20, -2.50]):
         """ Forward model for forward prediction
         
@@ -609,8 +740,8 @@ class DCISM_Bayesian(object):
         ba.nested_sampling(n_live = self.n_live, max_iter = self.max_iter, 
                            max_up_attempts = self.max_up_attempts, seed = self.seed,
                            dlogz = self.dlogz)
-        # ba.ultranested_sampling(n_live = self.n_live, max_iter = self.max_iter)
-        # ba.ultranested_sampling_react(n_live = self.n_live, max_iter = self.max_iter)
+        # # ba.ultranested_sampling(n_live = self.n_live, max_iter = self.max_iter)
+        # # ba.ultranested_sampling_react(n_live = self.n_live, max_iter = self.max_iter)
         ba.compute_statistics(ci_percent = self.ci_percent)
         return ba
     
@@ -658,33 +789,33 @@ class DCISM_Bayesian(object):
         self.logZ_spk = np.zeros(len(self.controls.k0))
         self.logZ_err_spk = np.zeros(len(self.controls.k0))
         # starting index
-        start_id = ut_is.find_freq_index(self.controls.freq, 
+        start_id = ut_is.find_freq_index(freq_vec = self.controls.freq, 
                                          freq_target = start_freq)
         id_vec = np.arange(0, len(self.controls.freq))
         id_vec_shifted = np.concatenate((id_vec[start_id:], id_vec[:start_id][::-1]))
         freq_vec_shifted = self.controls.freq[id_vec_shifted]
         k0_vec_shifted = self.controls.k0[id_vec_shifted]
         
-        
         # Initial phase
         lb, ub = self.set_prior_limits_from_study(jf = start_id)
-        print("NS run (INIT) for {} [Hz] ({} of {} bins)".format(freq_vec_shifted[0],
-                                                          1, len(freq_vec_shifted)))
+        print("NS run (INIT) for {:.2f} [Hz] ({} of {} bins)".format(freq_vec_shifted[0],
+                                                                     1, len(freq_vec_shifted)))
         ba = self.nested_sampling_single_freq(lb, ub, jf = id_vec_shifted[0])
         # Put it in the correct place at list
         self.ba_list[id_vec_shifted[0]] = ba
         self.logZ_spk[id_vec_shifted[0]] = ba.logZ
         self.logZ_err_spk[id_vec_shifted[0]] = ba.logZ_err
-        lb_mtx[id_vec_shifted[0]] = lb
-        ub_mtx[id_vec_shifted[0]] = ub
+        lb_mtx[:,id_vec_shifted[0]] = lb
+        ub_mtx[:,id_vec_shifted[0]] = ub
         # New bounds
         # fac = 10
         # lb0 = ba.mean_values - fac*ba.std
         # ub0 = ba.mean_values + fac*ba.std
-        delta_lb_mu = ba.mean_values - lb
-        delta_ub_mu = ub - ba.mean_values
-        lb0 = ba.mean_values - delta_lb_mu
-        ub0 = ba.mean_values + delta_ub_mu
+        #delta_lb_mu = ba.mean_values - lb
+        #delta_ub_mu = ub - ba.mean_values
+        #lb0 = ba.mean_values - delta_lb_mu
+        #ub0 = ba.mean_values + delta_ub_mu
+        lb0, ub0 = lb, ub
         lb0, ub0 = self.set_physical_limits(lb0, ub0)
         
         # Freq loop
@@ -702,14 +833,17 @@ class DCISM_Bayesian(object):
                 # ub = ba.mean_values + fac*ba.std
                 delta_lb_mu = ba.mean_values - lb
                 delta_ub_mu = ub - ba.mean_values
+                lb = ba.mean_values - delta_lb_mu
+                ub = ba.mean_values + delta_ub_mu
                 lb, ub = self.set_physical_limits(lb, ub)
                 
-            # ba = self.nested_sampling_single_freq(lb, ub, jf = id_vec_shifted[jf])
-            # self.ba_list[id_vec_shifted[jf]] = ba
-            # self.logZ_spk[id_vec_shifted[jf]] = ba.logZ
-            # self.logZ_err_spk[id_vec_shifted[jf]] = ba.logZ_err
-            lb_mtx[id_vec_shifted[jf]] = lb
-            ub_mtx[id_vec_shifted[jf]] = ub
+            ba = self.nested_sampling_single_freq(lb, ub, jf = id_vec_shifted[jf])
+            self.ba_list[id_vec_shifted[jf]] = ba
+            self.logZ_spk[id_vec_shifted[jf]] = ba.logZ
+            self.logZ_err_spk[id_vec_shifted[jf]] = ba.logZ_err
+            lb_mtx[:,id_vec_shifted[jf]] = lb
+            ub_mtx[:,id_vec_shifted[jf]] = ub
+        # return ba
         return lb_mtx, ub_mtx
                 
             
@@ -865,6 +999,23 @@ class DCISM_Bayesian(object):
         """
         return rhop*omega/kp
     
+    def get_resit(self, rhop, omega):
+        """ Get the flow resistivity inferred value for single frequency
+        
+        Parameters
+        ----------
+        rhop : complex
+            complex-valued density
+        omega : float
+            angular frequency
+        
+        Returns
+        ----------
+        resist : float
+            flow resistivity
+        """
+        return -omega*np.imag(rhop)
+    
     def ba_recon(self, samples, weights):
         """ Reconstruct quantities that are functions of infferred parameters
         """
@@ -889,7 +1040,7 @@ class DCISM_Bayesian(object):
         # Freq loop
         bar = tqdm(total=len(self.controls.k0),
                    desc=r'Reconstruct $Z_p$ spk.', ascii=False)
-        for jf, k0 in enumerate(self.controls.w):
+        for jf, k0 in enumerate(self.controls.k0):
             # Get the samples of kp and rhop
             kp_samples = self.get_kp(self.ba_list[jf].prior_samples, k0)
             rhop_samples = self.get_rhop(self.ba_list[jf].prior_samples)
@@ -902,6 +1053,27 @@ class DCISM_Bayesian(object):
             self.zp_mean[jf] = mu[0] + 1j*mu[1]
             self.zp_ci[0, jf] = ci[0, 0] + 1j*ci[0, 1]
             self.zp_ci[1, jf] = ci[1, 0] + 1j*ci[1, 1]
+            bar.update(1)
+        bar.close()
+        
+    def get_resist_spk(self,):
+        # Initialization
+        self.resist_mean = np.zeros(len(self.controls.k0))
+        self.resist_ci = np.zeros((2, len(self.controls.k0)))
+        # Freq loop
+        bar = tqdm(total=len(self.controls.k0),
+                   desc=r'Reconstruct Flow resistivity spk.', ascii=False)
+        for jf, w in enumerate(self.controls.w):
+            # Get the samples rhop
+            rhop_samples = self.get_rhop(self.ba_list[jf].prior_samples)
+            # Sample Zp
+            resist_samples = self.get_resit(rhop_samples, w)
+            # Use Bayesian object to compute statistics
+            mu, ci = self.ba_recon(np.array([resist_samples]).T, self.ba_list[jf].weights)
+            
+            self.resist_mean[jf] = mu
+            self.resist_ci[0, jf] = ci[0]
+            self.resist_ci[1, jf] = ci[1]
             bar.update(1)
         bar.close()
     
@@ -956,6 +1128,8 @@ class DCISM_Bayesian(object):
             tp_samples = self.t_p*np.ones(ba.prior_samples.shape[0])
         elif self.num_model_par == 5:
             tp_samples = ba.prior_samples[:,-1]
+        elif self.num_model_par == 6:
+            tp_samples = ba.prior_samples[:,-2]
         
         # Angular wave-number in air
         k0z = k0*np.cos(theta)
@@ -1188,7 +1362,7 @@ class DCISM_Bayesian(object):
             resist = resist, phi = phi, alpha_inf = alpha_inf, Lam = Lam,
             Lamlfac = Lamlfac, thickness = thickness, theta_deg = theta_deg, 
             n_samples = n_samples, freq_vec = self.controls.freq)
-        if self.chosen_model == 0:
+        if self.chosen_model == 10:
             self.lb_mtx = mat.get_min_beta(beta_samples)
             self.ub_mtx = mat.get_max_beta(beta_samples)
         else:
@@ -1310,7 +1484,7 @@ class DCISM_Bayesian(object):
     def plot_search_space(self):
         """ plots the search space as a function of frequency (sanity check)
         """
-        if self.chosen_model == 0 or self.chosen_model == 1:
+        if self.chosen_model == 10 or self.chosen_model == 11:
             figshape = (1, 2)
             figsize = (8, 4)
             fig, ax = ut_is.give_me_an_ax(figshape, figsize)
@@ -1415,86 +1589,80 @@ class DCISM_Bayesian(object):
         ut_is.load(self, filename = filename, path = path)
             
     
-    # def get_kp_rhop(self, ba, mode = "mean"):
-    #     if mode == "mean":
-    #         kp = self.current_k0*(ba.mean_values[0] + 1j*ba.mean_values[1])
-    #         rhop = self.air.rho0*(ba.mean_values[2] + 1j*ba.mean_values[3])
-    #     elif mode == "lower_ci":
-    #         kp = self.current_k0*(ba.ci[0,0] + 1j*ba.ci[0,1])
-    #         rhop = self.air.rho0*(ba.ci[0,2] + 1j*ba.ci[0,3])
-    #     elif mode == "upper_ci":
-    #         kp = self.current_k0*(ba.ci[1,0] + 1j*ba.ci[1,1])
-    #         rhop = self.air.rho0*(ba.ci[1,2] + 1j*ba.ci[1,3])
-    #     else:
-    #         kp = self.current_k0*(ba.mean_values[0] + 1j*ba.mean_values[1])
-    #         rhop = self.air.rho0*(ba.mean_values[2] + 1j*ba.mean_values[3])
-    #     return kp, rhop
     
-    # def recon_mat_props_nlr(self, ba, id_f, theta, mode = "mean"):
-    #     """ From infereed kp and rhop, reconstruct Zp, cp
-        
-    #     Single frequency estimation (can be multiple angle)
-        
-    #     Parameters
-    #     ----------
-    #     ba : object
-    #         Bayesian inference object
-    #     id_f : int
-    #         freq index
-    #     theta : float or numpy1dArray
-    #         angle of incidence in radians
-    #     """
-    #     # Chose thickness according to model
-    #     if self.chosen_model == 5:
-    #         tp = ba.mean_values[4]
-    #     else:
-    #         tp = self.t_p
-    #     # Wave-number and density from mean values
-    #     kp, rhop = self.get_kp_rhop(ba, mode = mode)
-    #     # Characteristic and surface impedance
-    #     Zp, Zs = self.imp_recon_nlr(w = self.controls.w[id_f], kp = kp,
-    #                                 rhop = rhop, theta = theta, tp = tp)
-    #     # Reflection and absorption coefficient
-    #     Vp, alpha = self.ref_abs_coeff(Zs, theta)
-    #     return kp, rhop, Zp, Zs, Vp, alpha
     
-    # def imp_recon_nlr(self, w, kp, rhop, theta, tp):
-    #     """ Reconstruct Zp and Zs
-        
-    #     Parameters
-    #     ----------
-    #     w : float
-    #         angular frequency in rad/s
-    #     kp : float complex
-    #         Wave-number in porous media. It can come from mean or confidence interval
-    #     rhop : float complex
-    #         Density in porous media. It can come from mean or confidence interval
-    #     """
-    #     # Characteristic impedance
-    #     Zp = rhop * w/kp
-    #     # k0
-    #     k0 = w/self.air.c0
-    #     # refraction index
-    #     n_index = kp/k0
-    #     theta_t = np.arcsin(np.sin(theta)/n_index)
-    #     kzp = kp * np.cos(theta_t)
-    #     Zs = -1j * Zp * (kp/kzp) *(1/np.tan(kzp*tp))
-    #     return Zp, Zs
     
-    # def ref_abs_coeff(self, Zs, theta):
-    #     """ From infereed Zs, reconstruct Vp, alpha
-        
-    #     Single frequency estimation (can be multiple angle)
-        
-    #     Parameters
-    #     ----------
-    #     ba : object
-    #         Bayesian inference object
-    #     theta : float or numpy1dArray
-    #         angle of incidence in radians
-    #     """
-    #     # Reflection and absorption coefficient
-    #     Vp = (Zs*np.cos(theta) - (self.air.rho0 * self.air.c0)) /\
-    #         (Zs*np.cos(theta) + (self.air.rho0 * self.air.c0))
-    #     alpha = 1-(np.abs(Vp))**2
-    #     return Vp, alpha
+    
+    # available_models = {0:
+    #                     {"name": "Locally reacting sample - H(f)",
+    #                      "num_model_par": 2,
+    #                      "parameters_names" : [r"$Re\{\beta\}$", r"$Im\{\beta\}$"],
+    #                      'known_thickness': True,
+    #                      'TF' : True},
+    #                     1:
+    #                     {"name": "Locally reacting sample - P(f)",
+    #                      "num_model_par": 4,
+    #                      "parameters_names" : [r"$Re\{\beta\}$", r"$Im\{\beta\}$", 
+    #                                            r"$|S|$", r"$\angle S$"],
+    #                      'known_thickness': True,
+    #                      'TF' : False},                   
+    #                     2:
+    #                     {"name": "NLR semi-infinite layer - H(f)",
+    #                      "num_model_par": 4,
+    #                      "parameters_names" : [r"$Re\{k_p/k_0\}$", r"$Im\{k_p/k_0\}$",
+    #                                            r"$Re\{\rho_p/\rho_0\}$", 
+    #                                            r"$Im\{\rho_p/\rho_0\}$"],
+    #                      'known_thickness': True,
+    #                      'TF' : True},
+    #                     3:
+    #                     {"name": "NLR semi-infinite layer - P(f)",
+    #                      "num_model_par": 6,
+    #                      "parameters_names" : [r"$Re\{k_p/k_0\}$", r"$Im\{k_p/k_0\}$",
+    #                                            r"$Re\{\rho_p/\rho_0\}$", 
+    #                                            r"$Im\{\rho_p/\rho_0\}$",
+    #                                            r"$|S|$", r"$\angle S$"],
+    #                      'known_thickness': True,
+    #                      'TF' : False},
+    #                     4:
+    #                     {"name": "NLR single layer with known thickness - H(f)",
+    #                      "num_model_par": 4,
+    #                      "parameters_names" : [r"$Re\{k_p/k_0\}$", r"$Im\{k_p/k_0\}$",
+    #                                            r"$Re\{\rho_p/\rho_0\}$", 
+    #                                            r"$Im\{\rho_p/\rho_0\}$"],
+    #                      'known_thickness': True,
+    #                      'TF' : True},
+    #                     5:
+    #                     {"name": "NLR single layer with unknown thickness - H(f)",
+    #                      "num_model_par": 5,
+    #                      "parameters_names" : [r"$Re\{k_p/k_0\}$", r"$Im\{k_p/k_0\}$",
+    #                                            r"$Re\{\rho_p/\rho_0\}$", 
+    #                                            r"$Im\{\rho_p/\rho_0\}$", 
+    #                                            r"$t_p$"],
+    #                      'known_thickness': False,
+    #                      'TF' : True},
+    #                     6:
+    #                     {"name": "NLR single layer with known thickness - P(f)",
+    #                      "num_model_par": 6,
+    #                      "parameters_names" : [r"$Re\{k_p/k_0\}$", r"$Im\{k_p/k_0\}$",
+    #                                            r"$Re\{\rho_p/\rho_0\}$", r"$Im\{\rho_p/\rho_0\}$",
+    #                                            r"$|S|$", r"$\angle S$"],
+    #                      'known_thickness': True,
+    #                      'TF' : False},
+    #                     7:
+    #                     {"name": "NLR single layer with unknown thickness - P(f)",
+    #                      "num_model_par": 7,
+    #                      "parameters_names" : [r"$Re\{k_p/k_0\}$", r"$Im\{k_p/k_0\}$",
+    #                                            r"$Re\{\rho_p/\rho_0\}$", r"$Im\{\rho_p/\rho_0\}$",
+    #                                            r"$|S|$", r"$\angle S$",  
+    #                                            r"$t_p$"],
+    #                      'known_thickness': False,
+    #                      'TF' : False},
+    #                     8:
+    #                     {"name": "PW-NLR single layer with known thickness - H(f)",
+    #                      "num_model_par": 4,
+    #                      "parameters_names" : [r"$Re\{k_p/k_0\}$", r"$Im\{k_p/k_0\}$",
+    #                                            r"$Re\{\rho_p/\rho_0\}$", 
+    #                                            r"$Im\{\rho_p/\rho_0\}$"],
+    #                      'known_thickness': True,
+    #                      'TF' : True}
+    #                     }
