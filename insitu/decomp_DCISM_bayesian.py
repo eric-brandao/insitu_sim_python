@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 #from sklearn.linear_model import Ridge
 #from lcurve_functions_EU import csvd, l_curve, tikhonov
 import lcurve_functions as lc
+from IPython.display import clear_output
 
 import utils_insitu as ut_is
 # from decomp_quad_v2 import Decomposition_QDT
@@ -768,11 +769,9 @@ class DCISM_Bayesian(object):
             self.ba_list.append(ba)
             self.logZ_spk[jf] = ba.logZ
             self.logZ_err_spk[jf] = ba.logZ_err
+            clear_output()
+        print("Inference frequency loop finished!")
         
-        # if self.chosen_model > 1:
-        #     self.get_kp_spk()
-        #     self.get_rhop_spk()
-        #     self.get_zp_spk()
         
     def nested_sampling_spk_seq(self, start_freq = 1000, fac = 5):
         """ Run inference for all frequency bins
