@@ -18,6 +18,7 @@ class ElipsoidalSampling():
         self.coords = coords
         self.n_pts = self.coords.shape[0]
         self.Ndim = self.coords.shape[1]
+        self.eps = np.finfo(float).eps
     
     def mean(self,):
         """ Computes coordinate's mean value for each dimension
@@ -61,7 +62,10 @@ class ElipsoidalSampling():
     def ellipse_axis(self, E, eigvals, enlargement_factor = 1.1):
         """ Compute ellipse axis with enlargement
         """
+        eigvals[eigvals <= 0] = self.eps
         axes = np.sqrt(enlargement_factor * E * eigvals)
+        
+        print(eigvals)
         return axes
         
     def sample_in_sphere(self,):

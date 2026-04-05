@@ -227,7 +227,7 @@ dcism_b_41.choose_forward_model(chosen_model = 41)
 dcism_b_41.show_chosen_model_parameters()
 dcism_b_41.set_mic_pairs()
 dcism_b_41.setup_dDCISM(T0 = 7.5, dt = 0.1, tol = 1e-6, gamma=1.0)
-dcism_b_41.set_source_height_prior_limits(zs_bounds = [0.85*source.coord[2], 1.15*source.coord[2]])
+dcism_b_41.set_thickness_prior_limits(tp_bounds = [0.85*thickness, 1.15*thickness])
 dcism_b_41.set_nested_sampling_parameters(n_live = 50, max_iter = 2000, 
                                        max_up_attempts = 50, seed = 0, dlogz = 0.1,
                                        ci_percent = 80)
@@ -264,7 +264,7 @@ dcism_b_42.show_chosen_model_parameters()
 dcism_b_42.set_mic_pairs()
 dcism_b_42.setup_dDCISM(T0 = 7.5, dt = 0.1, tol = 1e-6, gamma=1.0)
 dcism_b_42.set_sample_thickness(t_p = field.material.thickness)
-dcism_b_42.set_source_height_prior_limits(zs_bounds = [0.85*source.coord[2], 1.15**source.coord[2]])
+dcism_b_42.set_source_height_prior_limits(zs_bounds = [0.85*source.coord[0,2], 1.15*source.coord[0,2]])
 dcism_b_42.set_nested_sampling_parameters(n_live = 50, max_iter = 2000, 
                                        max_up_attempts = 50, seed = 0, dlogz = 0.1,
                                        ci_percent = 80)
@@ -293,6 +293,46 @@ _, ax = ut_is.give_me_an_ax(figshape = (1,2), figsize = (7,3))
 ax[0,0].semilogx(controls.freq, np.real(material.rhop), '--k')
 ax[0,1].semilogx(controls.freq, np.imag(material.rhop), '--k')
 ax = dcism_b_42.plot_rhop(ax = ax, color = 'olivedrab')
+
+#%% DCISM estimation (Bayesian) - NLR unkown thickness and SOURCE
+dcism_b_43 = DCISM_Bayesian(p_mtx = field.pres_mtx, controls = controls, air = air, 
+                         receivers = receivers, source = source, 
+                         sampling_scheme = 'single ellipsoid', enlargement_factor = 1)
+dcism_b_43.choose_forward_model(chosen_model = 43)
+dcism_b_43.show_chosen_model_parameters()
+dcism_b_43.set_mic_pairs()
+dcism_b_43.setup_dDCISM(T0 = 7.5, dt = 0.1, tol = 1e-6, gamma=1.0)
+dcism_b_43.set_thickness_prior_limits(tp_bounds = [0.85*thickness, 1.15*thickness])
+dcism_b_43.set_source_height_prior_limits(zs_bounds = [0.85*source.coord[0,2], 1.15*source.coord[0,2]])
+dcism_b_43.set_nested_sampling_parameters(n_live = 50, max_iter = 2000, 
+                                       max_up_attempts = 50, seed = 0, dlogz = 0.1,
+                                       ci_percent = 80)
+dcism_b_43.kp_rhop_range(resist = [3000, 60000], phi = [0.8, 0.99], alpha_inf = [1.0, 1.5], 
+                      Lam = [100e-6, 300e-6], Lamlfac = [1.01, 2.0], n_samples = 20000)
+
+#%%
+dcism_b_43.nested_sampling_spk()
+
+#%% Reconstructions
+dcism_b_43.get_kp_spk()
+dcism_b_43.get_rhop_spk()
+dcism_b_43.get_zp_spk()
+dcism_b_43.get_resist_spk()
+dcism_b_43.get_vp_nlr_spk(theta = np.deg2rad(field.material.theta_deg))
+
+
+
+#%% Plots kp, rhop, Zp,
+_, ax = ut_is.give_me_an_ax(figshape = (1,2), figsize = (7,3))
+ax[0,0].semilogx(controls.freq, np.real(material.kp), '--k')
+ax[0,1].semilogx(controls.freq, np.imag(material.kp), '--k')
+ax = dcism_b_43.plot_kp(ax = ax, color = 'olivedrab')
+
+_, ax = ut_is.give_me_an_ax(figshape = (1,2), figsize = (7,3))
+ax[0,0].semilogx(controls.freq, np.real(material.rhop), '--k')
+ax[0,1].semilogx(controls.freq, np.imag(material.rhop), '--k')
+ax = dcism_b_43.plot_rhop(ax = ax, color = 'olivedrab')
+
 
 #%% DCISM estimation (Bayesian) - NLR - plane-wave
 dcism_b_pw = DCISM_Bayesian(p_mtx = field.pres_mtx, controls = controls, air = air, 
@@ -348,5 +388,7 @@ ax = dcism_b_pw.plot_Vp_spk(ax = ax, color = 'b', jtheta = 75)
 #%% Plot logZ
 _, ax = ut_is.give_me_an_ax(figshape = (1,1), figsize = (7,3))
 dcism_b.plot_logZ_spk(ax = ax[0, 0], color = 'b')
+dcism_b_43.plot_logZ_spk(ax = ax[0, 0], color = 'r')
 dcism_b_pw.plot_logZ_spk(ax = ax[0, 0], color = 'g')
-ax[0, 0].set_ylim((-200,150))
+
+ax[0, 0].set_ylim((30,150))

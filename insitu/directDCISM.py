@@ -179,6 +179,8 @@ class dDCISM(object):
         # kz1 = np.sqrt(k_p**2 - k**2)
         num = (1j * kz0 / self.air.rho0) - (kz1 / rho_p) * np.tan(kz1 * t_p)
         den = (1j * kz0 / self.air.rho0) + (kz1 / rho_p) * np.tan(kz1 * t_p)
+        #print("kp {} / rhop {}".format(k_p, rho_p))
+        # print(den)
         Vp_sampled = num / den
         return Vp_sampled
     
