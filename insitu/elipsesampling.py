@@ -43,6 +43,7 @@ class ElipsoidalSampling():
         """
         # eigvals, eigvecs = np.linalg.eigh(cov_mtx)
         eigvals, eigvecs = eigen_decomp_nu(cov_mtx)
+        eigvals[eigvals <= 0] = self.eps
         return eigvals, eigvecs
         
     def mahalanobis_dist(self, eigvals, eigvecs, coords_minus_mean, eps = 1e-12):
@@ -62,10 +63,7 @@ class ElipsoidalSampling():
     def ellipse_axis(self, E, eigvals, enlargement_factor = 1.1):
         """ Compute ellipse axis with enlargement
         """
-        eigvals[eigvals <= 0] = self.eps
         axes = np.sqrt(enlargement_factor * E * eigvals)
-        
-        print(eigvals)
         return axes
         
     def sample_in_sphere(self,):
