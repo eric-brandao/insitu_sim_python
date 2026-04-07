@@ -772,6 +772,64 @@ class DCISM_Bayesian(object):
             clear_output()
         print("Inference frequency loop finished!")
         
+    def nested_sampling_spk2(self, freqs_init = [700, 1000, 1500]):
+        """ Run inference for all frequency bins
+        
+        Parameters
+        ----------
+        freqs_init : list
+            list of frequencies for initial estimation
+        """
+        resist_freq = np.zeros(len(freqs_init))
+        for jf, f in enumerate(freqs_init):
+            # Message
+            print("NS init run for {:.2f} [Hz] ({} of {} bins)".format(f, jf+1, len(freqs_init)))
+            # freq index to run
+            idf = ut_is.find_freq_index(freq_vec = self.controls.freq, freq_target = f)
+            # get bounds from study
+            lb, ub = self.set_prior_limits_from_study(jf = idf)
+            # run Bayesian inference
+            ba = self.nested_sampling_single_freq(lb, ub, jf = idf)
+            # Compute flow resistivity from each freq
+            rhop_mean_im = ba.mean_values[3]
+            resist_freq[jf] = -self.controls.w[idf] * rhop_mean_im
+            print("Initial inference frequency loop finished!")
+        # mean flow - resistivity across spk
+        resist_mean = np.mean(resist_freq)
+        # Re-run material study
+        self.kp_rhop_range_del(resist = [0.5*resist_mean, 2*resist_mean], n_samples = 20000)
+        # Run whole spk
+        self.nested_sampling_spk()            
+
+    def nested_sampling_spk_seqg(self, start_freq = 1000, fac = 5):
+        """ Sequential nested sampling with gauss prior
+        
+        """
+        # empty list with all Bayesian inference objects.
+        self.ba_list = [None]*len(self.controls.k0)
+        self.logZ_spk = np.zeros(len(self.controls.k0))
+        self.logZ_err_spk = np.zeros(len(self.controls.k0))
+        # starting index
+        start_id = ut_is.find_freq_index(freq_vec = self.controls.freq, 
+                                         freq_target = start_freq)
+        id_vec = np.arange(0, len(self.controls.freq))
+        id_vec_shifted = np.concatenate((id_vec[start_id:], id_vec[:start_id][::-1]))
+        freq_vec_shifted = self.controls.freq[id_vec_shifted]
+        k0_vec_shifted = self.controls.k0[id_vec_shifted]
+        
+        # Initial phase
+        lb, ub = self.set_prior_limits_from_study(jf = start_id)
+        delta_ulb = np.abs(ub-lb)
+        print(ub)
+        print(lb)
+        print(delta_ulb)
+        print("NS run (INIT) for {:.2f} [Hz] ({} of {} bins)".format(freq_vec_shifted[0],
+                                                                     1, len(freq_vec_shifted)))
+        # ba = self.nested_sampling_single_freq(lb, ub, jf = id_vec_shifted[0])
+        # # Put it in the correct place at list
+        # self.ba_list[id_vec_shifted[0]] = ba
+        # self.logZ_spk[id_vec_shifted[0]] = ba.logZ
+        # self.logZ_err_spk[id_vec_shifted[0]] = ba.logZ_err
         
     def nested_sampling_spk_seq(self, start_freq = 1000, fac = 5):
         """ Run inference for all frequency bins
@@ -1377,7 +1435,22 @@ class DCISM_Bayesian(object):
             self.ub_mtx = mat.get_max_kp_rhop(k_p_samples, rho_p_samples)
             # self.lb_mtx[2,:] = 1.0#self.air.rho0*np.ones(self.lb_mtx.shape[1])
             # self.ub_mtx[2,:] = 1.1#*self.air.rho0*np.ones(self.lb_mtx.shape[1])
-            
+    
+    def kp_rhop_range_del(self, resist = [3000, 60000],
+                           thickness = [2e-3, 20e-2], theta_deg = [0, 75],
+                           n_samples = 20000):
+        """ Run a Miki range study to determine useful ranges for kp and rhop
+        """
+        k_p_samples, rho_p_samples, beta_samples = mat.kp_rhop_range_study_del(
+            resist = resist, thickness = thickness, theta_deg = theta_deg, 
+            n_samples = n_samples, freq_vec = self.controls.freq)
+        if self.chosen_model == 10:
+            self.lb_mtx = mat.get_min_beta(beta_samples)
+            self.ub_mtx = mat.get_max_beta(beta_samples)
+        else:
+            self.lb_mtx = mat.get_min_kp_rhop(k_p_samples, rho_p_samples)
+            self.ub_mtx = mat.get_max_kp_rhop(k_p_samples, rho_p_samples)
+    
     def plot_reim(self, meanval, cival, label = None, 
                   ax = None, figshape = (1, 2), figsize = (8, 3),
                   color = 'r'):

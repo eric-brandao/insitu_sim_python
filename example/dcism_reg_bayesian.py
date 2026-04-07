@@ -66,8 +66,9 @@ dcism_b.set_nested_sampling_parameters(n_live = 50, max_iter = 2000,
                                        max_up_attempts = 50, seed = 0, dlogz = 0.1,
                                        ci_percent = 80)
 #%% 
-dcism_b.kp_rhop_range(resist = [3000, 60000], phi = [0.8, 0.99], alpha_inf = [1.0, 1.5], 
-                      Lam = [100e-6, 300e-6], Lamlfac = [1.01, 2.0], n_samples = 20000)
+# dcism_b.kp_rhop_range(resist = [3000, 60000], phi = [0.8, 0.99], alpha_inf = [1.0, 1.5], 
+#                       Lam = [100e-6, 300e-6], Lamlfac = [1.01, 2.0], n_samples = 20000)
+dcism_b.kp_rhop_range_del(resist = [3000, 60000], n_samples = 20000)
 lb = dcism_b.lb_mtx[:,id_f]
 ub = dcism_b.ub_mtx[:,id_f]
 lb, ub = dcism_b.set_prior_limits(lower_bounds = lb, upper_bounds = ub)
@@ -102,7 +103,9 @@ ax[0,0].fill_between(field.material.theta_deg, alpha_ci[0,:], alpha_ci[1,:],
 plt.tight_layout()
 
 #%% Run SPK estimation
-dcism_b.nested_sampling_spk()
+#dcism_b.nested_sampling_spk()
+dcism_b.nested_sampling_spk2(freqs_init = [700, 1000, 1500])
+
 #%% Reconstructions
 dcism_b.get_kp_spk()
 dcism_b.get_rhop_spk()

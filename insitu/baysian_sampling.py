@@ -160,7 +160,7 @@ class BayesianSampler(object):
         return prior_cube      
         
     def transform_cube(self, prior_cube):
-        """ Get prior samples in the transformed space
+        """ Get prior samples in the transformed space (uniform prior sampling)
         """
         # prior_samples = transform_cube_numba(prior_cube, self.lower_bounds, 
         #                                      self.upper_bounds)
@@ -168,6 +168,19 @@ class BayesianSampler(object):
         for jp in range(self.num_model_par):
             prior_samples[:, jp] = prior_cube[:, jp] *\
                 (self.upper_bounds[jp]-self.lower_bounds[jp]) + self.lower_bounds[jp]
+        return prior_samples
+    
+    def set_gauss_prior(self, mu, sigma_mtx):
+        """ Sets the gaussian prior parameters
+        """
+        self.mu = mu
+        self.L = np.linalg.cholesky(sigma_mtx)
+    
+    def transform_gaussian(self, prior_cube):
+        """ Get prior samples in the transformed space (gaussian prior sampling)
+        """
+        z = scipy.stats.norm.ppf(prior_cube)        # map to N(0,1)
+        prior_samples = self.mu + self.L @ z                # correlate + shift
         return prior_samples
     
     def set_log_normal_1d_std(self, sigma = 1):
