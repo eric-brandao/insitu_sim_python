@@ -1123,12 +1123,20 @@ class DCISM_Bayesian(object):
         kp_samples = self.get_kp(ba.prior_samples[:,0:4], k0)
         rhop_samples = self.get_rhop(ba.prior_samples[:,0:4])
         # Get the samples of thickness
-        if self.num_model_par == 4:
+        # if self.num_model_par == 4 or self.chosen_model == 42:
+        #     tp_samples = self.t_p*np.ones(ba.prior_samples.shape[0])
+        # elif self.num_model_par == 5 or self.chosen_model == 41:
+        #     tp_samples = ba.prior_samples[:,-1]
+        # elif self.num_model_par == 6:
+        #     tp_samples = ba.prior_samples[:,-2]
+        if self.chosen_model_dict['known_thickness']:
             tp_samples = self.t_p*np.ones(ba.prior_samples.shape[0])
-        elif self.num_model_par == 5:
-            tp_samples = ba.prior_samples[:,-1]
-        elif self.num_model_par == 6:
-            tp_samples = ba.prior_samples[:,-2]
+        else:
+            if self.num_model_par == 5:
+                tp_samples = ba.prior_samples[:,-1]
+            else:
+                tp_samples = ba.prior_samples[:,-2]
+            
         
         # Angular wave-number in air
         k0z = k0*np.cos(theta)
@@ -1444,6 +1452,29 @@ class DCISM_Bayesian(object):
         plt.tight_layout()
         return ax
     
+    def plot_Zs_spk(self, ax = None, figshape = (1, 2), figsize = (8, 3),
+                color = 'r', jtheta = 0, normalize = True):
+        """ Plots the Surface impedance as a function of frequency
+        """
+        if normalize:
+            zs_mean = self.zs_mean[jtheta, :]/(self.air.rho0*self.air.c0)
+            zs_ci = self.zs_ci[:,jtheta, :]/(self.air.rho0*self.air.c0)
+            ylabel = [r"$Re\{Z_s\}/(\rho_0 c_0)$", r"$Im\{Z_s\}/(\rho_0 c_0)$"]
+        else:
+            zs_mean = self.zs_mean[jtheta, :]
+            zs_ci = self.zs_ci[:,jtheta, :]
+            ylabel = [r"$Re\{Z_s\}$", r"$Im\{Z_s\}$"]
+            
+        ax = self.plot_reim(zs_mean, zs_ci, 
+                            label = None, ax = ax,
+                            figshape = figshape, figsize = figsize, color = color)
+        ax[0,0].set_ylim((-1,1))
+        ax[ax.shape[0]-1,ax.shape[1]-1].set_ylim((-1,1))
+        ax[0,0].set_ylabel(ylabel[0])
+        ax[ax.shape[0]-1,ax.shape[1]-1].set_ylabel(ylabel[1])
+        plt.tight_layout()
+        return ax
+    
     def plot_alpha_spk(self, ax = None, figshape = (1, 2), figsize = (8, 3),
                 color = 'r', jtheta = 0):
         """ Plots the Absorption coefficient as a function of frequency
@@ -1461,14 +1492,14 @@ class DCISM_Bayesian(object):
         return ax
     
     def plot_logZ_spk(self, ax = None, figshape = (1, 2), figsize = (8, 3),
-                color = 'r', tolerance = 5, label = ''):
+                color = 'r', tolerance = 5, linestyle = '-', alpha = 1, label = ''):
         """ Plots the LogZ as a function of frequency
         """        
         ax = ut_is.plot_1d_curve(self.controls.freq, self.logZ_spk, ax = ax, 
                                  xlims = (self.controls.freq[0], self.controls.freq[-1]), 
                                  ylims = None,
-                                 color = color, linewidth = 1.5, linestyle = '-',
-                                 alpha = 1.0, label = label,
+                                 color = color, linewidth = 1.5, linestyle = linestyle,
+                                 alpha = alpha, label = label,
                                  xlabel = "Frequency", ylabel = r"$\log(Z)$ [Np]",
                                  linx = False, liny = True, 
                                  xticks = [31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000])
