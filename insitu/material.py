@@ -303,6 +303,33 @@ def kp_rhop_range_study_del(resist = [3000, 60000], n_samples = 20000,
         beta[jm, :] = (air.rho0*air.c0) / Zs
     return k_p, rho_p, beta
 
+def kp_rhop_range_study_miki(resist = [3000, 60000], n_samples = 20000,
+                        thickness = [2e-3, 20e-2], theta_deg = [0, 75],
+                        freq_vec = [125, 250, 500, 1000, 2000, 4000]):
+    # Air and controls
+    air = AirProperties(c0 = 343.0, rho0 = 1.21)
+    controls = AlgControls(c0 = air.c0, freq_vec = freq_vec)
+    # Sample
+    resist_s = np.random.uniform(low = resist[0], high = resist[1], size = n_samples)
+    tp_s = np.random.uniform(low = thickness[0], high = thickness[1], size = n_samples)
+    theta_deg_s = np.random.uniform(low = theta_deg[0], high = theta_deg[1], size = n_samples)
+    
+    # Loop
+    k_p = np.zeros((n_samples, len(controls.freq)), dtype = complex)
+    rho_p = np.zeros((n_samples, len(controls.freq)), dtype = complex)
+    beta = np.zeros((n_samples, len(controls.freq)), dtype = complex)
+    for jm in range(n_samples):
+        material = PorousAbsorber(air, controls)
+        material.miki(resistivity = resist_s[jm])
+        k_p[jm, :] = material.kp/controls.k0 # Normalized
+        cp_miki = controls.w/material.kp
+        rhop_miki = material.Zp/cp_miki
+        rho_p[jm, :] = rhop_miki/air.rho0 # Normalized
+        # surface admittance
+        Zs, _, _ = material.layer_over_rigid(thickness = tp_s[jm], theta = theta_deg_s[jm])
+        beta[jm, :] = (air.rho0*air.c0) / Zs
+    return k_p, rho_p, beta
+
 def get_min_kp_rhop(k_p, rho_p):
     min_kp_r = np.amin(np.real(k_p), axis = 0)
     min_kp_i = np.amin(np.imag(k_p), axis = 0)

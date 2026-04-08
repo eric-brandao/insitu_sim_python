@@ -21,23 +21,23 @@ import utils_insitu as ut_is
 #%% Exp DCISM
 exp_folder = "D:/Work/UFSM/Pesquisa/insitu_arrays/DCISM/BayesianDCISM/experimental_study/ba_est/"
 dcism_b_4_exp = DCISM_Bayesian()
-dcism_b_4_exp.load(path = exp_folder, filename = 'ba_exp_dcism_model4_PET50mm_s50cm')
-
-sim_folder = "D:/Work/UFSM/Pesquisa/insitu_arrays/DCISM/BayesianDCISM/simulation_study/ba_est/"
-dcism_b_4_sim = DCISM_Bayesian()
-dcism_b_4_sim.load(path = sim_folder, filename = 'ba_dcism_model4_PET50mm_S50_DLA')
+dcism_b_4_exp.load(path = exp_folder, filename = 'ba_exp_model40_PET_s30cm')
+dcism_b_4_exp.kp_rhop_range_miki(resist = [500, 60000], n_samples = 20000)
+# sim_folder = "D:/Work/UFSM/Pesquisa/insitu_arrays/DCISM/BayesianDCISM/simulation_study/ba_est/"
+# dcism_b_4_sim = DCISM_Bayesian()
+# dcism_b_4_sim.load(path = sim_folder, filename = 'ba_dcism_model4_PET50mm_S50_DLA')
 #%% Air, Controls, Material
 air = AirProperties(c0 = 343.0, rho0 = 1.21)
 controls = AlgControls(c0 = air.c0, freq_vec = np.arange(100, 2000, 100))
 thickness =  50/1000
 material = PorousAbsorber(air, controls)
-material.jcal(resistivity = 4000, porosity = 0.90, tortuosity = 1.00, 
+material.jcal(resistivity = 4500, porosity = 0.90, tortuosity = 1.00, 
               lam = 362.1e-6, lam_l = 362.2e-6)
 material.layer_over_rigid_theta(thickness = thickness, theta_end = 89)
 material.layer_over_rigid(thickness = thickness, theta = 0.0);
 
 #%% Sound field sim
-source = Source(coord = [0,0, 0.5])
+source = Source(coord = [0,0, 0.3])
 field = dDCISM(air = air, controls = controls, source = source,
                           receivers = dcism_b_4_exp.receivers, material = material,
                           T0 = 7.5, dt = 0.1, tol = 1e-10, gamma=1.0) # ppro_obj.meas_obj.source
@@ -47,17 +47,18 @@ field.add_noise(snr = 30)
 dcism_b = DCISM_Bayesian(p_mtx = field.pres_mtx, controls = field.controls, air = field.air, 
                          receivers = field.receivers, source = field.source,
                          sampling_scheme = 'single ellipsoid', enlargement_factor = 1.0)
-dcism_b.choose_forward_model(chosen_model = 4)
+dcism_b.choose_forward_model(chosen_model = 40)
 dcism_b.set_mic_pairs()
 dcism_b.setup_dDCISM(T0 = 7.5, dt = 0.1, tol = 1e-6, gamma=1.0)
 dcism_b.set_sample_thickness(t_p = field.material.thickness)
 dcism_b.set_nested_sampling_parameters(n_live = 50, max_iter = 2000, max_up_attempts = 100, 
                                        seed = 0, dlogz = 1, ci_percent = 99)
-dcism_b.kp_rhop_range(resist = [2000, 60000], phi = [0.8, 0.99], alpha_inf = [1.0, 1.5], 
-                      Lam = [100e-6, 300e-6], Lamlfac = [1.01, 2.0], n_samples = 20000)
+# dcism_b.kp_rhop_range(resist = [2000, 60000], phi = [0.8, 0.99], alpha_inf = [1.0, 1.5], 
+#                       Lam = [100e-6, 300e-6], Lamlfac = [1.01, 2.0], n_samples = 20000)
+dcism_b.kp_rhop_range_miki(resist = [500, 60000], n_samples = 20000)
 
 #%%
-lb_mtx, ub_mtx = dcism_b.nested_sampling_spk_seq(start_freq = 1000, fac = 5)
+dcism_b.nested_sampling_spk2(freqs_init = [700, 1000, 1500], res_factor = 2)
 
 #%%
 #%% Reconstructions
@@ -69,28 +70,30 @@ dcism_b.get_vp_nlr_spk(theta = np.deg2rad(field.material.theta_deg))
 ax = ut_is.plot_spk_re_imag(controls.freq, material.kp, xlims = None, ylims = None, 
               color = 'k', linewidth = 1.5, linestyle = '--',
               alpha = 1.0, label = 'True')
-ax = ut_is.plot_spk_re_imag(dcism_b_4_exp.controls.freq, dcism_b_4_exp.kp_mean, ax, 
-              color = 'tab:blue', linewidth = 1.5, linestyle = '--',
-              alpha = 1.0, label = 'measured')
+# ax = ut_is.plot_spk_re_imag(dcism_b_4_exp.controls.freq, dcism_b_4_exp.kp_mean, ax, 
+#               color = 'tab:blue', linewidth = 1.5, linestyle = '--',
+#               alpha = 1.0, label = 'measured')
 ax = ut_is.plot_spk_re_imag(dcism_b.controls.freq, dcism_b.kp_mean, ax, 
               color = 'tab:green', linewidth = 1.5, linestyle = '--',
               alpha = 1.0, label = 'simulated')
+ax[0,0].fill_between(dcism_b_4_exp.controls.freq, 
+                     dcism_b_4_exp.controls.k0*dcism_b_4_exp.lb_mtx[0,:], 
+                     dcism_b_4_exp.controls.k0*dcism_b_4_exp.ub_mtx[0,:], 
+                     color = 'grey', alpha = 0.2, 
+                     edgecolor = 'grey')
+ax[0,1].fill_between(dcism_b_4_exp.controls.freq, 
+                     dcism_b_4_exp.controls.k0*dcism_b_4_exp.lb_mtx[1,:], 
+                     dcism_b_4_exp.controls.k0*dcism_b_4_exp.ub_mtx[1,:], color = 'grey', alpha = 0.2, 
+                     edgecolor = 'grey')
 ax[0,0].fill_between(controls.freq, controls.k0*dcism_b.lb_mtx[0,:], 
-                     controls.k0*dcism_b.ub_mtx[0,:], color = 'grey', alpha = 0.2, 
+                     controls.k0*dcism_b.ub_mtx[0,:], color = 'crimson', alpha = 0.2, 
                      edgecolor = 'grey')
 ax[0,1].fill_between(controls.freq, controls.k0*dcism_b.lb_mtx[1,:], 
-                     controls.k0*dcism_b.ub_mtx[1,:], color = 'grey', alpha = 0.2, 
+                     controls.k0*dcism_b.ub_mtx[1,:], color = 'crimson', alpha = 0.2, 
                      edgecolor = 'grey')
-ax[0,0].fill_between(controls.freq, controls.k0*lb_mtx[0,:], 
-                     controls.k0*ub_mtx[0,:], color = 'r', alpha = 0.4, 
-                     edgecolor = 'r')
-ax[0,1].fill_between(controls.freq, controls.k0*lb_mtx[1,:], 
-                     controls.k0*ub_mtx[1,:], color = 'r', alpha = 0.4, 
-                     edgecolor = 'r')
-ax[0,0].set_ylim((np.amin(controls.k0*dcism_b.lb_mtx[0,:]), 
-                  np.amax(controls.k0*dcism_b.ub_mtx[0,:])))
-ax[0,1].set_ylim((np.amin(controls.k0*dcism_b.lb_mtx[1,:]), 
-                  np.amax(controls.k0*dcism_b.ub_mtx[1,:])))
+
+ax[0,0].set_ylim((0,80))
+ax[0,1].set_ylim((-25, 0))
 #%%
 ax = ut_is.plot_spk_re_imag(controls.freq, material.rhop, xlims = None, ylims = None, 
               color = 'k', linewidth = 1.5, linestyle = '--',
@@ -98,25 +101,25 @@ ax = ut_is.plot_spk_re_imag(controls.freq, material.rhop, xlims = None, ylims = 
 # ax = ut_is.plot_spk_re_imag(controls.freq, air.rho0*np.ones(len(controls.freq)), ax,
 #               color = 'r', linewidth = 1.5, linestyle = '--',
 #               alpha = 1.0, label = 'air')
-ax = ut_is.plot_spk_re_imag(dcism_b_4_exp.controls.freq, dcism_b_4_exp.rhop_mean, ax, 
-              color = 'tab:blue', linewidth = 1.5, linestyle = '--',
-              alpha = 1.0, label = 'measured')
+# ax = ut_is.plot_spk_re_imag(dcism_b_4_exp.controls.freq, dcism_b_4_exp.rhop_mean, ax, 
+#               color = 'tab:blue', linewidth = 1.5, linestyle = '--',
+#               alpha = 1.0, label = 'measured')
 ax = ut_is.plot_spk_re_imag(dcism_b.controls.freq, dcism_b.rhop_mean, ax, 
               color = 'tab:green', linewidth = 1.5, linestyle = '--',
               alpha = 1.0, label = 'simulated')
+ax[0,0].fill_between(dcism_b_4_exp.controls.freq, 
+                     air.rho0*dcism_b_4_exp.lb_mtx[2,:], 
+                     air.rho0*dcism_b_4_exp.ub_mtx[2,:], color = 'grey', alpha = 0.2, 
+                     edgecolor = 'grey')
+ax[0,1].fill_between(dcism_b_4_exp.controls.freq, 
+                     air.rho0*dcism_b_4_exp.lb_mtx[3,:], 
+                     air.rho0*dcism_b_4_exp.ub_mtx[3,:], color = 'grey', alpha = 0.2, 
+                     edgecolor = 'grey')
 ax[0,0].fill_between(controls.freq, air.rho0*dcism_b.lb_mtx[2,:], 
-                     air.rho0*dcism_b.ub_mtx[2,:], color = 'grey', alpha = 0.2, 
+                     air.rho0*dcism_b.ub_mtx[2,:], color = 'crimson', alpha = 0.2, 
                      edgecolor = 'grey')
 ax[0,1].fill_between(controls.freq, air.rho0*dcism_b.lb_mtx[3,:], 
-                     air.rho0*dcism_b.ub_mtx[3,:], color = 'grey', alpha = 0.2, 
+                     air.rho0*dcism_b.ub_mtx[3,:], color = 'crimson', alpha = 0.2, 
                      edgecolor = 'grey')
-ax[0,0].fill_between(controls.freq, air.rho0*lb_mtx[2,:], 
-                     air.rho0*ub_mtx[2,:], color = 'r', alpha = 0.4, 
-                     edgecolor = 'r')
-ax[0,1].fill_between(controls.freq, air.rho0*lb_mtx[3,:], 
-                     air.rho0*ub_mtx[3,:], color = 'r', alpha = 0.4, 
-                     edgecolor = 'r')
-ax[0,0].set_ylim((np.amin(air.rho0*dcism_b.lb_mtx[2,:]), 
-                  np.amax(air.rho0*dcism_b.ub_mtx[2,:])))
-ax[0,1].set_ylim((np.amin(air.rho0*dcism_b.lb_mtx[3,:]), 
-                  np.amax(air.rho0*dcism_b.ub_mtx[3,:])))
+ax[0,0].set_ylim((0,5))
+ax[0,1].set_ylim((-20,1))

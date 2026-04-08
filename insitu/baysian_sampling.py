@@ -34,7 +34,7 @@ class BayesianSampler(object):
     def __init__(self, measured_coords = None, measured_data = None, 
                  num_model_par = 1, parameters_names = None,
                  likelihood = None, sampling_scheme = 'single ellipsoid',
-                 enlargement_factor = 1.25):
+                 enlargement_factor = 1.25, uniform_prior = True):
         """ Bayesian sampling schemes
         
         Parameters
@@ -90,6 +90,11 @@ class BayesianSampler(object):
         else:
             self.sample_update_fun = self.sample_from_single_ellipse
         self.enlargement_factor = enlargement_factor
+        self.uniform_prior = uniform_prior
+        if self.uniform_prior:
+            self.transform_fun = self.transform_cube
+        else:
+            self.transform_fun = self.transform_gaussian
         
     def set_model_fun(self, model_fun):
         """ Set the model function which will be called multiple times at inference
@@ -175,12 +180,19 @@ class BayesianSampler(object):
         """
         self.mu = mu
         self.L = np.linalg.cholesky(sigma_mtx)
+        # print(self.mu)
+        # print(self.L)
     
     def transform_gaussian(self, prior_cube):
         """ Get prior samples in the transformed space (gaussian prior sampling)
         """
-        z = scipy.stats.norm.ppf(prior_cube)        # map to N(0,1)
-        prior_samples = self.mu + self.L @ z                # correlate + shift
+        prior_samples = np.zeros(prior_cube.shape)
+        for js in range(prior_cube.shape[0]):
+            eps = 1e-12
+            u_safe = np.clip(prior_cube[js,:], eps, 1 - eps)
+            z = scipy.stats.norm.ppf(u_safe)        # map to N(0,1)
+            prior_samples[js,:] = self.mu + self.L @ z                # correlate + shift
+        # print(prior_samples)
         return prior_samples
     
     def set_log_normal_1d_std(self, sigma = 1):
@@ -259,7 +271,7 @@ class BayesianSampler(object):
             log-likelihood values.
         """
         prior_cube = self.sample_uniform_prior_cube(num_samples = num_samples)
-        prior_samples = self.transform_cube(prior_cube)
+        prior_samples = self.transform_fun(prior_cube)
         # Initialize logp
         logp = np.zeros(num_samples)
         # bar
@@ -301,7 +313,7 @@ class BayesianSampler(object):
         """
         # sample values from prior.
         prior_cube = self.sample_uniform_prior_cube(num_samples = num_samples)
-        prior_samples = self.transform_cube(prior_cube)
+        prior_samples = self.transform_fun(prior_cube)
         # Initialize logp
         logp = np.zeros(num_samples)
         # Compute log-likelihood
@@ -672,7 +684,7 @@ class BayesianSampler(object):
         # clip to 0 an 1
         prop_samples_cube = np.clip(prop_samples_cube, 0, 1)
         # transform to your dommain
-        prop_samples = self.transform_cube(prop_samples_cube)
+        prop_samples = self.transform_fun(prop_samples_cube)
         # likelihood evals
         self.update_successful = False
         # theta_new = None

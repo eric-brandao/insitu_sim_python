@@ -304,6 +304,8 @@ class DCISM_Bayesian(object):
         # Apply physical filter
         lower_bounds, upper_bounds = self.set_physical_limits(lower_bounds = self.lb_mtx[:, jf], 
                                                               upper_bounds = self.ub_mtx[:, jf])
+        self.lb_mtx[:, jf] = np.copy(lower_bounds)
+        self.ub_mtx[:, jf] = np.copy(upper_bounds)
         # Add source strength
         if not self.chosen_model_dict['TF']:
             lower_bounds = np.append(lower_bounds, self.mag_s_bounds[0])
@@ -329,14 +331,16 @@ class DCISM_Bayesian(object):
         """
         if self.chosen_model != 10 and self.chosen_model != 11:
             # Re{k_p} constraint
-            if lower_bounds[0] < 1.00:
-                lower_bounds[0] = 1.00
+            # if lower_bounds[0] < 1.00:
+            #     lower_bounds[0] = 1.00
+            lower_bounds[0] = 1.00
             # Im{k_p} constraint
             if upper_bounds[1] > -0.01:
                 upper_bounds[1] = -0.01
             # Re{rho_p} constraint    
-            if lower_bounds[2] < 0.9: # 1.18/1.3
-                lower_bounds[2] = 0.9
+            # if lower_bounds[2] < 0.9: # 1.18/1.3
+            #     lower_bounds[2] = 0.9
+            lower_bounds[2] = 0.9
             # Im{rho_p} constraint    
             if upper_bounds[3] > -0.01: # 1.18/1.3
                 upper_bounds[3] = -0.01
@@ -772,7 +776,7 @@ class DCISM_Bayesian(object):
             clear_output()
         print("Inference frequency loop finished!")
         
-    def nested_sampling_spk2(self, freqs_init = [700, 1000, 1500]):
+    def nested_sampling_spk2(self, freqs_init = [700, 1000, 1500], res_factor = 2):
         """ Run inference for all frequency bins
         
         Parameters
@@ -793,11 +797,17 @@ class DCISM_Bayesian(object):
             # Compute flow resistivity from each freq
             rhop_mean_im = ba.mean_values[3]
             resist_freq[jf] = -self.controls.w[idf] * rhop_mean_im
-            print("Initial inference frequency loop finished!")
+        print("Initial inference frequency loop finished!")
         # mean flow - resistivity across spk
         resist_mean = np.mean(resist_freq)
         # Re-run material study
-        self.kp_rhop_range_del(resist = [0.5*resist_mean, 2*resist_mean], n_samples = 20000)
+        self.kp_rhop_range_miki(resist = [(1/res_factor)*resist_mean, res_factor*resist_mean],
+                               n_samples = 20000)
+        # self.kp_rhop_range(resist = [(1/res_factor)*resist_mean, res_factor*resist_mean], 
+        #                    n_samples = 20000,
+        #                    phi = [0.8, 0.99], alpha_inf = [1.0, 1.5], 
+        #                    Lam = [100e-6, 600e-6], Lamlfac = [1.01, 2.0])
+     
         # Run whole spk
         self.nested_sampling_spk()            
 
@@ -820,16 +830,46 @@ class DCISM_Bayesian(object):
         # Initial phase
         lb, ub = self.set_prior_limits_from_study(jf = start_id)
         delta_ulb = np.abs(ub-lb)
-        print(ub)
-        print(lb)
-        print(delta_ulb)
+        
         print("NS run (INIT) for {:.2f} [Hz] ({} of {} bins)".format(freq_vec_shifted[0],
                                                                      1, len(freq_vec_shifted)))
-        # ba = self.nested_sampling_single_freq(lb, ub, jf = id_vec_shifted[0])
-        # # Put it in the correct place at list
-        # self.ba_list[id_vec_shifted[0]] = ba
-        # self.logZ_spk[id_vec_shifted[0]] = ba.logZ
-        # self.logZ_err_spk[id_vec_shifted[0]] = ba.logZ_err
+        ba = self.nested_sampling_single_freq(lb, ub, jf = id_vec_shifted[0])
+        # Put it in the correct place at list
+        self.ba_list[id_vec_shifted[0]] = ba
+        self.logZ_spk[id_vec_shifted[0]] = ba.logZ
+        self.logZ_err_spk[id_vec_shifted[0]] = ba.logZ_err
+        # delta_ulb = np.abs(ba.ci[1,:]-ba.ci[0,:])
+        
+        # Freq loop
+        for jf in np.arange(1, len(freq_vec_shifted)):
+            # Message
+            print("NS run for {} [Hz] ({} of {} bins)".format(freq_vec_shifted[jf],
+                                                              jf+1, len(freq_vec_shifted)))
+            self.current_k0 = k0_vec_shifted[jf]
+            mu = ba.mean_values
+            sigma_mtx = np.diag(delta_ulb)
+            
+            ba = BayesianSampler(measured_coords = self.receivers.coord[self.id_z_list[0],:], 
+                                 measured_data = self.pres_s[:, jf],
+                                 parameters_names = self.parameters_names,
+                                 num_model_par = self.num_model_par,
+                                 sampling_scheme = self.sampling_scheme,
+                                 enlargement_factor = self.enlargement_factor,
+                                 uniform_prior = False)
+            ba.set_model_fun(model_fun = self.model_fun)
+            ba.set_gauss_prior(mu = mu, sigma_mtx = sigma_mtx)
+            # ba.set_uniform_prior_limits(lower_bounds = mu-delta_ulb, 
+            #                             upper_bounds = mu+delta_ulb)
+            ba.nested_sampling(n_live = self.n_live, max_iter = self.max_iter, 
+                               max_up_attempts = self.max_up_attempts, seed = self.seed,
+                               dlogz = self.dlogz)
+            # # ba.ultranested_sampling(n_live = self.n_live, max_iter = self.max_iter)
+            # # ba.ultranested_sampling_react(n_live = self.n_live, max_iter = self.max_iter)
+            ba.compute_statistics(ci_percent = self.ci_percent)
+            self.ba_list[id_vec_shifted[jf]] = ba
+            self.logZ_spk[id_vec_shifted[jf]] = ba.logZ
+            self.logZ_err_spk[id_vec_shifted[jf]] = ba.logZ_err
+        
         
     def nested_sampling_spk_seq(self, start_freq = 1000, fac = 5):
         """ Run inference for all frequency bins
@@ -1439,9 +1479,24 @@ class DCISM_Bayesian(object):
     def kp_rhop_range_del(self, resist = [3000, 60000],
                            thickness = [2e-3, 20e-2], theta_deg = [0, 75],
                            n_samples = 20000):
-        """ Run a Miki range study to determine useful ranges for kp and rhop
+        """ Run a Delany-Bazley range study to determine useful ranges for kp and rhop
         """
         k_p_samples, rho_p_samples, beta_samples = mat.kp_rhop_range_study_del(
+            resist = resist, thickness = thickness, theta_deg = theta_deg, 
+            n_samples = n_samples, freq_vec = self.controls.freq)
+        if self.chosen_model == 10:
+            self.lb_mtx = mat.get_min_beta(beta_samples)
+            self.ub_mtx = mat.get_max_beta(beta_samples)
+        else:
+            self.lb_mtx = mat.get_min_kp_rhop(k_p_samples, rho_p_samples)
+            self.ub_mtx = mat.get_max_kp_rhop(k_p_samples, rho_p_samples)
+            
+    def kp_rhop_range_miki(self, resist = [3000, 60000],
+                           thickness = [2e-3, 20e-2], theta_deg = [0, 75],
+                           n_samples = 20000):
+        """ Run a Miki range study to determine useful ranges for kp and rhop
+        """
+        k_p_samples, rho_p_samples, beta_samples = mat.kp_rhop_range_study_miki(
             resist = resist, thickness = thickness, theta_deg = theta_deg, 
             n_samples = n_samples, freq_vec = self.controls.freq)
         if self.chosen_model == 10:
@@ -1453,7 +1508,7 @@ class DCISM_Bayesian(object):
     
     def plot_reim(self, meanval, cival, label = None, 
                   ax = None, figshape = (1, 2), figsize = (8, 3),
-                  color = 'r'):
+                  color = 'r', alpha = 1):
         """ Plots real and imaginary values of a quantity with its confidence interval
         """
         if ax is None:
@@ -1461,9 +1516,9 @@ class DCISM_Bayesian(object):
             
         ax = ut_is.plot_spk_re_imag(self.controls.freq, meanval, ax = ax, 
                                     xlims = (self.controls.freq[0], self.controls.freq[-1]), 
-                                    ylims = None, color = color, 
+                                    ylims = None, color = color, alpha = alpha, 
                                     linewidth = 1.5, linestyle = '-',
-                                    alpha = 1.0, label = label)
+                                    label = label)
         ax[0,0].fill_between(self.controls.freq, np.real(cival[0,:]), 
                              np.real(cival[1,:]), color=color, alpha = 0.2,
                              edgecolor = 'none')
@@ -1479,45 +1534,50 @@ class DCISM_Bayesian(object):
         return ax
     
     def plot_kp(self, ax = None, figshape = (1, 2), figsize = (8, 3),
-                color = 'r'):
+                color = 'r', alpha = 1.0):
         """ Plots the wave-number as a function of frequency
         """
+        kp_mean = self.kp_mean/self.controls.k0
         ax = self.plot_reim(self.kp_mean, self.kp_ci, label = None, ax = ax,
-                            figshape = figshape, figsize = figsize, color = color)
+                            figshape = figshape, figsize = figsize, color = color,
+                            alpha = alpha)
         ax[0,0].set_ylabel(r"$Re\{k_p\}$")
         ax[ax.shape[0]-1,ax.shape[1]-1].set_ylabel(r"$Im\{k_p\}$")
         plt.tight_layout()
         return ax
     
     def plot_rhop(self, ax = None, figshape = (1, 2), figsize = (8, 3),
-                  color = 'r'):
+                  color = 'r', alpha = 1.0):
         """ Plots the density as a function of frequency
         """
         ax = self.plot_reim(self.rhop_mean, self.rhop_ci, label = None, ax = ax,
-                            figshape = figshape, figsize = figsize, color = color)
+                            figshape = figshape, figsize = figsize, color = color,
+                            alpha = alpha)
         ax[0,0].set_ylabel(r"$Re\{\rho_p\}$")
         ax[ax.shape[0]-1,ax.shape[1]-1].set_ylabel(r"$Im\{\rho_p\}$")
         plt.tight_layout()
         return ax
         
     def plot_Zp(self, ax = None, figshape = (1, 2), figsize = (8, 3),
-                color = 'r'):
+                color = 'r', alpha = 1.0):
         """ Plots the characteristic impedance as a function of frequency
         """
         ax = self.plot_reim(self.zp_mean, self.zp_ci, label = None, ax = ax,
-                            figshape = figshape, figsize = figsize, color = color)
+                            figshape = figshape, figsize = figsize, color = color,
+                            alpha = alpha)
         ax[0,0].set_ylabel(r"$Re\{Z_p\}$")
         ax[ax.shape[0]-1,ax.shape[1]-1].set_ylabel(r"$Im\{Z_p\}$")
         plt.tight_layout()
         return ax
     
     def plot_Vp_spk(self, ax = None, figshape = (1, 2), figsize = (8, 3),
-                color = 'r', jtheta = 0):
+                color = 'r', alpha = 1.0, jtheta = 0):
         """ Plots the Reflection coefficient as a function of frequency
         """
         ax = self.plot_reim(self.vp_mean[jtheta, :], self.vp_ci[:, jtheta,:], 
                             label = None, ax = ax,
-                            figshape = figshape, figsize = figsize, color = color)
+                            figshape = figshape, figsize = figsize, 
+                            color = color, alpha = alpha)
         ax[0,0].set_ylim((-1,1))
         ax[ax.shape[0]-1,ax.shape[1]-1].set_ylim((-1,1))
         ax[0,0].set_ylabel(r"$Re\{V_p\}$")
@@ -1526,7 +1586,7 @@ class DCISM_Bayesian(object):
         return ax
     
     def plot_Zs_spk(self, ax = None, figshape = (1, 2), figsize = (8, 3),
-                color = 'r', jtheta = 0, normalize = True):
+                color = 'r', alpha = 1, jtheta = 0, normalize = True):
         """ Plots the Surface impedance as a function of frequency
         """
         if normalize:
@@ -1540,7 +1600,8 @@ class DCISM_Bayesian(object):
             
         ax = self.plot_reim(zs_mean, zs_ci, 
                             label = None, ax = ax,
-                            figshape = figshape, figsize = figsize, color = color)
+                            figshape = figshape, figsize = figsize, color = color,
+                            alpha = alpha)
         ax[0,0].set_ylim((-1,1))
         ax[ax.shape[0]-1,ax.shape[1]-1].set_ylim((-1,1))
         ax[0,0].set_ylabel(ylabel[0])
@@ -1549,14 +1610,14 @@ class DCISM_Bayesian(object):
         return ax
     
     def plot_alpha_spk(self, ax = None, figshape = (1, 2), figsize = (8, 3),
-                color = 'r', jtheta = 0):
+                color = 'r', alpha = 1, jtheta = 0):
         """ Plots the Absorption coefficient as a function of frequency
         """        
         ax = ut_is.plot_absorption(self.controls.freq, self.alpha_mean[jtheta, :], ax = ax, 
                                    xlim = (self.controls.freq[0], self.controls.freq[-1]), 
                                    ylim = (-0.2, 1.2), 
                                    color = color, linewidth = 1.5, linestyle = '-',
-                                   alpha = 1.0, label = None)
+                                   alpha = alpha, label = None)
         ax.fill_between(self.controls.freq, self.alpha_ci[0, jtheta, :], 
                         self.alpha_ci[1, jtheta, :], color=color, alpha = 0.2,
                         edgecolor = 'none')

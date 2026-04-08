@@ -103,7 +103,7 @@ ax[0,0].fill_between(field.material.theta_deg, alpha_ci[0,:], alpha_ci[1,:],
 plt.tight_layout()
 
 #%% Run SPK estimation
-#dcism_b.nested_sampling_spk()
+# dcism_b.nested_sampling_spk()
 dcism_b.nested_sampling_spk2(freqs_init = [700, 1000, 1500])
 
 #%% Reconstructions
