@@ -797,9 +797,11 @@ class DCISM_Bayesian(object):
             # Compute flow resistivity from each freq
             rhop_mean_im = ba.mean_values[3]
             resist_freq[jf] = -self.controls.w[idf] * rhop_mean_im
+            clear_output()
         print("Initial inference frequency loop finished!")
         # mean flow - resistivity across spk
         resist_mean = np.mean(resist_freq)
+        print(r"Mean flow resistivity for init run: {} [Nsm$^-4$]".format(resist_mean))
         # Re-run material study
         self.kp_rhop_range_miki(resist = [(1/res_factor)*resist_mean, res_factor*resist_mean],
                                n_samples = 20000)

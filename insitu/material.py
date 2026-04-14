@@ -245,7 +245,9 @@ def kp_rhop_range_study(resist = [3000, 60000], phi = [0.15, 1.0],
                         alpha_inf = [1.0, 3.00], Lam = [50e-6, 300e-6],
                         Lamlfac = [1.01, 3.0], n_samples = 20000,
                         thickness = [2e-3, 20e-2], theta_deg = [0, 75],
-                        freq_vec = [125, 250, 500, 1000, 2000, 4000]):
+                        freq_vec = [125, 250, 500, 1000, 2000, 4000],
+                        seed = 242):
+    np.random.seed(seed)
     # Air and controls
     air = AirProperties(c0 = 343.0, rho0 = 1.21)
     controls = AlgControls(c0 = air.c0, freq_vec = freq_vec)
@@ -278,7 +280,9 @@ def kp_rhop_range_study(resist = [3000, 60000], phi = [0.15, 1.0],
 
 def kp_rhop_range_study_del(resist = [3000, 60000], n_samples = 20000,
                         thickness = [2e-3, 20e-2], theta_deg = [0, 75],
-                        freq_vec = [125, 250, 500, 1000, 2000, 4000]):
+                        freq_vec = [125, 250, 500, 1000, 2000, 4000],
+                        seed = 242):
+    np.random.seed(seed)
     # Air and controls
     air = AirProperties(c0 = 343.0, rho0 = 1.21)
     controls = AlgControls(c0 = air.c0, freq_vec = freq_vec)
@@ -305,7 +309,9 @@ def kp_rhop_range_study_del(resist = [3000, 60000], n_samples = 20000,
 
 def kp_rhop_range_study_miki(resist = [3000, 60000], n_samples = 20000,
                         thickness = [2e-3, 20e-2], theta_deg = [0, 75],
-                        freq_vec = [125, 250, 500, 1000, 2000, 4000]):
+                        freq_vec = [125, 250, 500, 1000, 2000, 4000],
+                        seed = 242):
+    np.random.seed(seed)
     # Air and controls
     air = AirProperties(c0 = 343.0, rho0 = 1.21)
     controls = AlgControls(c0 = air.c0, freq_vec = freq_vec)

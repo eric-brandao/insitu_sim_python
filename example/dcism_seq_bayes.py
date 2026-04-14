@@ -31,7 +31,7 @@ air = AirProperties(c0 = 343.0, rho0 = 1.21)
 controls = AlgControls(c0 = air.c0, freq_vec = np.arange(100, 2000, 100))
 thickness =  50/1000
 material = PorousAbsorber(air, controls)
-material.jcal(resistivity = 4500, porosity = 0.90, tortuosity = 1.00, 
+material.jcal(resistivity = 12200, porosity = 0.90, tortuosity = 1.00, 
               lam = 362.1e-6, lam_l = 362.2e-6)
 material.layer_over_rigid_theta(thickness = thickness, theta_end = 89)
 material.layer_over_rigid(thickness = thickness, theta = 0.0);
