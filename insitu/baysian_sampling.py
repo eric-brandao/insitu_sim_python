@@ -1348,12 +1348,19 @@ class BayesianSampler(object):
         
     def gaussian_kde_2d(self, dim2calc = [0, 1], 
                         xlim = None, ylim = None,
-                        loglike = False):
+                        loglike = False, scale = None):
         """ 2D gauss kde (normalized)
         """
         
+        # if scale is None:
+        #     samples = np.copy(self.prior_samples)
+        # else:
+        #     samples = np.zeros(self.prior_samples.shape)
+        #     for jcol in range(samples.shape[1]):
+        #         samples[:,jcol] = scale[jcol]*self.prior_samples[:,jcol]
+                
         # Get KDE kernel
-        kernel = scipy.stats.gaussian_kde(self.prior_samples[:, dim2calc].T,
+        kernel = scipy.stats.gaussian_kde(self.prior_samples[:,dim2calc].T, 
                                           weights = self.weights)
         # Create a meshgrid
         if xlim is None:
@@ -1368,6 +1375,10 @@ class BayesianSampler(object):
         else:
             ymin = ylim[0]
             ymax = ylim[1]
+        # if scale is not None:
+        #     xmin *= scale 
+            
+            
         x_m, y_m = np.mgrid[xmin:xmax:100j, ymin:ymax:100j]
         positions = np.vstack([x_m.ravel(), y_m.ravel()])
         if loglike:
@@ -1384,11 +1395,12 @@ class BayesianSampler(object):
     
     def plot_single_2d_kde(self, ax = None, dim2calc = [0, 1], 
                            cmap = 'inferno', mode = 'mesh',
-                           lb = None, ub = None):
+                           lb = None, ub = None, scale = None):
         
         x, y, p = self.gaussian_kde_2d(dim2calc = dim2calc, loglike = False,
                                        xlim = (lb[dim2calc[0]], ub[[dim2calc[0]]]),
-                                       ylim = (lb[dim2calc[1]], ub[[dim2calc[1]]]))
+                                       ylim = (lb[dim2calc[1]], ub[[dim2calc[1]]]),
+                                       scale = scale)
         if ax is None:
             _, ax = ut_is.give_me_an_ax(figshape = (1, 1), figsize = (4,4))
             ax = ax[0,0]
@@ -1396,13 +1408,15 @@ class BayesianSampler(object):
             ax.pcolormesh(x, y, p, cmap = cmap, shading = 'gouraud')
         else:
             ax.contourf(x, y, p, cmap = cmap, 
-                        levels = np.linspace(0, np.amax(p.ravel()), 10))
+                        levels = np.linspace(0, np.amax(p.ravel()), 20))
         return ax
             
     def plot_multi_2d_kde(self, ax = None, cmap = 'Blues', 
                           mode = 'mesh', figsize = None,
                           fine_tune_subplt = [0.15, 0.1, 0.98, 0.98],
-                          limit_to_ci = True):
+                          limit_to_ci = True,
+                          true_vals = None, color_true_vals = 'r',
+                          scale = None):
         """ Plots 2D multiple KDE relations
         
         Parameters
@@ -1444,9 +1458,18 @@ class BayesianSampler(object):
                 else:
                     ax[row, col] = self.plot_single_2d_kde(ax[row,col],
                                        dim2calc = [col, row+1], cmap = cmap,
-                                       mode = mode, lb = lb, ub = ub)
+                                       mode = mode, lb = lb, ub = ub,
+                                       scale = scale)
                     ax[row, col].xaxis.set_major_formatter(StrMethodFormatter('{x:.1f}'))
                     ax[row, col].yaxis.set_major_formatter(StrMethodFormatter('{x:.2f}'))
+        # True values
+        if true_vals is not None:
+            for row in range(self.num_model_par-1):
+                for col in range(self.num_model_par-1):
+                    ax[row, col].scatter(true_vals[col], true_vals[row+1], 
+                                         color = color_true_vals,
+                                         marker = 'x')
+                
         # labelling axis
         for col in range(self.num_model_par-1):
             ax[ax.shape[0]-1, col].set_xlabel(self.parameters_names[col])
@@ -1455,7 +1478,7 @@ class BayesianSampler(object):
         # cropping white-spaces
         fig.subplots_adjust(left = fine_tune_subplt[0], bottom = fine_tune_subplt[1],
                             right = fine_tune_subplt[2], top = fine_tune_subplt[3],
-                            wspace = 0.05, hspace = 0.025)
+                            wspace = 0.05, hspace = 0.05)
     
     
     def plot_like_surf(self, figsize = (5,5), textsize = None, 

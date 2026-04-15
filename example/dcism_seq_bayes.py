@@ -55,17 +55,33 @@ dcism_b.set_nested_sampling_parameters(n_live = 50, max_iter = 2000, max_up_atte
                                        seed = 0, dlogz = 1, ci_percent = 99)
 # dcism_b.kp_rhop_range(resist = [2000, 60000], phi = [0.8, 0.99], alpha_inf = [1.0, 1.5], 
 #                       Lam = [100e-6, 300e-6], Lamlfac = [1.01, 2.0], n_samples = 20000)
-dcism_b.kp_rhop_range_miki(resist = [500, 60000], n_samples = 20000)
+dcism_b.kp_rhop_range_miki(resist = [500, 80000], n_samples = 20000)
 
 #%%
-dcism_b.nested_sampling_spk2(freqs_init = [700, 1000, 1500], res_factor = 2)
+dcism_b.nested_sampling_spk2(freqs_init = [700, 800, 900], resist_range = 5000, res_factor = 2)
 
-#%%
 #%% Reconstructions
 dcism_b.get_kp_spk()
 dcism_b.get_rhop_spk()
 dcism_b.get_zp_spk()
 dcism_b.get_vp_nlr_spk(theta = np.deg2rad(field.material.theta_deg))
+
+#%%
+idf = ut_is.find_freq_index(dcism_b.controls.freq, freq_target=1000)
+# true_vals = np.array([np.real(material.kp[idf])/controls.k0[idf], 
+#                         np.imag(material.kp[idf])/controls.k0[idf],
+#                         np.real(material.rhop[idf])/air.rho0,
+#                         np.imag(material.rhop[idf])/air.rho0])
+true_vals = np.array([np.real(material.kp[idf]), 
+                        np.imag(material.kp[idf]),
+                        np.real(material.rhop[idf]),
+                        np.imag(material.rhop[idf])])
+scale = np.array([controls.k0[idf], controls.k0[idf], air.rho0, air.rho0])
+
+dcism_b.ba_list[idf].compute_statistics(ci_percent = 99.999999)
+dcism_b.ba_list[idf].plot_multi_2d_kde(true_vals = true_vals, limit_to_ci=True, 
+                                       mode = 'contour', color_true_vals = 'tomato',
+                                       scale = scale)
 #%%
 ax = ut_is.plot_spk_re_imag(controls.freq, material.kp, xlims = None, ylims = None, 
               color = 'k', linewidth = 1.5, linestyle = '--',

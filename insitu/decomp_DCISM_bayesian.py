@@ -776,7 +776,9 @@ class DCISM_Bayesian(object):
             clear_output()
         print("Inference frequency loop finished!")
         
-    def nested_sampling_spk2(self, freqs_init = [700, 1000, 1500], res_factor = 2):
+    def nested_sampling_spk2(self, freqs_init = [700, 1000, 1500], 
+                             resist_range = 10000, resist_lb = 1000,
+                             res_factor = 2):
         """ Run inference for all frequency bins
         
         Parameters
@@ -802,9 +804,15 @@ class DCISM_Bayesian(object):
         # mean flow - resistivity across spk
         resist_mean = np.mean(resist_freq)
         print(r"Mean flow resistivity for init run: {} [Nsm$^-4$]".format(resist_mean))
+        # Min/Max values before material study
+        resist_min = resist_mean - resist_range
+        if resist_min < resist_lb:
+            resist_min = resist_lb
+        resist_max = resist_mean + resist_range
         # Re-run material study
-        self.kp_rhop_range_miki(resist = [(1/res_factor)*resist_mean, res_factor*resist_mean],
-                               n_samples = 20000)
+        self.kp_rhop_range_miki(resist = [resist_min, resist_max],
+                                n_samples = 20000) #        self.kp_rhop_range_miki(resist = ,
+
         # self.kp_rhop_range(resist = [(1/res_factor)*resist_mean, res_factor*resist_mean], 
         #                    n_samples = 20000,
         #                    phi = [0.8, 0.99], alpha_inf = [1.0, 1.5], 
