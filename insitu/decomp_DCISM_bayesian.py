@@ -797,7 +797,7 @@ class DCISM_Bayesian(object):
             # run Bayesian inference
             ba = self.nested_sampling_single_freq(lb, ub, jf = idf)
             # Compute flow resistivity from each freq
-            rhop_mean_im = ba.mean_values[3]
+            rhop_mean_im = self.air.rho0*ba.mean_values[3]
             resist_freq[jf] = -self.controls.w[idf] * rhop_mean_im
             clear_output()
         print("Initial inference frequency loop finished!")

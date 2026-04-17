@@ -67,21 +67,21 @@ dcism_b.get_zp_spk()
 dcism_b.get_vp_nlr_spk(theta = np.deg2rad(field.material.theta_deg))
 
 #%%
-idf = ut_is.find_freq_index(dcism_b.controls.freq, freq_target=1000)
-# true_vals = np.array([np.real(material.kp[idf])/controls.k0[idf], 
-#                         np.imag(material.kp[idf])/controls.k0[idf],
-#                         np.real(material.rhop[idf])/air.rho0,
-#                         np.imag(material.rhop[idf])/air.rho0])
-true_vals = np.array([np.real(material.kp[idf]), 
-                        np.imag(material.kp[idf]),
-                        np.real(material.rhop[idf]),
-                        np.imag(material.rhop[idf])])
+idf = ut_is.find_freq_index(dcism_b.controls.freq, freq_target=800)
+true_vals = np.array([np.real(material.kp[idf])/controls.k0[idf], 
+                        np.imag(material.kp[idf])/controls.k0[idf],
+                        np.real(material.rhop[idf])/air.rho0,
+                        np.imag(material.rhop[idf])/air.rho0])
+# true_vals = np.array([np.real(material.kp[idf]), 
+#                         np.imag(material.kp[idf]),
+#                         np.real(material.rhop[idf]),
+#                         np.imag(material.rhop[idf])])
 scale = np.array([controls.k0[idf], controls.k0[idf], air.rho0, air.rho0])
 
 dcism_b.ba_list[idf].compute_statistics(ci_percent = 99.999999)
 dcism_b.ba_list[idf].plot_multi_2d_kde(true_vals = true_vals, limit_to_ci=True, 
                                        mode = 'contour', color_true_vals = 'tomato',
-                                       scale = scale)
+                                       scale = None)
 #%%
 ax = ut_is.plot_spk_re_imag(controls.freq, material.kp, xlims = None, ylims = None, 
               color = 'k', linewidth = 1.5, linestyle = '--',
