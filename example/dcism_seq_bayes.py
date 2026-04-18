@@ -58,7 +58,7 @@ dcism_b.set_nested_sampling_parameters(n_live = 50, max_iter = 2000, max_up_atte
 dcism_b.kp_rhop_range_miki(resist = [500, 80000], n_samples = 20000)
 
 #%%
-dcism_b.nested_sampling_spk2(freqs_init = [700, 800, 900], resist_range = 5000, res_factor = 2)
+dcism_b.nested_sampling_spk2(freqs_init = [700, 800, 900], resist_range = 15000)
 
 #%% Reconstructions
 dcism_b.get_kp_spk()

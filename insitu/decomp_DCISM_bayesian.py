@@ -802,13 +802,13 @@ class DCISM_Bayesian(object):
             clear_output()
         print("Initial inference frequency loop finished!")
         # mean flow - resistivity across spk
-        resist_mean = np.mean(resist_freq)
-        print(r"Mean flow resistivity for init run: {} [Nsm$^-4$]".format(resist_mean))
+        self.resist_mean = np.mean(resist_freq)
+        print(r"Mean flow resistivity for init run: {} [Nsm$^-4$]".format(self.resist_mean))
         # Min/Max values before material study
-        resist_min = resist_mean - resist_range
+        resist_min = self.resist_mean - resist_range
         if resist_min < resist_lb:
             resist_min = resist_lb
-        resist_max = resist_mean + resist_range
+        resist_max = self.resist_mean + resist_range
         # Re-run material study
         self.kp_rhop_range_miki(resist = [resist_min, resist_max],
                                 n_samples = 20000) #        self.kp_rhop_range_miki(resist = ,
@@ -1518,7 +1518,7 @@ class DCISM_Bayesian(object):
     
     def plot_reim(self, meanval, cival, label = None, 
                   ax = None, figshape = (1, 2), figsize = (8, 3),
-                  color = 'r', alpha = 1):
+                  color = 'r', alpha = 1, ylims = None):
         """ Plots real and imaginary values of a quantity with its confidence interval
         """
         if ax is None:
@@ -1526,7 +1526,7 @@ class DCISM_Bayesian(object):
             
         ax = ut_is.plot_spk_re_imag(self.controls.freq, meanval, ax = ax, 
                                     xlims = (self.controls.freq[0], self.controls.freq[-1]), 
-                                    ylims = None, color = color, alpha = alpha, 
+                                    ylims = ylims, color = color, alpha = alpha, 
                                     linewidth = 1.5, linestyle = '-',
                                     label = label)
         ax[0,0].fill_between(self.controls.freq, np.real(cival[0,:]), 
@@ -1544,39 +1544,65 @@ class DCISM_Bayesian(object):
         return ax
     
     def plot_kp(self, ax = None, figshape = (1, 2), figsize = (8, 3),
-                color = 'r', alpha = 1.0):
+                color = 'r', alpha = 1.0, ylims = None, normalize = False):
         """ Plots the wave-number as a function of frequency
         """
-        kp_mean = self.kp_mean/self.controls.k0
-        ax = self.plot_reim(self.kp_mean, self.kp_ci, label = None, ax = ax,
+        if normalize:
+            kp_mean = self.kp_mean/self.controls.k0
+            kp_ci = self.kp_ci/self.controls.k0
+            ylabels = (r"$Re\{k_p\}/k_0$", r"$Im\{k_p\}/k_0$")
+        else:
+            kp_mean = self.kp_mean
+            kp_ci = self.kp_ci
+            ylabels = (r"$Re\{k_p\}$", r"$Im\{k_p\}$")
+            
+        ax = self.plot_reim(kp_mean, kp_ci, label = None, ax = ax,
                             figshape = figshape, figsize = figsize, color = color,
-                            alpha = alpha)
-        ax[0,0].set_ylabel(r"$Re\{k_p\}$")
-        ax[ax.shape[0]-1,ax.shape[1]-1].set_ylabel(r"$Im\{k_p\}$")
+                            alpha = alpha, ylims = ylims)
+        ax[0,0].set_ylabel(ylabels[0])
+        ax[ax.shape[0]-1,ax.shape[1]-1].set_ylabel(ylabels[1])
         plt.tight_layout()
         return ax
     
     def plot_rhop(self, ax = None, figshape = (1, 2), figsize = (8, 3),
-                  color = 'r', alpha = 1.0):
+                  color = 'r', alpha = 1.0, ylims = None, normalize = False):
         """ Plots the density as a function of frequency
         """
-        ax = self.plot_reim(self.rhop_mean, self.rhop_ci, label = None, ax = ax,
+        if normalize:
+            rhop_mean = self.rhop_mean/self.air.rho0
+            rhop_ci = self.rhop_ci/self.air.rho0
+            ylabels = (r"$Re\{\rho_p\}/\rho_0$", r"$Im\{\rho_p\}/\rho_0$")
+        else:
+            rhop_mean = self.rhop_mean
+            rhop_ci = self.rhop_ci
+            ylabels = (r"$Re\{k_p\}$", r"$Im\{k_p\}$")
+        
+        ax = self.plot_reim(rhop_mean, rhop_ci, label = None, ax = ax,
                             figshape = figshape, figsize = figsize, color = color,
-                            alpha = alpha)
-        ax[0,0].set_ylabel(r"$Re\{\rho_p\}$")
-        ax[ax.shape[0]-1,ax.shape[1]-1].set_ylabel(r"$Im\{\rho_p\}$")
+                            alpha = alpha, ylims = ylims)
+        ax[0,0].set_ylabel(ylabels[0])
+        ax[ax.shape[0]-1,ax.shape[1]-1].set_ylabel(ylabels[1])
         plt.tight_layout()
         return ax
         
     def plot_Zp(self, ax = None, figshape = (1, 2), figsize = (8, 3),
-                color = 'r', alpha = 1.0):
+                color = 'r', alpha = 1.0, ylims = None, normalize = False):
         """ Plots the characteristic impedance as a function of frequency
         """
-        ax = self.plot_reim(self.zp_mean, self.zp_ci, label = None, ax = ax,
+        if normalize:
+            zp_mean = self.zp_mean/(self.air.rho0*self.air.c0)
+            zp_ci = self.zp_ci/(self.air.rho0*self.air.c0)
+            ylabels = (r"$Re\{Z_p\}/(\rho_0 c_0)$", r"$Im\{Z_p\}/(\rho_0 c_0)$")
+        else:
+            zp_mean = self.zp_mean
+            zp_ci = self.zp_ci
+            ylabels = (r"$Re\{Z_p\}$", r"$Im\{Z_p\}$")
+        
+        ax = self.plot_reim(zp_mean, zp_ci, label = None, ax = ax,
                             figshape = figshape, figsize = figsize, color = color,
-                            alpha = alpha)
-        ax[0,0].set_ylabel(r"$Re\{Z_p\}$")
-        ax[ax.shape[0]-1,ax.shape[1]-1].set_ylabel(r"$Im\{Z_p\}$")
+                            alpha = alpha, ylims = ylims)
+        ax[0,0].set_ylabel(ylabels[0])
+        ax[ax.shape[0]-1,ax.shape[1]-1].set_ylabel(ylabels[1])
         plt.tight_layout()
         return ax
     
