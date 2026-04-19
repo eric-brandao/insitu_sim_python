@@ -802,13 +802,13 @@ class DCISM_Bayesian(object):
             clear_output()
         print("Initial inference frequency loop finished!")
         # mean flow - resistivity across spk
-        self.resist_mean = np.mean(resist_freq)
+        self.resist_mean_init = np.mean(resist_freq)
         print(r"Mean flow resistivity for init run: {} [Nsm$^-4$]".format(self.resist_mean))
         # Min/Max values before material study
-        resist_min = self.resist_mean - resist_range
+        resist_min = self.resist_mean_init - resist_range
         if resist_min < resist_lb:
             resist_min = resist_lb
-        resist_max = self.resist_mean + resist_range
+        resist_max = self.resist_mean_init + resist_range
         # Re-run material study
         self.kp_rhop_range_miki(resist = [resist_min, resist_max],
                                 n_samples = 20000) #        self.kp_rhop_range_miki(resist = ,
@@ -1575,7 +1575,7 @@ class DCISM_Bayesian(object):
         else:
             rhop_mean = self.rhop_mean
             rhop_ci = self.rhop_ci
-            ylabels = (r"$Re\{k_p\}$", r"$Im\{k_p\}$")
+            ylabels = (r"$Re\{rho_p\}$", r"$Im\{rho_p\}$")
         
         ax = self.plot_reim(rhop_mean, rhop_ci, label = None, ax = ax,
                             figshape = figshape, figsize = figsize, color = color,
@@ -1605,6 +1605,26 @@ class DCISM_Bayesian(object):
         ax[ax.shape[0]-1,ax.shape[1]-1].set_ylabel(ylabels[1])
         plt.tight_layout()
         return ax
+    
+    def plot_resist_spk(self, ax = None, figsize = (6, 3),
+                color = 'r', alpha = 1):
+        """ Plots the flow resistivity as a function of frequency
+        """
+        if ax is None:
+            fig, ax = ut_is.give_me_an_ax(figsize = figsize)
+            ax = ax[0,0]
+        ut_is.plot_1d_curve(self.controls.freq, self.resist_mean, ax,  
+                            xlims = (self.controls.freq[0], self.controls.freq[-1]), 
+                            ylims = None, color = color, linewidth = 1.5, marker = None, 
+                            linestyle = '-', alpha = alpha, label = None,
+                            xlabel = "Frequency [Hz]", 
+                            ylabel = r"Flow resistivity [Ns/m$-4$]",
+                            linx = False, liny = True, 
+                            xticks = [31.5, 63, 125, 250, 500, 1000, 2000, 4000])
+        ax.fill_between(self.controls.freq, self.resist_ci[0,:], 
+                        self.resist_ci[1,:], color=color, alpha = 0.2,
+                        edgecolor = 'none')
+        plt.tight_layout()
     
     def plot_Vp_spk(self, ax = None, figshape = (1, 2), figsize = (8, 3),
                 color = 'r', alpha = 1.0, jtheta = 0):
@@ -1644,6 +1664,8 @@ class DCISM_Bayesian(object):
         ax[ax.shape[0]-1,ax.shape[1]-1].set_ylabel(ylabel[1])
         plt.tight_layout()
         return ax
+    
+    
     
     def plot_alpha_spk(self, ax = None, figshape = (1, 2), figsize = (8, 3),
                 color = 'r', alpha = 1, jtheta = 0):
