@@ -1575,7 +1575,7 @@ class DCISM_Bayesian(object):
         else:
             rhop_mean = self.rhop_mean
             rhop_ci = self.rhop_ci
-            ylabels = (r"$Re\{rho_p\}$", r"$Im\{rho_p\}$")
+            ylabels = (r"$Re\{\rho_p\}$", r"$Im\{\rho_p\}$")
         
         ax = self.plot_reim(rhop_mean, rhop_ci, label = None, ax = ax,
                             figshape = figshape, figsize = figsize, color = color,
