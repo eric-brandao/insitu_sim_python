@@ -67,7 +67,7 @@ dcism_b.get_zp_spk()
 dcism_b.get_vp_nlr_spk(theta = np.deg2rad(field.material.theta_deg))
 
 #%%
-idf = ut_is.find_freq_index(dcism_b.controls.freq, freq_target=800)
+idf = ut_is.find_freq_index(dcism_b.controls.freq, freq_target=2500)
 true_vals = np.array([np.real(material.kp[idf])/controls.k0[idf], 
                         np.imag(material.kp[idf])/controls.k0[idf],
                         np.real(material.rhop[idf])/air.rho0,

@@ -341,6 +341,8 @@ class DCISM_Bayesian(object):
             # if lower_bounds[2] < 0.9: # 1.18/1.3
             #     lower_bounds[2] = 0.9
             lower_bounds[2] = 0.9
+            if upper_bounds[2] <= lower_bounds[2]:
+                upper_bounds[2] = 2*lower_bounds[2]
             # Im{rho_p} constraint    
             if upper_bounds[3] > -0.01: # 1.18/1.3
                 upper_bounds[3] = -0.01
@@ -486,6 +488,25 @@ class DCISM_Bayesian(object):
         pred = p_exp_line_1/p_exp_line_2
         return pred
     
+    def check_sampled_vp(self,k_p, rho_p, t_p):
+        """ check if sampled vp has negative values.
+        
+        It can happen because of the sampling process
+        
+        """
+        theta = np.deg2rad(np.arange(0,90,1))
+        k0z = self.current_k0*np.cos(theta)
+        # Angular wave-number in the layer
+        theta_t = self.get_theta_t(k_p, self.current_k0, theta)
+        k1z = k_p*np.cos(theta_t)
+        # reflection coefficient (samples)
+        num = -1j*k0z/self.air.rho0 - (k1z/rho_p)*np.tan(k1z*t_p)
+        den = -1j*k0z/self.air.rho0 + (k1z/rho_p)*np.tan(k1z*t_p)
+        vp_sampled = num/den
+        alpha = 1-np.abs(vp_sampled)**2
+        has_negative = np.any(alpha < 0)
+        return has_negative
+            
     def forward_model_40(self, x_meas, 
                         model_par = [1.50, -1.00, 1.20, -2.50]):
         """ Forward model for forward prediction
@@ -507,13 +528,25 @@ class DCISM_Bayesian(object):
         k_p = self.current_k0*(model_par[0] + 1j*model_par[1])
         # complex density
         rho_p = self.air.rho0*(model_par[2] + 1j*model_par[3])
-        green_fun = self.dDCISMsf.predict_p_nlr_layer(k = self.current_k0, 
-                                                      k_p = k_p, 
-                                                      rho_p = rho_p, 
-                                                      t_p = self.t_p)
-        p_exp_line_1 = green_fun[self.id_z_list[0]]
-        p_exp_line_2 = green_fun[self.id_z_list[1]]
-        pred = p_exp_line_1/p_exp_line_2
+        # check sample
+        # green_fun = self.dDCISMsf.predict_p_nlr_layer(k = self.current_k0, 
+        #                                               k_p = k_p, 
+        #                                               rho_p = rho_p, 
+        #                                               t_p = self.t_p)
+        # p_exp_line_1 = green_fun[self.id_z_list[0]]
+        # p_exp_line_2 = green_fun[self.id_z_list[1]]
+        # pred = p_exp_line_1/p_exp_line_2
+        has_negative = self.check_sampled_vp(k_p, rho_p, self.t_p)
+        if not has_negative:
+            green_fun = self.dDCISMsf.predict_p_nlr_layer(k = self.current_k0, 
+                                                          k_p = k_p, 
+                                                          rho_p = rho_p, 
+                                                          t_p = self.t_p)
+            p_exp_line_1 = green_fun[self.id_z_list[0]]
+            p_exp_line_2 = green_fun[self.id_z_list[1]]
+            pred = p_exp_line_1/p_exp_line_2
+        else:
+            pred = 1e6+1j*1e6
         return pred
     
     def forward_model_41(self, x_meas, 
