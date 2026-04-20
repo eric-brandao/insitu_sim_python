@@ -349,26 +349,26 @@ class DCISM_Bayesian(object):
                 lower_bounds[0] = 0.001
         return lower_bounds, upper_bounds
     
-    def check_sample_physical_limits(self, sample_vec):
-        """ Set sensible physical limits to wave-number and density
-        """
-        if self.chosen_model != 10 and self.chosen_model != 11:
-            # Re{k_p} constraint
-            if sample_vec[0] < 1.00:
-                sample_vec[0] = 1.00
-            # Im{k_p} constraint
-            if sample_vec[1] > -0.01:
-                sample_vec[1] = -0.01
-            # Re{rho_p} constraint    
-            if sample_vec[2] < 0.9: # 1.18/1.3
-                sample_vec[2] = 0.9
-            # Im{rho_p} constraint    
-            if sample_vec[3] > -0.01: # 1.18/1.3
-                sample_vec[3] = -0.01
-        else:
-            if sample_vec[0] < 0.001: # Do not allow for real part lower than zero
-                sample_vec[0] = 0.001
-        return sample_vec
+    # def check_sample_physical_limits(self, sample_vec):
+    #     """ Set sensible physical limits to wave-number and density
+    #     """
+    #     if self.chosen_model != 10 and self.chosen_model != 11:
+    #         # Re{k_p} constraint
+    #         if sample_vec[0] < 1.00:
+    #             sample_vec[0] = 1.00
+    #         # Im{k_p} constraint
+    #         if sample_vec[1] > -0.01:
+    #             sample_vec[1] = -0.01
+    #         # Re{rho_p} constraint    
+    #         if sample_vec[2] < 0.9: # 1.18/1.3
+    #             sample_vec[2] = 0.9
+    #         # Im{rho_p} constraint    
+    #         if sample_vec[3] > -0.01: # 1.18/1.3
+    #             sample_vec[3] = -0.01
+    #     else:
+    #         if sample_vec[0] < 0.001: # Do not allow for real part lower than zero
+    #             sample_vec[0] = 0.001
+    #     return sample_vec
     
     def wide_prior_range(self, widening_factor = 2):
         """ Wide your prior by a given factor
@@ -803,7 +803,7 @@ class DCISM_Bayesian(object):
         print("Initial inference frequency loop finished!")
         # mean flow - resistivity across spk
         self.resist_mean_init = np.mean(resist_freq)
-        print(r"Mean flow resistivity for init run: {} [Nsm$^-4$]".format(self.resist_mean))
+        print(r"Mean flow resistivity for init run: {} [Nsm$^-4$]".format(self.resist_mean_init))
         # Min/Max values before material study
         resist_min = self.resist_mean_init - resist_range
         if resist_min < resist_lb:
