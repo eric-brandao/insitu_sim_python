@@ -134,7 +134,7 @@ setup(
         'numpy==1.15.0',
         'numpy-quaternion==2019.7.23.15.26.49',
         'pycollada==0.6',
-        'scipy==1.3.1',
+        'scipy==1.10.0',
         'toml==0.10.0',
         'xlrd==1.2.0',
         'xlwt==1.3.0',
