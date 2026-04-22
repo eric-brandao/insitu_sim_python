@@ -572,13 +572,25 @@ class DCISM_Bayesian(object):
         rho_p = self.air.rho0*(model_par[2] + 1j*model_par[3])
         # unknown thickness
         t_p = model_par[4]
-        green_fun = self.dDCISMsf.predict_p_nlr_layer(k = self.current_k0, 
-                                                      k_p = k_p, 
-                                                      rho_p = rho_p, 
-                                                      t_p = t_p)
-        p_exp_line_1 = green_fun[self.id_z_list[0]]
-        p_exp_line_2 = green_fun[self.id_z_list[1]]
-        pred = p_exp_line_1/p_exp_line_2
+        # green_fun = self.dDCISMsf.predict_p_nlr_layer(k = self.current_k0, 
+        #                                               k_p = k_p, 
+        #                                               rho_p = rho_p, 
+        #                                               t_p = t_p)
+        # p_exp_line_1 = green_fun[self.id_z_list[0]]
+        # p_exp_line_2 = green_fun[self.id_z_list[1]]
+        # pred = p_exp_line_1/p_exp_line_2
+        has_negative = self.check_sampled_vp(k_p, rho_p, t_p)
+        if not has_negative:
+            green_fun = self.dDCISMsf.predict_p_nlr_layer(k = self.current_k0, 
+                                                          k_p = k_p, 
+                                                          rho_p = rho_p, 
+                                                          t_p = t_p)
+            p_exp_line_1 = green_fun[self.id_z_list[0]]
+            p_exp_line_2 = green_fun[self.id_z_list[1]]
+            pred = p_exp_line_1/p_exp_line_2
+        else:
+            pred = 1e6+1j*1e6
+        
         return pred
     
     def forward_model_42(self, x_meas, 
@@ -602,15 +614,27 @@ class DCISM_Bayesian(object):
         k_p = self.current_k0*(model_par[0] + 1j*model_par[1])
         # complex density
         rho_p = self.air.rho0*(model_par[2] + 1j*model_par[3])
-        # unknown thickness
+        # unknown source height
         self.dDCISMsf.hs = model_par[4]
-        green_fun = self.dDCISMsf.predict_p_nlr_layer(k = self.current_k0, 
-                                                      k_p = k_p, 
-                                                      rho_p = rho_p, 
-                                                      t_p = self.t_p)
-        p_exp_line_1 = green_fun[self.id_z_list[0]]
-        p_exp_line_2 = green_fun[self.id_z_list[1]]
-        pred = p_exp_line_1/p_exp_line_2
+        # green_fun = self.dDCISMsf.predict_p_nlr_layer(k = self.current_k0, 
+        #                                               k_p = k_p, 
+        #                                               rho_p = rho_p, 
+        #                                               t_p = self.t_p)
+        # p_exp_line_1 = green_fun[self.id_z_list[0]]
+        # p_exp_line_2 = green_fun[self.id_z_list[1]]
+        # pred = p_exp_line_1/p_exp_line_2
+        
+        has_negative = self.check_sampled_vp(k_p, rho_p, self.t_p)
+        if not has_negative:
+            green_fun = self.dDCISMsf.predict_p_nlr_layer(k = self.current_k0, 
+                                                          k_p = k_p, 
+                                                          rho_p = rho_p, 
+                                                          t_p = self.t_p)
+            p_exp_line_1 = green_fun[self.id_z_list[0]]
+            p_exp_line_2 = green_fun[self.id_z_list[1]]
+            pred = p_exp_line_1/p_exp_line_2
+        else:
+            pred = 1e6+1j*1e6
         return pred
     
     def forward_model_43(self, x_meas, 
@@ -637,13 +661,25 @@ class DCISM_Bayesian(object):
         # unknown thickness / source
         t_p = model_par[4]
         self.dDCISMsf.hs = model_par[5]
-        green_fun = self.dDCISMsf.predict_p_nlr_layer(k = self.current_k0, 
-                                                      k_p = k_p, 
-                                                      rho_p = rho_p, 
-                                                      t_p = t_p)
-        p_exp_line_1 = green_fun[self.id_z_list[0]]
-        p_exp_line_2 = green_fun[self.id_z_list[1]]
-        pred = p_exp_line_1/p_exp_line_2
+        # green_fun = self.dDCISMsf.predict_p_nlr_layer(k = self.current_k0, 
+        #                                               k_p = k_p, 
+        #                                               rho_p = rho_p, 
+        #                                               t_p = t_p)
+        # p_exp_line_1 = green_fun[self.id_z_list[0]]
+        # p_exp_line_2 = green_fun[self.id_z_list[1]]
+        # pred = p_exp_line_1/p_exp_line_2
+        
+        has_negative = self.check_sampled_vp(k_p, rho_p, t_p)
+        if not has_negative:
+            green_fun = self.dDCISMsf.predict_p_nlr_layer(k = self.current_k0, 
+                                                          k_p = k_p, 
+                                                          rho_p = rho_p, 
+                                                          t_p = t_p)
+            p_exp_line_1 = green_fun[self.id_z_list[0]]
+            p_exp_line_2 = green_fun[self.id_z_list[1]]
+            pred = p_exp_line_1/p_exp_line_2
+        else:
+            pred = 1e6+1j*1e6
         return pred
     
     def forward_model_44(self, x_meas, 
