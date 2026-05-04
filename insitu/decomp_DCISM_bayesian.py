@@ -506,6 +506,16 @@ class DCISM_Bayesian(object):
         alpha = 1-np.abs(vp_sampled)**2
         has_negative = np.any(alpha < 0)
         return has_negative
+    
+    def check_sampled_Zp(self,k_p, rho_p, omega):
+        """ check if sampled Zp has positive Im values.
+        
+        It can happen because of the sampling process
+        
+        """
+        Zp = rho_p * omega/ k_p
+        has_positive = np.any(np.imag(Zp) >= 0)
+        return has_positive
             
     def forward_model_40(self, x_meas, 
                         model_par = [1.50, -1.00, 1.20, -2.50]):
@@ -537,7 +547,8 @@ class DCISM_Bayesian(object):
         # p_exp_line_2 = green_fun[self.id_z_list[1]]
         # pred = p_exp_line_1/p_exp_line_2
         has_negative = self.check_sampled_vp(k_p, rho_p, self.t_p)
-        if not has_negative:
+        has_positive =self.check_sampled_Zp(k_p, rho_p, self.current_k0*self.air.c0)
+        if not has_negative and not has_positive:
             green_fun = self.dDCISMsf.predict_p_nlr_layer(k = self.current_k0, 
                                                           k_p = k_p, 
                                                           rho_p = rho_p, 

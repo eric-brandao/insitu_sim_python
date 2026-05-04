@@ -127,7 +127,7 @@ def third_octave_freqs(freq):
     id_lower = np.where(fcentre <= np.amin(freq))[0][-1] + 1
     id_upper = np.where(fcentre <= np.amax(freq))[0][-1]# - 1
     
-    return fcentre[id_lower:id_upper], flower[id_lower:id_upper], fupper[id_lower:id_upper]
+    return fcentre[id_lower:id_upper+1], flower[id_lower:id_upper+1], fupper[id_lower:id_upper+1]
 
 def third_octave_avg(freq, data, magnitude = True):
     """ Returns a list of center frequencies, lower and upper bonds in 1/3 oct band

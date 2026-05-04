@@ -948,7 +948,8 @@ def mae(x_sol, x_truth):
         mae : float
             estimated MAE
     """
-    mae = np.linalg.norm(x_sol-x_truth)
+    n_el = x_truth.size
+    mae = np.linalg.norm(x_sol-x_truth)/n_el
     return mae
 
 def nmse_freq(x_sol, x_truth):
