@@ -1698,7 +1698,7 @@ class DCISM_Bayesian(object):
                             ylims = None, color = color, linewidth = 1.5, marker = None, 
                             linestyle = '-', alpha = alpha, label = None,
                             xlabel = "Frequency [Hz]", 
-                            ylabel = r"Flow resistivity [Ns/m$-4$]",
+                            ylabel = r"Flow resistivity [Ns/m$^{-4}$]",
                             linx = False, liny = True, 
                             xticks = [31.5, 63, 125, 250, 500, 1000, 2000, 4000])
         ax.fill_between(self.controls.freq, self.resist_ci[0,:], 

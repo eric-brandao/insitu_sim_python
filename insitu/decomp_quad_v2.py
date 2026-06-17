@@ -282,8 +282,50 @@ class Decomposition_QDT(object):
             self.kernel_uz(k0, rq, hz_q) * compensation_mtx
         return h_mtx_uz
     
-    def pk_tikhonov(self, plot_l=False, method='direct', lambd_value_vec = None):
-        """ Wave number spectrum estimation using Tikhonov inversion.
+    def sf_tikhonov(self, jf, plot_l=False, method='direct', lambd_value = None):
+        """ DCISM estimation using Tikhonov inversion (single frequency).        
+        """
+        # Get receiver data (frequency independent)
+        r, zr, r1, r2, rq, _ = self.get_rec_parameters(self.receivers) # r, zr, and r1 are vectors (M), rq is a M x (ng) matrix
+        # Get weights matrix (frequency independent)
+        weights_mtx = np.repeat(np.array([self.weights]), self.receivers.coord.shape[0], 
+                                axis = 0) #M x (ng)
+        compensation_mtx = np.repeat(np.array([self.compensation]), 
+                                     self.receivers.coord.shape[0], axis = 0) #M x (ng)
+        
+        k0 = self.controls.k0[jf]
+        # Forming the sensing matrix
+        h_mtx = self.build_hmtx_p((self.receivers.coord.shape[0], self.num_cols), k0,
+                                  r1, r2, rq, weights_mtx, compensation_mtx)
+        # Measured data
+        pm = self.pres_s[:, jf].astype(complex)
+        # Compute SVD
+        u, sig, v = lc.csvd(h_mtx.astype(complex))
+        # Reg Par
+        if lambd_value is None:
+            # Find the optimal regularization parameter.
+            lambd_value = self.regu_par_fun(u, sig, pm, plot_l)
+        
+            
+        # Solve system          
+        if method == 'direct':
+            Hm = np.matrix(h_mtx)
+            x = Hm.getH() @ np.linalg.inv(Hm @ Hm.getH() + (lambd_value**2)*np.identity(len(pm))) @ pm
+        elif method == 'Ridge':
+            x = lc.ridge_solver(h_mtx,pm,lambd_value)
+        elif method == 'Tikhonov':
+            x = lc.tikhonov(u,sig,v,pm,lambd_value)
+        elif method == 'cvx':
+            x = lc.cvx_tikhonov(h_mtx, pm, lambd_value, l_norm = 2)
+        else:
+            x = lc.tikhonov(u,sig,v,pm,lambd_value)
+        return x
+        
+    
+    def pk_tikhonov(self, plot_l=False, method='direct', lambd_value_vec = None,
+                    pre_cond = False, tol = 1e-5):
+        
+        """ DCISM estimation using Tikhonov inversion.
 
         Estimate the wave number spectrum using regularized Tikhonov inversion.
         The choice of the regularization parameter is based on the L-curve criterion.
@@ -338,6 +380,15 @@ class Decomposition_QDT(object):
             # Forming the sensing matrix
             h_mtx = self.build_hmtx_p((self.receivers.coord.shape[0], self.num_cols), k0, r1, r2, rq,
                                       weights_mtx, compensation_mtx)
+            if pre_cond:
+                col_norms = np.linalg.norm(h_mtx, axis = 0)
+                col_norms[col_norms < tol] += tol
+                # cond_mtx = np.diag(1/col_norms)
+                # h_mtx = h_mtx @ cond_mtx
+                id_col = np.where(col_norms >= tol)[0]
+                cond_mtx = np.diag(1/col_norms[id_col])
+                h_mtx = h_mtx[:, id_col] @ cond_mtx
+                
             # Measured data
             pm = self.pres_s[:, jf].astype(complex)
             # Compute SVD
@@ -363,8 +414,69 @@ class Decomposition_QDT(object):
                 x = lc.cvx_tikhonov(h_mtx, pm, lambd_value, l_norm = 2)
             else:
                 x = lc.tikhonov(u,sig,v,pm,lambd_value)
-            self.pk[:,jf] = x
+            
+            if pre_cond:
+                self.pk[:,jf] = cond_mtx @ x
+            else:
+                self.pk[:,jf] = x
                 
+            bar.update(1)
+        bar.close()
+        self.check_decomp()
+        
+    def pk_constrained(self, snr = 30):
+        
+        """ DCISM estimation using Constrained regularization.
+
+        
+
+        The inversion steps are:
+        (i) - Get the distance from sources in relation to each receiver;
+        (ii) - form the sensing matrix;
+        (iii) - compute SVD of the sensing matrix;
+        (iv) - compute the regularization parameter (L-curve);
+        (vii) - matrix inversion.
+
+        Parameters
+        ----------
+        a : int
+            lower bond of the integral
+        b : float
+            upper bound of the integral
+        method : str
+            Determines which method to use to compute the pseudo-inverse.
+                'direct' (default) - analytical solution - fastest, but maybe
+                inaccurate on noiseless situations. The following uses optimization
+                algorithms
+                'Ridge' - uses sklearn Ridge regression - slower, but accurate.
+                'Tikhonov' - uses cvxpy - slower, but accurate
+        plot_l : bool
+            Whether to plot the L-curve or not. Default is false.
+        retraction : float
+            Retraction value of the source height. Default is 1 cm.
+        """
+
+        # Get receiver data (frequency independent)
+        r, zr, r1, r2, rq, _ = self.get_rec_parameters(self.receivers) # r, zr, and r1 are vectors (M), rq is a M x (ng) matrix
+        # Get weights matrix (frequency independent)
+        weights_mtx = np.repeat(np.array([self.weights]), self.receivers.coord.shape[0], axis = 0) #M x (ng)
+        compensation_mtx = np.repeat(np.array([self.compensation]), self.receivers.coord.shape[0], axis = 0) #M x (ng)
+        # Initialize pk
+        self.pk = np.zeros((self.num_cols, len(self.controls.k0)), dtype=complex)
+        
+        # Initialize bar
+        bar = tqdm(total=len(self.controls.k0),
+                   desc='Calculating constrained inversion (for the Quadrature Method)...', ascii=False)
+        # Freq loop
+        for jf, k0 in enumerate(self.controls.k0):
+            # Forming the sensing matrix
+            h_mtx = self.build_hmtx_p((self.receivers.coord.shape[0], self.num_cols), k0, r1, r2, rq,
+                                      weights_mtx, compensation_mtx)
+           
+            # Measured data
+            pm = self.pres_s[:, jf].astype(complex)
+            # Compute SVD
+            self.pk[:,jf] = lc.cvx_solver_c(h_mtx, self.pres_s[:, jf], 10**(-snr/10), l_norm = 2)
             bar.update(1)
         bar.close()
         self.check_decomp()
@@ -672,7 +784,8 @@ class Decomposition_QDT(object):
             
         return h_mtx_rp
     
-    def reconstruct_rp(self, theta_deg_i = 0, theta_deg_e = 90, delta_theta = 10):
+    def reconstruct_rp(self, theta_deg_i = 0, theta_deg_e = 90, delta_theta = 10,
+                       max_num_sources = None):
         """ Reconstruct plane-wave reflection coefficient.
 
         The reconstruction with a receiver object. Then, you can be more specific on receiver type in other functions
@@ -696,7 +809,12 @@ class Decomposition_QDT(object):
         self.ref_coef_pw = np.zeros((len(theta_deg), len(self.controls.k0)), dtype=complex)
         self.alpha_coef_pw = np.zeros((len(theta_deg), len(self.controls.k0)))
         
-        # h_mtx = np.zeros((grid.coord.shape[0], (1 + self.quad_order)), dtype=np.clongdouble)        
+        # Final index
+        # if max_num_sources is None:
+        #     max_num_sources = -1
+        # else:
+        #     max_num_sources += 1
+ 
         # Initialize bar
         bar = tqdm(total=len(self.controls.k0), desc='Calculating the reconstructed PW ref. coef.')
         # Freq loop
@@ -704,11 +822,16 @@ class Decomposition_QDT(object):
             # Forming the reconstruction matrix
             h_mtx = self.build_hmtx_rp((len(theta_deg), self.num_cols-1), k0, cos_theta_q, 
                                       weights_mtx, compensation_mtx)
-            
-            #print(h_mtx.shape)
-            # print(self.pk[1:,jf].shape)
+            # print(max_num_sources)
+            # h_mtx = h_mtx[:, :max_num_sources+1]
+            # print(h_mtx.shape)
             # pressure reconstruction
             self.ref_coef_pw[:,jf] = h_mtx @ (self.pk[1:,jf]/self.pk[0,jf])  # ref. coef.
+            # print(h_mtx[:, :max_num_sources].shape)
+            # print(self.pk[1:max_num_sources+1,jf].shape)
+            
+            # self.ref_coef_pw[:,jf] = h_mtx[:, :max_num_sources] @ (self.pk[1:max_num_sources+1,jf]/self.pk[0,jf])  # ref. coef.
+
             self.alpha_coef_pw[:,jf] = 1 - (np.abs(self.ref_coef_pw[:,jf]))**2
             bar.update(1)
         bar.close()

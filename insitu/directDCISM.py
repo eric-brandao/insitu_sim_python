@@ -117,6 +117,23 @@ class dDCISM(object):
         kz = self.gamma * k * (1j*self.sampling_path-1.0)
         return kz
     
+    def get_vertical_wavenum2(self, k):
+        """ vertical wave number above sample; shape(len(f),len(t))
+        non-modified sampling path Eq. (11) in Eser, 2021
+        
+        Parameters
+        -------------
+        k : float
+            wave-number magnitude in [rad/m]
+            
+        Returns
+        -------------
+        kz : numpy1dArray
+            Vertical wave-number
+        """
+        kz = k * (1j*self.sampling_path+(1.0-self.sampling_path/self.T0))
+        return kz
+    
     def sample_Vp_lr(self, k, beta):
         """ Sample the locally reacting reflection coefficient.
         
@@ -183,6 +200,14 @@ class dDCISM(object):
         # print(den)
         Vp_sampled = num / den
         return Vp_sampled
+    
+    def sample_exp_q(self, k, q):
+        """ Sample Di and Gilbert's exponential as if it was a ref. coeff.
+        """
+        # get Kz0 (vertical wave-number above layer)
+        kz0 = self.get_vertical_wavenum2(k = k)
+        expon = np.exp(-kz0 * q)
+        return expon
     
     def compute_AnBn(self, Vp_sampled):
         """ Compute amplitudes and locations (transformed space) using MPM

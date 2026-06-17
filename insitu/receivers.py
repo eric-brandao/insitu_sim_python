@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import scipy
 from collections import defaultdict
 #from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 #from mpl_toolkits.mplot3d import Axes3D
@@ -681,7 +682,8 @@ class Receiver():
         self.coord[:, 0], self.coord[:, 1], self.coord[:, 2] =\
             sph2cart(radius, thetas, 0)
             
-    def semigaussian_sphere(self, radius = 1, delta_theta_deg = 4):
+    def semigaussian_sphere(self, radius = 1, delta_theta_deg = 4,
+                            hemispherical = False):
         """ Initializes a semi gaussian spherical array of receivers.
         
         Parameters
@@ -700,15 +702,10 @@ class Receiver():
         z_list = []
         for the_d in theta_deg:
             n_phi = int(np.ceil(2*n_theta*np.sin(np.deg2rad(the_d))))
-            # n_phi = int(2*n_theta*np.sin(np.deg2rad(the_d)))
-            # print("theta: {} / phi {}".format(the_d, phi_deg))
             if n_phi == 0:
                 x,y,z = sph2cart(radius, np.deg2rad(90-the_d), 0)
             else:
-                # print(n_phi)
                 phi_deg = np.linspace(start = 0, stop = 360, num = n_phi)
-                # delta_phi_deg = 360/n_phi
-                # phi_deg = np.arange(start = 0, stop = 360, step = delta_phi_deg)
                 theta_d = the_d * np.ones(len(phi_deg))
                 radii = radius * np.ones(len(phi_deg))
                 x,y,z = sph2cart(radii, np.deg2rad(90-theta_d), np.deg2rad(phi_deg))
@@ -723,10 +720,31 @@ class Receiver():
         self.coord = np.zeros((len(x_coord), 3))
         self.coord[:len(x_coord),0], self.coord[:len(x_coord),1], self.coord[:len(x_coord),2] =\
             x_coord, y_coord, z_coord
-        # self.coord[len(x_coord):,0], self.coord[len(x_coord):,1], self.coord[len(x_coord):,2] =\
-        #     x_coord, y_coord, -z_coord
-        self.coord = np.unique(self.coord, axis = 0)
+        self.coord = np.unique(self.coord, axis = 0)        
+        # Mesh
+        if not hemispherical:
+            tri = scipy.spatial.ConvexHull(self.coord)
+            self.connectivities = tri.simplices
+        else:
+            self.coord = self.coord[self.coord[:,2]>=0]
+            tri = scipy.spatial.ConvexHull(self.coord)
+            self.connectivities = tri.simplices
+            v0 = self.coord[self.connectivities[:, 0]]
+            v1 = self.coord[self.connectivities[:, 1]]
+            v2 = self.coord[self.connectivities[:, 2]]
+            # Centroids
+            centroids = (v0 + v1 + v2) / 3.0
+            #Keep triangles whose centers are above the floor (e.g., z > 0.001)
+            tolerance = 0.01 
+            self.connectivities =\
+                self.connectivities[centroids[:, 2] > 0]
         
+        # self.connectivity_correction()
+        self.compute_normals()
+        self.correct_normals()
+        self.compute_triangle_areas()
+        self.compute_all_triangle_angles()             
+
     def hemispherical_array(self, radius = 1, n_rec_target = 32):
         """ Initializes a hemispherical array of receivers (icosahedron).
 
@@ -1205,10 +1223,6 @@ class Receiver():
             rec_plane_list.append(self.coord[id_get, :])
         return rec_plane_list
 
-
-        
-    
-    
     def plot_array(self, x_lim = [-1,1], y_lim = [-1,1], z_lim = [0, 1]):
         """ plot the array coordinates as dots in space
         """
@@ -1231,6 +1245,34 @@ class Receiver():
         #ax.view_init(elev=elev, azim=azim)
         plt.tight_layout()
         plt.show()
+        
+    def plot_array_mesh(self, x_lim = [-1,1], y_lim = [-1,1], z_lim = [-1, 1]):
+        """ plot the array mesh - for testing
+        """
+        fig = plt.figure(figsize=(7, 5))
+        ax = fig.add_subplot(111, projection='3d')
+
+        # Pass the custom triangles array into the trisurf method
+        ax.scatter(self.coord[:, 0], self.coord[:, 1], self.coord[:, 2], 
+                    marker='o', s=12, color='blue', alpha = 0.7)
+        surf = ax.plot_trisurf(self.coord[:,0], self.coord[:,1],
+                               self.coord[:,2], 
+                               triangles = self.connectivities, 
+                               edgecolor='black', # Outlines the triangular mesh boundaries
+                               linewidth=0.5,        # Adjusts thickness of the triangular grid lines
+                               alpha=1.0             # Sets transparency level
+        )
+
+        # 4. Final adjustments
+        ax.set_xlabel(r'$x$ [m]')
+        ax.set_xlabel(r'$y$ [m]')
+        ax.set_xlabel(r'$z$ [m]')
+        ax.grid(False)
+        ax.set_xlim((x_lim[0], x_lim[1]))
+        ax.set_ylim((y_lim[0], y_lim[1]))
+        ax.set_zlim((z_lim[0], z_lim[1]))
+        #ax.view_init(elev=elev, azim=azim)
+        plt.tight_layout()
 
     def save(self, filename = 'qdt', path = ''):
         """ To save the decomposition object as pickle
