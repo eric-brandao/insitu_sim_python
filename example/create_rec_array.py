@@ -81,4 +81,17 @@ rec.semigaussian_sphere(radius = radii, delta_theta_deg=10,
 rec.plot_array(x_lim=[-radii, radii], y_lim=[-radii, radii], 
                z_lim=[-radii, radii])
 
+#%% ISO Sphere
+radii = 1
+rec.isospherical_array(radius = radii, n_rec_target = 642)
+rec.plot_array(x_lim=[-radii, radii], y_lim=[-radii, radii], 
+               z_lim=[-radii, radii])
 
+#%% Platonic solids
+radii = 0.2
+# rec.tetrahedron(radius = radii, center = [0,0,0])
+# rec.octahedron(radius = radii, center = [0,0,0.2])
+# rec.cube(radius = radii, center = [0,0,0.2])
+# rec.dodecahedron(radius = radii, center = [0,0,0.2])
+rec.icosahedron(radius = radii, center = [0,0,0.2])
+rec.plot_array(x_lim=[-0.5, 0.5], y_lim=[-0.5, 0.5], z_lim=[-0.5, 0.5])
