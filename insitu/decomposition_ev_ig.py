@@ -1871,12 +1871,6 @@ class DecompositionEv2(object):
             plot_elevation_grid = True, font_family = "Palatino Linotype", font_size = 14,
             colorbar_title = 'Normalized Scattered Pressure [dB]', fig_size=dpi)
         plt3Ddir.plot_3d_polar()
-        # #return balloon_data #x, y, z, conectivities, r, plot_pressure
-        # fig, trace = utils_insitu.plot_3d_polar(self.pdir, self.conectivities,
-        #      pk_r, dinrange = dinrange, 
-        #      color_method = color_method, radius_method = radius_method,
-        #      color_code = color_code, view = view, eye = eye, renderer = renderer,
-        #      remove_axis = remove_axis)
         return plt3Ddir.fig, plt3Ddir.trace
 
 

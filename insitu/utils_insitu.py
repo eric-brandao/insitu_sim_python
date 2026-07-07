@@ -1054,7 +1054,7 @@ class Plot3Ddirectivity(object):
                          'thickness' : self.colorbar_thickness, # want control
                          'xanchor' : 'right',
                          'yanchor' : 'middle',
-                         'titlefont': {'color': 'black'}, # want control
+                         # 'titlefont': {'color': 'black'}, # want control
                          'title_side': 'right',
                          'tickangle': -90, 
                          'tickcolor': 'black',

@@ -53,6 +53,27 @@ def csvd(A):
         u = np.conjugate(u.T)
     return u, sig, v
 
+def gram_matrix(A):
+    """ Computes Gram matrix of A
+    
+    Allows one to analyze if A has many correlated columns or not. Valid for
+    complex matrices. Scales from 0 to 1.
+    """
+    # Compute L2 norm of each row vector
+    col_norms = np.linalg.norm(A, axis=0, keepdims=True)
+    # Avoid division by zero for zero-columns
+    col_norms[col_norms == 0] = 1.0 # numerical trick for zero-th norm cols.
+    A_normalized = A / col_norms
+    # Gram matrix
+    gram_mtx = A_normalized.conj().T @ A_normalized
+    # Take the absolute values
+    abs_gram = np.abs(gram_mtx)
+    # Fill the diagonal with zeros to satisfy i != j
+    np.fill_diagonal(abs_gram, 0.0)
+    # Find the maximum value
+    cohe = np.max(abs_gram)
+    return gram_mtx, cohe
+    
 def curvature(lambd, sig, beta, xi):
     """ computes the NEGATIVE of the curvature.
 
