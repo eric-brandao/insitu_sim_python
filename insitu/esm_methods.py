@@ -437,6 +437,7 @@ class ESMBase(object):
         pm = pm.astype(complex)
         # Compute SVD
         u, sig, v = lc.csvd(g_mtx.astype(complex))
+        cond_num = sig[0]/sig[-1]
         # Find the optimal regularization parameter.
         lambd_value = self.regu_par_fun(u, sig, pm, plot_reg_curve)
         # Solve system          
@@ -451,7 +452,7 @@ class ESMBase(object):
             x = lc.cvx_tikhonov(g_mtx, pm, lambd_value, l_norm = 2)
         else:
             x = lc.tikhonov(u,sig,v,pm,lambd_value)
-        return x, lambd_value
+        return x, lambd_value, cond_num
 
     def plot_sensing_mtx(self, g_mtx):
         """ Plots the sensing matrix
@@ -801,8 +802,48 @@ class RISESM(ESMBase):
             g_mtx, cond_vec = self.get_sens_mtx(k0, rm_rs, rm_rq, cosmq)
             g_mtx = g_mtx @ np.diag(cond_vec)
             # Condition number
-            self.cond_num[jf] = np.linalg.cond(g_mtx)
-            x, self.lambd_value_vec[jf] = self.solve_freq(g_mtx, self.pres_s[:,jf])
+            # self.cond_num[jf] = np.linalg.cond(g_mtx)
+            x, self.lambd_value_vec[jf], self.cond_num[jf] =\
+                self.solve_freq(g_mtx, self.pres_s[:,jf])
+            self.pk.append(np.diag(cond_vec) @ x)
+            bar.update(1)
+        bar.close()
+        self.problem_size = g_mtx.shape
+        
+    def pk_ff_rigid_dynamic(self, n_s_lam = 4):
+        """ Regularized multi frequency solver
+        
+        Dynamic solver - the equivalent sources vary with freq.
+        """
+        self.problem_type = 'Free-fild rigid scattering'
+        # Reg. parameter / cond num init
+        self.lambd_value_vec = np.zeros(len(self.controls.k0))
+        self.cond_num = np.zeros(len(self.controls.k0))
+        # # Get distances                    
+        # rm_rs = self.get_rm_rs_dist()
+        # rm_rq = self.get_rm_rq_dist(self.receivers)
+        # cosmq = self.get_cosmq_dist(self.receivers, rm_rq)
+        # Monopole init
+        # self.num_cols = rm_rs.shape[1]+rm_rq.shape[1]
+        self.pk = []        
+        # Initialize bar
+        bar = tqdm(total=len(self.controls.k0),
+                   desc='Calc. Regularized inversion (' +\
+                       self.problem_type + ')...', ascii=False)
+        # Freq loop
+        for jf, k0 in enumerate(self.controls.k0):
+            # Get freq discretization
+            dx = self.get_dx(n_s_lam = n_s_lam, freq = self.controls.freq[jf])
+            self.sample_bbox(dx = dx)
+            rm_rs = self.get_rm_rs_dist()
+            rm_rq = self.get_rm_rq_dist(self.receivers)
+            cosmq = self.get_cosmq_dist(self.receivers, rm_rq)
+            g_mtx, cond_vec = self.get_sens_mtx(k0, rm_rs, rm_rq, cosmq)
+            g_mtx = g_mtx @ np.diag(cond_vec)
+            # Condition number
+            # self.cond_num[jf] = np.linalg.cond(g_mtx)
+            x, self.lambd_value_vec[jf], self.cond_num[jf] =\
+                self.solve_freq(g_mtx, self.pres_s[:,jf])
             self.pk.append(np.diag(cond_vec) @ x)
             bar.update(1)
         bar.close()

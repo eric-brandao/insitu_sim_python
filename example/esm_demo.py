@@ -28,13 +28,13 @@ source = Source(coord = [0, 0, 2.45])
 #%% Initialize ang get a bounding box for the scattering/radiating equi. sources
 esm = RISESM(p_mtx = pwe.pres_s, controls = pwe.controls, air = air,
             source = source, receivers = pwe.receivers, geometry = diff_geometry,
-            regu_par = 'gcv')
+            regu_par = 'l-curve')
 
 # esm.rectangular_bbox(bbox_size = [0.4, 0.25, 0.25])
 esm.cylindrical_bbox(bbox_size = [0.4, 0.25])
 
 #%% Sample the bounding box and source
-esm.sample_bbox(dx = esm.get_dx(n_s_lam = 4, freq = esm.controls.freq[-1])) #esm.get_dx(n_s_lam = 4, freq = esm.controls.freq[-1])
+esm.sample_bbox(dx = 0.05) #esm.get_dx(n_s_lam = 4, freq = esm.controls.freq[-1])
 esm.sample_source(source_radii = 0.01, sampling_scheme = 'octahedron')
 #%% Plot the scene
 esm.plotly_scene(plot_bbox=True)
@@ -52,14 +52,14 @@ x,_ = esm.solve_freq(g_mtx_cond, esm.pres_s[:,idf], method='tikhonov', plot_reg_
 esm.pk_ff_rigid_static()
 #%%
 semi_sphere = Receiver()
-semi_sphere.hemispherical_array(radius = 100, n_rec_target = 642)
+semi_sphere.hemispherical_array(radius = 50, n_rec_target = 642)
 
 #%%
 esm.recon_ps_static(semi_sphere)
 esm.octave_avg()
 
 #%%
-fig, _ = esm.plot_directivity(semi_sphere, freq = 2000, dinrange = 45)
+fig, _ = esm.plot_directivity(semi_sphere, freq = 1250, dinrange = 45)
 fig.show()
 
 
